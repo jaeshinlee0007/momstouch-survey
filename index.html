@@ -992,7 +992,7 @@ async function handleImage(qId, input) {
 
   // ── Storage 전환 준비 ──────────────────────────────
   // USE_STORAGE = true 로 바꾸면 Storage URL 방식으로 자동 전환
-  const USE_STORAGE = false;
+  const USE_STORAGE = true;
   if (USE_STORAGE && _currentUser) {
     const path = `inspections/${S.storeCode}/${Date.now()}_Q${qId}.jpg`;
     const { ok, url } = await uploadImageToStorage(compressed, path);
