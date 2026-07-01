@@ -134,7 +134,7 @@ async function getActiveStoreData() {
   const cached = cacheGet("store");
   if (cached) return cached;
 
-  // 방법4: localStorage 24시간 캐시
+  // 방법B: Firestore 버전 타임스탬프 체크 → 불일치 시 localStorage 자동 무효화
   const LS_KEY = "momstouch_store_master";
   const LS_TTL = 24 * 60 * 60 * 1000;
   try {
@@ -142,11 +142,22 @@ async function getActiveStoreData() {
     if (lsRaw) {
       const lsData = JSON.parse(lsRaw);
       if (Date.now() - lsData.ts < LS_TTL && lsData.stores?.length > 0) {
-        const stores = lsData.stores;
-        window._activeStores = stores;
-        cacheSet("store", stores);
-        try { localStorage.setItem("momstouch_store_master", JSON.stringify({ ts: Date.now(), stores })); } catch(e) {}
-        return stores;
+        // 버전 타임스탬프 확인 (getDoc 1회만 추가)
+        let serverTs = 0;
+        try {
+          const vSnap = await getDoc(doc(db, "settings", "storeMasterVersion"));
+          serverTs = vSnap.exists() ? (vSnap.data().ts || 0) : 0;
+        } catch(e) {}
+        // 서버 버전이 로컬 캐시보다 최신이면 무효화 후 재조회
+        if (serverTs > lsData.ts) {
+          try { localStorage.removeItem(LS_KEY); } catch(e) {}
+        } else {
+          // 캐시 유효 → 그대로 사용
+          const stores = lsData.stores;
+          window._activeStores = stores;
+          cacheSet("store", stores);
+          return stores;
+        }
       }
     }
   } catch(e) {}
@@ -3771,6 +3782,11 @@ async function handleStoreUpload(input) {
     try { localStorage.removeItem("momstouch_store_master"); } catch(e) {}
     _cache.store = { data: null, ts: 0 };
     _mapsLoadedAt = 0; // 양도양수/폐점점포 맵도 강제 재조회
+    // 방법B: 업로드 버전 타임스탬프 Firestore에 기록 → 모든 기기 자동 무효화
+    const _uploadTs = Date.now();
+    try {
+      await setDoc(doc(db, "settings", "storeMasterVersion"), { ts: _uploadTs });
+    } catch(e) { console.warn("버전 기록 실패:", e.message); }
     alert(`✅ 매장 데이터 업로드 완료!\n${count}개 매장이 등록되었습니다.`);
   } catch(e) {
     if (text) text.textContent = `오류: ${e}`;
