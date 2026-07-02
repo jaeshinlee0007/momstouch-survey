@@ -560,7 +560,6 @@ function renderHome(root) {
       <button class="btn-ghost" onclick="go('records')">📂 점검 내역 조회</button>
       ${["tl","gl","admin"].includes(_authRole) ? `<button class="btn-ghost" onclick="go('followupNeeded')" style="color:#744210;border-color:#F6AD55;background:#FFFBEB">⚠️ 보완점검 필요점</button>` : ""}
       ${canDash ? `<button class="btn-ghost btn-admin" onclick="goAdmin()">📊 관리자 대시보드</button>` : ""}
-      ${_authRole === "admin" ? `<button class="btn-ghost" onclick="go('photoSetting')" style="color:#6B46C1;border-color:#D6BCFA">⚙️ 관리자 설정</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
@@ -597,7 +596,6 @@ function renderHomeNP(root) {
       <button class="btn-ghost" onclick="go('npComingSoon')">📂 점검 내역 조회</button>
       ${["tl","gl","admin"].includes(_authRole) ? `<button class="btn-ghost" onclick="go('npComingSoon')" style="color:#744210;border-color:#F6AD55;background:#FFFBEB">⚠️ 보완점검 필요점</button>` : ""}
       ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminNP()">📊 관리자 대시보드 (신제품)</button>` : ""}
-      ${_authRole === "admin" ? `<button class="btn-ghost" onclick="go('photoSetting')" style="color:#6B46C1;border-color:#D6BCFA">⚙️ 관리자 설정</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
@@ -1428,7 +1426,8 @@ async function handleImage(qId, input) {
   // USE_STORAGE = true 로 바꾸면 Storage URL 방식으로 자동 전환
   const USE_STORAGE = true;
   if (USE_STORAGE && _currentUser) {
-    const path = `inspections/${S.storeCode}/${Date.now()}_Q${qId}.jpg`;
+    const storagePrefix = S.category === "np" ? "inspections_np" : "inspections";
+    const path = `${storagePrefix}/${S.storeCode}/${Date.now()}_Q${qId}.jpg`;
     const { ok, url } = await uploadImageToStorage(compressed, path);
     if (ok) {
       S.answers[qId].image = url;          // Storage URL 저장
@@ -4396,6 +4395,7 @@ Object.assign(window, {
   execDashTabSearch, setDashTabSearch,
   fnSetTeam, fnSearch, fnViewRecord, fnDownloadExcel,
   setRecStatusFilter, setDateLimitUI, applyAdminSettings,
+  startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhoto,
 });
 // 앱 시작 시 세션 복원
 (async () => {
