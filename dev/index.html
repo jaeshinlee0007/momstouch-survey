@@ -13,7 +13,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, memoryLocalCache, terminate, collection, addDoc, getDocs, getDoc, query, where, orderBy, updateDoc, deleteDoc, setDoc, doc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, memoryLocalCache, terminate, collection, addDoc, getDocs, getDoc, query, where, orderBy, updateDoc, deleteDoc, setDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
@@ -70,7 +70,8 @@ onAuthStateChanged(auth, async user => {
       if (["tl","gl","admin"].includes(_authRole)) S.adminAuthed = true;
       // 로그인 완료 후 photoSettings 재로드 (인증 후 Firestore 접근 가능)
       _photoSettingsLoaded = false;
-      await Promise.all([loadPhotoSettings(), loadDateLimitSetting()]);
+      _npEnabledLoaded = false;
+      await Promise.all([loadPhotoSettings(), loadDateLimitSetting(), loadNpEnabled()]);
       // sessionStorage에 점검 중 데이터가 있으면 home으로 이동하지 않음
       // (이어서 점검하기 팝업이 뜰 것이므로)
       const _hasPendingSession = (() => {
@@ -83,7 +84,7 @@ onAuthStateChanged(auth, async user => {
         } catch(e) { return false; }
       })();
       // form 화면 진행 중이면 home으로 이동하지 않음
-      if (!_hasPendingSession && S.screen !== "form") go("home");
+      if (!_hasPendingSession && S.screen !== "form") go("hub");
     }
   } else {
     _authName = "";
@@ -100,7 +101,7 @@ let _authRole = "";  // 로그인된 사용자 역할
 // 양도양수/폐점점포 맵은 캐시 적중 여부와 무관하게 항상 신선하게 유지
 // (store_master 캐시(메모리/localStorage)가 살아있어도 두 맵은 별도 짧은 캐시로 관리)
 let _mapsLoadedAt = 0;
-const _MAPS_TTL = 30 * 60 * 1000; // 30분
+const _MAPS_TTL = 10 * 60 * 1000; // 10분
 
 async function _refreshTransferAndClosedMaps() {
   if (Date.now() - _mapsLoadedAt < _MAPS_TTL && window._transferMap && window._closedMap) return;
@@ -128,10 +129,13 @@ async function _refreshTransferAndClosedMaps() {
 }
 
 async function getActiveStoreData() {
+  // 양도양수/폐점점포 맵은 store_master 캐시 여부와 무관하게 항상 최신화
+  await _refreshTransferAndClosedMaps();
+
   const cached = cacheGet("store");
   if (cached) return cached;
 
-  // 방법4: localStorage 24시간 캐시
+  // 방법B: Firestore 버전 타임스탬프 체크 → 불일치 시 localStorage 자동 무효화
   const LS_KEY = "momstouch_store_master";
   const LS_TTL = 24 * 60 * 60 * 1000;
   try {
@@ -139,11 +143,22 @@ async function getActiveStoreData() {
     if (lsRaw) {
       const lsData = JSON.parse(lsRaw);
       if (Date.now() - lsData.ts < LS_TTL && lsData.stores?.length > 0) {
-        const stores = lsData.stores;
-        window._activeStores = stores;
-        cacheSet("store", stores);
-        try { localStorage.setItem("momstouch_store_master", JSON.stringify({ ts: Date.now(), stores })); } catch(e) {}
-        return stores;
+        // 버전 타임스탬프 확인 (getDoc 1회만 추가)
+        let serverTs = 0;
+        try {
+          const vSnap = await getDoc(doc(db, "settings", "storeMasterVersion"));
+          serverTs = vSnap.exists() ? (vSnap.data().ts || 0) : 0;
+        } catch(e) {}
+        // 서버 버전이 로컬 캐시보다 최신이면 무효화 후 재조회
+        if (serverTs > lsData.ts) {
+          try { localStorage.removeItem(LS_KEY); } catch(e) {}
+        } else {
+          // 캐시 유효 → 그대로 사용
+          const stores = lsData.stores;
+          window._activeStores = stores;
+          cacheSet("store", stores);
+          return stores;
+        }
       }
     }
   } catch(e) {}
@@ -330,13 +345,45 @@ const GL_QUESTIONS = [
   { id:11, category:"사입관리",  title:"사입관리",             desc:"필수품목 중 사입품목이 없이 운영되고 있는가?", tag:null, photoOnN:true, noNa:true },
 ];
 const CAT_COLORS = {
-  "제품품절":"#FDC838","홍보물부착":"#D69E2E","비프점":"#38A169",
-  "피자":"#3182CE","스파쿨":"#805AD5","제품품질":"#DD6B20"
+  "제품품절":"#E53E3E","홍보물부착":"#D69E2E","비프점":"#38A169",
+  "피자":"#3182CE","스파쿨":"#805AD5","제품품질":"#DD6B20",
+  "신제품":"#D69E0E"
 };
+
+// ── 신제품 현장점검 문항 (미확정 - 문항 확정 후 채워 넣으면 즉시 반영됨) ──
+// SV/TL/GL 공통 문항(역할 구분 없음). 구조는 SV_QUESTIONS와 동일하게 맞출 것.
+// 예: { id:1, category:"신제품", title:"...", desc:"...", tag:null }
+const NP_QUESTIONS = [];
+
+// 맘스터치 BI 로고 (흰색/#FDC838 조합, 원본 viewBox 유지 후 CSS로 크기 제어)
+const LOGO_SVG = `<svg viewBox="0 0 299 35" xmlns="http://www.w3.org/2000/svg" style="height:20px;width:auto;display:block">
+<path d="M97.1976 5.06852C95.9038 4.74494 94.5777 5.32738 93.9631 6.45989L84.0654 24.483L74.1678 6.45989C73.5209 5.29502 72.1947 4.71258 70.9332 5.06852C69.6718 5.39209 68.7661 6.55696 68.7661 7.85126V31.181C68.7661 32.7665 70.0599 34.0608 71.6448 34.0608C73.2298 34.0608 74.5236 32.7665 74.5236 31.181V19.1117L81.5102 31.8929C82.0277 32.8312 82.998 33.3813 84.0331 33.3813C85.1005 33.3813 86.0709 32.7989 86.556 31.8929L93.575 19.144V31.2134C93.575 32.7989 94.8688 34.0932 96.4537 34.0932C98.0386 34.0932 99.3324 32.7989 99.3324 31.2134V7.88362C99.3648 6.55696 98.4591 5.39209 97.1976 5.06852Z" fill="white"/>
+<path d="M28.4315 5.06852C27.1377 4.74494 25.8116 5.32738 25.197 6.45989L15.2993 24.483L5.40167 6.45989C4.75476 5.29502 3.4286 4.71258 2.16714 5.06852C0.905668 5.39209 0 6.55696 0 7.85126V31.181C0 32.7665 1.29381 34.0608 2.87873 34.0608C4.46365 34.0608 5.75746 32.7665 5.75746 31.181V19.1117L12.7764 31.8929C13.2939 32.8312 14.2643 33.3813 15.2993 33.3813C16.3667 33.3813 17.3371 32.7989 17.8223 31.8929L24.8412 19.144V31.2134C24.8412 32.7989 26.135 34.0932 27.7199 34.0932C29.3048 34.0932 30.5987 32.7989 30.5987 31.2134V7.88362C30.631 6.55696 29.7253 5.39209 28.4315 5.06852Z" fill="white"/>
+<path d="M49.6822 34.5462C57.9302 34.5462 64.658 27.8158 64.658 19.5646C64.658 11.3135 57.9302 4.58313 49.6822 4.58313C41.4341 4.58313 34.7063 11.3135 34.7063 19.5646C34.7063 27.8158 41.4341 34.5462 49.6822 34.5462ZM49.6822 10.6663C54.5663 10.6663 58.5448 14.6463 58.5448 19.5323C58.5448 24.4183 54.5663 28.3982 49.6822 28.3982C44.798 28.3982 40.8196 24.4183 40.8196 19.5323C40.8196 14.6463 44.798 10.6663 49.6822 10.6663Z" fill="white"/>
+<path d="M127.052 16.0377C122.524 15.4229 121.618 14.6786 121.554 13.6432C121.521 13.2226 121.715 12.8019 122.039 12.446C122.847 11.6047 124.465 11.087 126.405 11.087C129.963 11.087 131.807 12.2195 132.001 12.3489C133.36 13.2873 135.236 12.9637 136.206 11.637C137.176 10.278 136.885 8.36893 135.527 7.39821C135.203 7.13935 132.066 5.00375 126.405 5.00375C120.033 5.00375 115.408 8.66015 115.408 13.7079C115.408 19.7911 120.616 21.3443 126.244 22.0885C132.357 22.9298 132.228 24.7742 132.163 25.5508C132.098 26.2626 131.936 28.2041 126.308 28.2041C122.686 28.2041 119.742 26.4891 119.613 26.4244C119.128 26.1332 118.578 25.9714 117.996 25.9714C117.769 25.9714 117.543 26.0038 117.284 26.0685C116.508 26.2626 115.828 26.748 115.376 27.4275C114.502 28.8512 114.923 30.7279 116.346 31.634C116.799 31.9252 120.874 34.352 126.244 34.352C136.044 34.352 137.92 29.2071 138.179 26.1008C138.503 22.2179 136.821 17.3643 127.052 16.0377Z" fill="white"/>
+<path d="M194.201 34.5462C202.449 34.5462 209.177 27.8158 209.177 19.5646C209.177 11.3135 202.449 4.58313 194.201 4.58313C185.953 4.58313 179.225 11.3135 179.225 19.5646C179.225 27.8158 185.953 34.5462 194.201 34.5462ZM194.201 10.6663C199.085 10.6663 203.064 14.6463 203.064 19.5323C203.064 24.4183 199.085 28.3982 194.201 28.3982C189.317 28.3982 185.338 24.4183 185.338 19.5323C185.338 14.6463 189.317 10.6663 194.201 10.6663Z" fill="#FDC838"/>
+<path d="M263.517 13.6433C264.779 14.9052 266.946 14.9052 268.207 13.6433C268.822 13.0285 269.178 12.1872 269.178 11.2812C269.178 10.4075 268.822 9.56622 268.207 8.91907C265.393 6.10397 261.609 4.55081 257.63 4.55081C253.619 4.55081 249.867 6.10397 247.021 8.91907C241.167 14.7758 241.167 24.2889 247.021 30.1132C249.835 32.9283 253.619 34.4815 257.63 34.4815C261.641 34.4815 265.393 32.9283 268.24 30.1132C269.533 28.8189 269.533 26.7157 268.24 25.4214C266.978 24.1594 264.779 24.1594 263.549 25.4214C260.283 28.6895 255.01 28.6895 251.743 25.4214C248.477 22.1533 248.477 16.879 251.743 13.6109C254.978 10.4075 260.283 10.4075 263.517 13.6433Z" fill="#FDC838"/>
+<path d="M174.956 5.39212H153.511C151.732 5.39212 150.309 6.84821 150.309 8.59551C150.309 10.3752 151.764 11.7989 153.511 11.7989H161.015V30.9869C161.015 32.7665 162.471 34.1903 164.217 34.1903C165.964 34.1903 167.419 32.7342 167.419 30.9869V11.8313H174.924C176.703 11.8313 178.126 10.3752 178.126 8.62787C178.19 6.81585 176.735 5.39212 174.956 5.39212Z" fill="#FDC838"/>
+<path d="M235.15 5.03616C233.371 5.03616 231.916 6.49225 231.916 8.27191V22.218C231.916 25.2596 229.425 27.7511 226.385 27.7511H225.511C222.471 27.7511 219.98 25.2596 219.98 22.218V8.27191C219.98 6.49225 218.525 5.03616 216.746 5.03616C214.967 5.03616 213.511 6.49225 213.511 8.27191V22.218C213.511 28.8513 218.913 34.2226 225.511 34.2226H226.385C233.015 34.2226 238.385 28.8189 238.385 22.218V8.27191C238.385 6.45989 236.929 5.03616 235.15 5.03616Z" fill="#FDC838"/>
+<path d="M295.765 5.03616C293.986 5.03616 292.531 6.49225 292.531 8.27191V16.426H280.337V8.27191C280.337 6.49225 278.881 5.03616 277.102 5.03616C275.323 5.03616 273.868 6.49225 273.868 8.27191V30.9869C273.868 32.7665 275.323 34.2226 277.102 34.2226C278.881 34.2226 280.337 32.7665 280.337 30.9869V22.8975H292.531V30.9869C292.531 32.7665 293.986 34.2226 295.765 34.2226C297.544 34.2226 299 32.7665 299 30.9869V8.27191C299 6.45989 297.544 5.03616 295.765 5.03616Z" fill="#FDC838"/>
+<path d="M105.381 14.614C105.834 14.8405 106.319 14.9699 106.804 14.9699C107.969 14.9699 109.036 14.3228 109.554 13.2873L114.05 4.51844C114.826 2.99764 114.244 1.1209 112.723 0.344322C111.203 -0.432257 109.327 0.150178 108.551 1.67098L104.055 10.4399C103.279 11.9607 103.861 13.8374 105.381 14.614Z" fill="#FDC838"/>
+</svg>`;
+// 현재 진행 중인 점검(S.category/S.role)에 맞는 문항 세트를 반환
+// - category === "np": 역할 구분 없이 NP_QUESTIONS 공통 사용
+// - 그 외(default): 기존과 동일하게 GL/SV 문항 세트 분기
+function currentQuestionSet() {
+  if (S.category === "np") return NP_QUESTIONS;
+  return S.role === "gl" ? GL_QUESTIONS : SV_QUESTIONS;
+}
+// 현재 진행 중인 점검이 저장될 Firestore 컬렉션명
+function currentSurveyCollection() {
+  return S.category === "np" ? "surveys_np" : "surveys";
+}
 
 // ── STATE ──────────────────────────────────────────
 let S = {
   screen:"home", role:null, inspType:null, // inspType: "최초"|"보완"
+  category:"default", // "default"=신규플랫폼 현장점검, "np"=신제품 현장점검 (저장 컬렉션/문항 분기용)
   writerName:"", storeCode:"", storeName:"", storeTeam:"",
   visitDate:"", answers:{},
   loadedDocId:null, loadedRecord:null, compareData:null,
@@ -352,6 +399,37 @@ let S = {
 // { Q1: true, Q7: true, ... } → true=사진필수, false=사진선택
 let _photoSettings = {}; // 로드 전까지 빈 객체 (기본값: 모두 필수)
 let _photoSettingsLoaded = false;
+
+// 신제품 현장점검 설정 (settings/npEnabled, settings/npPhotoRequired)
+let _npEnabled = false;
+let _npEnabledLoaded = false;
+let _npPhotoSettings = {}; // { NP_Q1: true, ... } true=사진필수
+let _npPhotoSettingsLoaded = false;
+
+async function loadNpEnabled() {
+  if (_npEnabledLoaded) return;
+  try {
+    const snap = await getDoc(doc(db, "settings", "npEnabled"));
+    _npEnabled = snap.exists() ? !!snap.data().value : false;
+  } catch(e) {
+    _npEnabled = false;
+  }
+  _npEnabledLoaded = true;
+}
+
+async function loadNpPhotoSettings() {
+  if (_npPhotoSettingsLoaded) return;
+  try {
+    const snap = await getDoc(doc(db, "settings", "npPhotoRequired"));
+    _npPhotoSettings = snap.exists() ? snap.data() : {};
+  } catch(e) {
+    _npPhotoSettings = {};
+  }
+  NP_QUESTIONS.forEach(q => {
+    if (!(`NP_Q${q.id}` in _npPhotoSettings)) _npPhotoSettings[`NP_Q${q.id}`] = true;
+  });
+  _npPhotoSettingsLoaded = true;
+}
 
 // 점검일 제한 설정: "none"|"0"|"1"|"3"|"7" (0=당일, 1/3/7=N일전까지)
 let _dateLimitSetting = "none";
@@ -399,12 +477,14 @@ function render() {
   root.innerHTML = ""; window.scrollTo(0,0);
   const scr = S.screen;
   // 미로그인 상태에서 보호 화면 접근 시 로그인으로 리디렉션
-  const protectedScreens = ["home","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded"];
+  const protectedScreens = ["hub","home","homeNP","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon"];
   if (!_currentUser && protectedScreens.includes(scr)) {
     renderLogin(root);
     return;
   }
-  if      (scr==="home")       renderHome(root);
+  if      (scr==="hub")        renderHub(root); // npEnabled는 로그인 시 캐시됨
+  else if (scr==="home")       renderHome(root);
+  else if (scr==="homeNP")     renderHomeNP(root);
   else if (scr==="login")      renderLogin(root);
   else if (scr==="changePw")   renderChangePw(root);
   else if (scr==="photoSetting") renderPhotoSetting(root); // async
@@ -417,6 +497,49 @@ function render() {
   else if (scr==="followupNeeded") renderFollowupNeeded(root);
   else if (scr==="records")    renderRecords(root);
   else if (scr==="dashboard")  renderDashboard(root);
+  else if (scr==="dashboardNP") renderDashboardNP(root); // async
+  else if (scr==="npComingSoon") renderNpComingSoon(root);
+}
+
+// ── HUB (신규플랫폼/신제품 선택 진입화면) ──────────
+function renderHub(root) {
+  root.innerHTML = `
+    <div class="hero-hub">
+      <span class="logo-chip">${LOGO_SVG}</span>
+      <div style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.5px">현장점검</div>
+    </div>
+    <div class="card-section">
+      <button class="hub-card" onclick="go('home')">
+        <span class="hub-card-icon" style="background:#FFF5F5;color:#C53030">N</span>
+        <span>
+          <span class="hub-card-title">신규플랫폼 현장점검</span>
+          <span class="hub-card-sub" style="display:block">비프 · 피자 · 스파쿨</span>
+        </span>
+      </button>
+      <button class="hub-card np${_npEnabled ? "" : " disabled"}" ${_npEnabled ? `onclick="go('homeNP')"` : `onclick="alert('현재 관리자 설정에서 비활성화되어 있습니다.')"`}>
+        <span class="hub-card-icon" style="background:#FFFBEB;color:#B7791F">P</span>
+        <span>
+          <span class="hub-card-title">신제품 현장점검</span>
+          <span class="hub-card-sub" style="display:block">${_npEnabled ? "문항 확인하고 점검 시작" : "준비중"}</span>
+        </span>
+      </button>
+      ${_authRole === "admin" ? `<button class="btn-ghost" onclick="go('photoSetting')" style="color:#6B46C1;border-color:#D6BCFA">⚙️ 관리자 설정</button>` : ""}
+      <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
+            ${_authName ? _authName.slice(0,1) : "?"}
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:500;color:#2D3748;">${_authName}</div>
+            <div style="font-size:11px;color:#718096;">${_authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":_authRole==="admin"?"관리자":""}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="go('changePw')" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">PW 변경</button>
+          <button onclick="authLogout()" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">로그아웃</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 // ── HOME ───────────────────────────────────────────
@@ -426,13 +549,14 @@ function renderHome(root) {
   const canDash = ["tl","gl","admin"].includes(_authRole);
 
   root.innerHTML = `
-    <div class="hero" style="padding-bottom:16px">
-      <div class="logo-wrap"><span class="logo-icon">🍔</span><span class="logo-text">맘스터치</span></div>
+    <div class="hero" style="padding-bottom:16px;position:relative">
+      <button onclick="go('hub')" style="position:absolute;top:14px;left:14px;background:rgba(255,255,255,0.18);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
+      <div class="logo-wrap">${LOGO_SVG}</div>
       <h1 class="hero-title">신규플랫폼<br>현장점검</h1>
       <p class="hero-sub">비프 · 피자 · 스파쿨</p>
     </div>
     <div class="card-section">
-      <button class="btn-primary" onclick="go('inspType')">📋 점검 시작하기</button>
+      <button class="btn-primary" onclick="startDefaultInspection()">📋 점검 시작하기</button>
       <button class="btn-ghost" onclick="go('records')">📂 점검 내역 조회</button>
       ${["tl","gl","admin"].includes(_authRole) ? `<button class="btn-ghost" onclick="go('followupNeeded')" style="color:#744210;border-color:#F6AD55;background:#FFFBEB">⚠️ 보완점검 필요점</button>` : ""}
       ${canDash ? `<button class="btn-ghost btn-admin" onclick="goAdmin()">📊 관리자 대시보드</button>` : ""}
@@ -455,8 +579,76 @@ function renderHome(root) {
     </div>`;
 }
 
+// ── HOME (신제품 현장점검) ──────────────────────────
+function renderHomeNP(root) {
+  const roleLabel = _authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":_authRole==="admin"?"관리자":"";
+  const canDash = ["tl","gl","admin"].includes(_authRole);
+  const ready = NP_QUESTIONS.length > 0;
+
+  root.innerHTML = `
+    <div class="hero-np" style="padding-bottom:16px;position:relative">
+      <button onclick="go('hub')" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
+      <div class="logo-wrap">${LOGO_SVG}</div>
+      <h1 class="hero-title">신제품<br>현장점검</h1>
+      <p class="hero-sub">${ready ? "" : "문항 준비중"}</p>
+    </div>
+    <div class="card-section">
+      <button class="btn-primary-np" onclick="${ready ? "startNpInspection()" : "go('npComingSoon')"}">📋 점검 시작하기</button>
+      <button class="btn-ghost" onclick="go('npComingSoon')">📂 점검 내역 조회</button>
+      ${["tl","gl","admin"].includes(_authRole) ? `<button class="btn-ghost" onclick="go('npComingSoon')" style="color:#744210;border-color:#F6AD55;background:#FFFBEB">⚠️ 보완점검 필요점</button>` : ""}
+      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminNP()">📊 관리자 대시보드 (신제품)</button>` : ""}
+      ${_authRole === "admin" ? `<button class="btn-ghost" onclick="go('photoSetting')" style="color:#6B46C1;border-color:#D6BCFA">⚙️ 관리자 설정</button>` : ""}
+      <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
+            ${_authName ? _authName.slice(0,1) : "?"}
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:500;color:#2D3748;">${_authName}</div>
+            <div style="font-size:11px;color:#718096;">${roleLabel}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="go('changePw')" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">PW 변경</button>
+          <button onclick="authLogout()" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">로그아웃</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function goAdminNP() {
+  if (_authRole === "sv") {
+    alert("대시보드 접근 권한이 없습니다.");
+    return;
+  }
+  go("dashboardNP");
+}
+
+// 신제품 현장점검 시작: category 플래그만 세팅하고 기존 최초/보완 선택 화면(inspType)을 그대로 재사용
+function startNpInspection() {
+  S.category = "np";
+  S.role = null; S.inspType = null; S.answers = {};
+  go("inspType");
+}
+
+// 신제품 문항 확정 전 안내 화면 (문항 업로드 즉시 실제 점검 플로우로 교체될 자리)
+function renderNpComingSoon(root) {
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="go('homeNP')">←</button>
+      <h2>신제품 현장점검</h2>
+    </div>
+    <div class="card-section" style="text-align:center;padding-top:40px">
+      <div style="font-size:40px;margin-bottom:12px">🛠️</div>
+      <div style="font-size:15px;color:var(--text);font-weight:500;margin-bottom:6px">점검 문항 준비중입니다</div>
+      <div style="font-size:13px;color:var(--sub);line-height:1.6">문항이 확정되면 신규플랫폼 현장점검과<br>동일한 방식으로 바로 이용하실 수 있습니다.</div>
+      <button class="btn-ghost" onclick="go('homeNP')" style="margin-top:24px">돌아가기</button>
+    </div>`;
+}
+
 // ── INSP TYPE ──────────────────────────────────────
 function renderInspType(root) {
+  const isNp = S.category === "np";
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
@@ -467,12 +659,20 @@ function renderInspType(root) {
         <div class="role-icon">📋</div>
         <div><div class="role-label">최초점검</div><div class="role-desc">신규 현장점검 시작</div></div>
       </button>
-      ${_authRole !== "gl" ? `
+      ${_authRole !== "gl" && !isNp ? `
       <button class="role-card" onclick="selectInspType('보완')">
         <div class="role-icon">🔁</div>
         <div><div class="role-label">보완점검</div><div class="role-desc">최초점검 N항목 재점검<br>N항목 강조 표시</div></div>
       </button>` : ""}
+      ${isNp ? `<div style="font-size:12px;color:#B7791F;padding:10px 4px">※ 신제품 현장점검 보완점검 기능은 준비중입니다. (최초점검만 우선 지원)</div>` : ""}
     </div>`;
+}
+
+// 신규플랫폼 현장점검 시작: category를 명시적으로 default로 세팅 (신제품 점검 이력이 남아있어도 안전)
+function startDefaultInspection() {
+  S.category = "default";
+  S.role = null; S.inspType = null; S.answers = {};
+  go("inspType");
 }
 
 function selectInspType(type) {
@@ -571,41 +771,36 @@ async function searchStores() {
     document.getElementById("storeResult").innerHTML = `<p class="loading-text">보완필요 매장 확인 중...</p>`;
     try {
       // SV 최초점검 N항목 + 팀장 최초점검 N항목 + 그룹장 최초점검 N항목 모두 수집
-      // 최적화: records 캐시 재사용 → 추가 읽기 0회
-      // records 캐시 없으면 날짜필터(90일) 쿼리로 최소 읽기
-      let allRecords = cacheGet("records");
-      if (!allRecords) {
-        const [svSnap2, tlSnap2, glSnap2, adSnap2] = await Promise.all([
-          getDocs(query(collection(db,"surveys"), where("role","==","sv"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
-          getDocs(query(collection(db,"surveys"), where("role","==","tl"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
-          getDocs(query(collection(db,"surveys"), where("role","==","gl"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
-          getDocs(query(collection(db,"surveys"), where("role","==","admin"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
+      const followupCached = cacheGet("followup");
+      let svSnap, tlSnap, glSnap;
+      if (followupCached) {
+        [svSnap, tlSnap, glSnap] = followupCached;
+      } else {
+        [svSnap, tlSnap, glSnap] = await Promise.all([
+          getDocs(query(collection(db,"surveys"), where("role","==","sv"), where("inspType","==","최초"))),
+          getDocs(query(collection(db,"surveys"), where("role","==","tl"), where("inspType","==","최초"))),
+          getDocs(query(collection(db,"surveys"), where("role","==","gl"), where("inspType","==","최초"))),
         ]);
-        allRecords = [];
-        svSnap2.forEach(d => allRecords.push({id:d.id,...d.data()}));
-        tlSnap2.forEach(d => allRecords.push({id:d.id,...d.data()}));
-        glSnap2.forEach(d => allRecords.push({id:d.id,...d.data()}));
-        adSnap2.forEach(d => allRecords.push({id:d.id,...d.data()}));
-        cacheSet("records", allRecords);
+        cacheSet("followup", [svSnap, tlSnap, glSnap]);
       }
-      // records 배열에서 역할별 분리
-      const svDocs = allRecords.filter(r => r.role === "sv");
-      const tlDocs = allRecords.filter(r => r.role === "tl");
-      const glDocs = allRecords.filter(r => r.role === "gl");
       // followup 스냅에서도 이미지는 불필요 (매장 목록 표시용)
       const needsFollowup = new Set();
       const alreadyDone = new Set();
       // TL 점검: 해당 팀장의 팀 storeCode 매핑
       const tlNStoreCodes = new Set();
       const glNStoreCodes = new Set();
-      tlDocs.forEach(data => {
+      tlSnap.forEach(d => {
+        const data = d.data();
         const nCount = Object.values(data.answers||{}).filter(a=>a.value==="N").length;
         if (nCount > 0) tlNStoreCodes.add(data.storeCode);
       });
-      glDocs.forEach(data => {
+      glSnap.forEach(d => {
+        const data = d.data();
+        // svFollowupIds가 있으면 해당 매장은 팀장 보완대상
         if (data.svFollowupIds && data.svFollowupIds.length > 0) {
           glNStoreCodes.add(data.storeCode);
         } else {
+          // 구버전 호환: glAnswers Q10 제외 N항목 체크
           const glA = data.glAnswers || data.answers || {};
           const nCount = Object.entries(glA)
             .filter(([k,v]) => Number(k) !== 10 && v.value === "N").length;
@@ -615,24 +810,28 @@ async function searchStores() {
       // SV 최초점검: storeCode별 최신 문서 기준으로 세트 판단
       // 최신 최초점검에 followup 없으면 → 보완필요 (새 세트)
       // 최신 최초점검에 followup 있으면 → 세트 종결 (보완완료)
-      const latestSvMap = new Map();
-      svDocs.forEach(data => {
+      const latestSvMap = new Map(); // storeCode → 최신 SV 최초점검 데이터
+      svSnap.forEach(d => {
+        const data = d.data();
         const existing = latestSvMap.get(data.storeCode);
+        // createdAt 기준 최신 문서만 유지
         const docTime = data.createdAt?.seconds || 0;
         const existTime = existing?.createdAt?.seconds || 0;
         if (!existing || docTime > existTime) {
-          latestSvMap.set(data.storeCode, { ...data, _docId: data.id });
+          // 매장 목록 표시용 → 이미지 불필요 (N항목 판단에만 사용)
+          latestSvMap.set(data.storeCode, { ...stripImages([{...data}])[0], _docId: d.id });
         }
       });
 
-      // TL 독립 최초점검 문서 (SV 없는 매장)
-      tlDocs.forEach(data => {
+      // TL 독립 최초점검 문서 (SV 없는 매장) - 보완점검 대상에 추가
+      tlSnap.forEach(d => {
+        const data = d.data();
         if (data.inspType !== "최초" && data.inspType) return;
-        if (latestSvMap.has(data.storeCode)) return;
+        if (latestSvMap.has(data.storeCode)) return; // SV 문서 있으면 SV 기준 우선
         const nCount = Object.values(data.answers||{}).filter(a=>a.value==="N").length;
         const hasFollowup = !!(data.followupSvAnswers || data.followupTlAnswers);
         if (nCount > 0 && !hasFollowup) {
-          latestSvMap.set(data.storeCode, { ...data, _docId: data.id });
+          latestSvMap.set(data.storeCode, { ...data, _docId: d.id });
         }
       });
 
@@ -671,26 +870,35 @@ async function searchStores() {
       window._alreadyDone = alreadyDone;
 
       // 반려된 점포 목록도 수집 (SV 문서 기준)
-      const rejectedMap = new Map();
-      svDocs.forEach(data => {
+      const rejectedMap = new Map(); // storeCode → {reason, by}
+      svSnap.forEach(d => {
+        const data = d.data();
+        // 반려 상태면 followupSvAnswers 유무 관계없이 재보완 대상
         if (data.tlRejected && !data.finalConfirmed) {
-          rejectedMap.set(data.storeCode, {reason: data.tlRejectedReason, by: "팀장", docId: data.id});
+          rejectedMap.set(data.storeCode, {reason: data.tlRejectedReason, by: "팀장", docId: d.id});
         }
         if (data.glRejected && !data.finalConfirmed) {
+          // SV/TL 문서 내 glRejected는 docId만 저장 (GL 전용 건은 glSnap에서 별도 처리)
           if (!rejectedMap.has(data.storeCode)) {
-            rejectedMap.set(data.storeCode, {reason: data.glRejectedReason, by: "그룹장", docId: data.id});
+            rejectedMap.set(data.storeCode, {reason: data.glRejectedReason, by: "그룹장", docId: d.id});
           }
         }
       });
-      glDocs.forEach(data => {
+      // GL 반려(glRejected) 점포도 수집 - GL 문서에서
+      glSnap.forEach(d => {
+        const data = d.data();
         if (data.glRejected && data.svFollowupIds && data.svFollowupIds.length > 0
             && !data.tlConfirmed && !data.finalConfirmed) {
-          rejectedMap.set(data.storeCode, {
-            reason: data.glRejectedReason,
-            by: "그룹장",
-            glDocId: data.id,
-            svFollowupIds: data.svFollowupIds,
-          });
+          // GL 문서 건은 무조건 덮어쓰기 (glDocId + svFollowupIds 포함 버전이 우선)
+          {
+            // glDocId + svFollowupIds 저장 → 매장 선택 시 GL 전용 로직 사용
+            rejectedMap.set(data.storeCode, {
+              reason: data.glRejectedReason,
+              by: "그룹장",
+              glDocId: d.id,
+              svFollowupIds: data.svFollowupIds,
+            });
+          }
         }
       });
       window._rejectedMap = rejectedMap;
@@ -957,7 +1165,7 @@ function startForm() {
 
 // ── FORM ───────────────────────────────────────────
 function renderForm(root) {
-  const allQuestions = S.role === "gl" ? GL_QUESTIONS : SV_QUESTIONS;
+  const allQuestions = currentQuestionSet();
   const roleLabel = {sv:"SV",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
   const nSet = new Set(S.prevNItems);
 
@@ -1012,7 +1220,7 @@ function renderForm(root) {
     html += `
       <div class="question-card" id="qcard-${q.id}"${nHighlight}>
         <div class="q-header">
-          <span class="q-num" style="${isFollowup?'background:#FDC838':''}">Q${q.id}</span>
+          <span class="q-num" style="${isFollowup?'background:#E53E3E':''}">Q${q.id}</span>
           <span class="q-title">${q.title}</span>${tag}${nLabel}
         </div>
         <p class="q-desc">${q.desc}</p>
@@ -1034,7 +1242,7 @@ function renderForm(root) {
               maxlength="100"
               oninput="handleMemo(${q.id},this.value)"
               value="${S.answers[q.id]?.memo||''}" />
-            <span class="memo-counter" id="memo-cnt-${q.id}" style="color:${(S.answers[q.id]?.memo?.length||0)>=45?'#FDC838':'#718096'}">${S.answers[q.id]?.memo?.length||0}/100</span>
+            <span class="memo-counter" id="memo-cnt-${q.id}" style="color:${(S.answers[q.id]?.memo?.length||0)>=45?'#E53E3E':'#718096'}">${S.answers[q.id]?.memo?.length||0}/100</span>
           </div>
         </div>
       </div>`;
@@ -1102,7 +1310,7 @@ function setAnswer(qId, value) {
     const b = document.getElementById(`ans-${qId}-${v}`); if(b) b.classList.remove("selected");
   });
   const sel = document.getElementById(`ans-${qId}-${value}`); if(sel) sel.classList.add("selected");
-  const qDef = [...SV_QUESTIONS, ...GL_QUESTIONS].find(q => q.id === qId);
+  const qDef = currentQuestionSet().find(q => q.id === qId);
   const imgSec = document.getElementById(`img-sec-${qId}`);
   if (imgSec) {
     if (qDef?.photoOnN) {
@@ -1198,7 +1406,7 @@ function handleMemo(qId, value) {
   const cnt = document.getElementById(`memo-cnt-${qId}`);
   if (cnt) {
     cnt.textContent = `${trimmed.length}/100`;
-    cnt.style.color = trimmed.length >= 90 ? "#FDC838" : "#718096";
+    cnt.style.color = trimmed.length >= 90 ? "#E53E3E" : "#718096";
   }
   // 입력창 값 동기화 (100자 초과 방지)
   const input = document.getElementById(`memo-${qId}`);
@@ -1308,7 +1516,7 @@ function addWatermark(ctx, w, h) {
   const badgeW = ctx.measureText(badgeText).width + badgePadX * 2;
 
   // 배지 배경 (둥근 사각형)
-  ctx.fillStyle = "#FDC838";
+  ctx.fillStyle = "#E53E3E";
   ctx.beginPath();
   ctx.roundRect(padX, baseY + (fMain - badgeH) / 2, badgeW, badgeH, badgeR);
   ctx.fill();
@@ -1354,7 +1562,7 @@ function addWatermark(ctx, w, h) {
 }
 
 function updateProgress() {
-  const allQuestions = S.role==="gl" ? GL_QUESTIONS : SV_QUESTIONS;
+  const allQuestions = currentQuestionSet();
   const nSet = new Set(S.prevNItems);
   const isFollowup = S.inspType === "보완" && nSet.size > 0;
   // 보완점검: N항목만 기준, 최초점검: 전체 기준
@@ -1374,6 +1582,7 @@ async function submitForm() {
   // photoSettings 미로드 시 재시도 (로그인 후 로드 보장)
   if (!_photoSettingsLoaded) await loadPhotoSettings();
   if (!_dateLimitLoaded) await loadDateLimitSetting();
+  if (S.category === "np" && !_npPhotoSettingsLoaded) await loadNpPhotoSettings();
   // 디버그: 현재 photoSettings 상태 확인
   console.log("[submitForm] _photoSettingsLoaded:", _photoSettingsLoaded);
   console.log("[submitForm] _photoSettings:", JSON.stringify(_photoSettings));
@@ -1387,7 +1596,7 @@ async function submitForm() {
 
   // admin 역할은 sv와 동일하게 처리
   const effectiveRole = S.role === "admin" ? "sv" : S.role;
-  const allQ = effectiveRole==="gl" ? GL_QUESTIONS : SV_QUESTIONS;
+  const allQ = currentQuestionSet();
   const nSet = new Set(S.prevNItems);
   const isFollowup = S.inspType === "보완" && nSet.size > 0;
   // 보완점검: N항목만 검증, 최초점검: 전체 검증
@@ -1453,7 +1662,7 @@ async function submitForm() {
     // SV/admin 최초점검 → 새 문서
     if (effectiveRole==="sv" && S.inspType==="최초") {
       console.log("[submitForm] SV 최초 addDoc 시작...");
-      const ref = await addDoc(collection(db,"surveys"), payload);
+      const ref = await addDoc(collection(db,currentSurveyCollection()), payload);
       console.log("[submitForm] SV 최초 addDoc 완료:", ref.id);
       S.loadedDocId = ref.id;
     }
@@ -1461,7 +1670,7 @@ async function submitForm() {
     else if (effectiveRole==="sv" && S.inspType==="보완") {
       if (S.loadedDocId) {
         
-        await updateDoc(doc(db,"surveys",S.loadedDocId), {
+        await updateDoc(doc(db,currentSurveyCollection(),S.loadedDocId), {
           followupSvAnswers: S.answers,
           followupSvWriterName: S.writerName,
           followupSvVisitDate: S.visitDate,
@@ -1470,7 +1679,7 @@ async function submitForm() {
       } else {
         // loadedDocId 없으면 매장코드로 최초점검 문서 재탐색
         console.warn("loadedDocId 없음 - storeCode로 재탐색:", S.storeCode);
-        const fallbackQ = query(collection(db,"surveys"),
+        const fallbackQ = query(collection(db,currentSurveyCollection()),
           where("storeCode","==",S.storeCode),
           where("role","==","sv"),
           orderBy("createdAt","desc"));
@@ -1482,7 +1691,7 @@ async function submitForm() {
         });
         if (targetId) {
           
-          await updateDoc(doc(db,"surveys",targetId), {
+          await updateDoc(doc(db,currentSurveyCollection(),targetId), {
             followupSvAnswers: S.answers,
             followupSvWriterName: S.writerName,
             followupSvVisitDate: S.visitDate,
@@ -1491,7 +1700,7 @@ async function submitForm() {
           S.loadedDocId = targetId;
         } else {
           console.warn("최초점검 문서 없음 - 새 문서 생성");
-          const ref = await addDoc(collection(db,"surveys"), payload);
+          const ref = await addDoc(collection(db,currentSurveyCollection()), payload);
           S.loadedDocId = ref.id;
         }
       }
@@ -1521,7 +1730,7 @@ async function submitForm() {
           tlConfirmedAt: tlNCount === 0 ? new Date().toISOString() : null,
         };
         console.log("[submitForm] TL addDoc 시작...");
-        const tlRef = await addDoc(collection(db,"surveys"), tlPayload);
+        const tlRef = await addDoc(collection(db,currentSurveyCollection()), tlPayload);
         console.log("[submitForm] TL addDoc 완료:", tlRef.id);
         S.loadedDocId = tlRef.id;
         
@@ -1529,7 +1738,7 @@ async function submitForm() {
 
       if (!S.loadedDocId && S.inspType !== "최초") {
         // 보완점검: fallback으로 SV 최초점검 문서 재탐색
-        const fbQ = query(collection(db,"surveys"),
+        const fbQ = query(collection(db,currentSurveyCollection()),
           where("storeCode","==",S.storeCode),
           where("role","==","sv"),
           orderBy("createdAt","desc"));
@@ -1563,7 +1772,7 @@ async function submitForm() {
           updatePayload.followupTlWriterName = S.writerName;
           updatePayload.followupTlVisitDate = S.visitDate;
         }
-        await updateDoc(doc(db,"surveys",S.loadedDocId), updatePayload);
+        await updateDoc(doc(db,currentSurveyCollection(),S.loadedDocId), updatePayload);
       } else {
         alert("연결된 점검 문서를 찾을 수 없습니다.\n보완점검의 경우 SV가 먼저 최초점검을 완료해야 합니다.");
         if(btn){btn.disabled=false;btn.textContent="점검 제출하기";}
@@ -1628,7 +1837,7 @@ async function submitForm() {
         glPayload.glRejectedBy = S.writerName;
       }
       console.log("[submitForm] GL addDoc 시작...");
-      const glRef = await addDoc(collection(db,"surveys"), glPayload);
+      const glRef = await addDoc(collection(db,currentSurveyCollection()), glPayload);
       console.log("[submitForm] GL addDoc 완료:", glRef.id);
       S.loadedDocId = glRef.id;
       
@@ -1656,13 +1865,17 @@ async function submitForm() {
     }
     sessionClear(); // 제출 완료 시 세션 삭제
     _compareCache.clear();
-    cacheInvalidate("dashboard");
-    cacheInvalidate("records");
-    cacheInvalidate("followup");
+    if (S.category === "np") {
+      cacheInvalidate("dashboardNP");
+    } else {
+      cacheInvalidate("dashboard");
+      cacheInvalidate("records");
+      cacheInvalidate("followup");
+    }
     window._dashTab = "전체";
     window._dashFilter = null;
     S.history = [];
-    go("home");
+    go(S.category === "np" ? "homeNP" : "home");
   } catch(e) {
     alert("저장 오류: "+e.message);
     if(btn) { btn.disabled=false; btn.textContent="점검 제출하기"; }
@@ -1686,9 +1899,20 @@ async function loadCompareData(docId) {
       S.compareData = null;
     }
   } catch(e) {
-    // getDoc 실패 시 null 처리 (보안규칙 정상 환경에서 미발생)
-    console.error("loadCompareData 오류:", e.message);
-    S.compareData = null;
+    // 3. getDoc 실패 시 (보안규칙 차단 등): role별 전체 조회에서 탐색
+    try {
+      const [s1,s2,s3] = await Promise.all([
+        getDocs(query(collection(db,"surveys"), where("role","==","sv"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
+        getDocs(query(collection(db,"surveys"), where("role","==","tl"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
+        getDocs(query(collection(db,"surveys"), where("role","==","gl"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
+      ]);
+      let found = null;
+      [s1,s2,s3].forEach(snap => snap.forEach(d => { if(d.id===docId) found={id:d.id,...d.data()}; }));
+      S.compareData = found;
+    } catch(e2) {
+      console.error("loadCompareData 오류:", e2.message);
+      S.compareData = null;
+    }
   }
 }
 
@@ -1737,7 +1961,7 @@ function renderCompare(root) {
   if (isGLDoc) {
     // Q10 N이력 표시
     if (d.glQ10IsN) {
-      html += `<div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#E8B800">
+      html += `<div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#C53030">
         ⚠️ Q10(품질) N 이력 기록됨 (보완점검 대상 아님)
       </div>`;
     }
@@ -1981,7 +2205,7 @@ function renderCompare(root) {
       </div>`;
       // Q10 N이력 표시
       if (d2.glQ10IsN) {
-        html += `<div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#E8B800">
+        html += `<div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#C53030">
           ⚠️ Q10(품질) N 이력 기록됨 (보완점검 대상 아님)
         </div>`;
       }
@@ -2035,7 +2259,7 @@ function renderCompare(root) {
         <span>${fmtDate(d2.visitDate)}</span>
       </div>`;
       if (d2.glQ10IsN) {
-        html += `<div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#E8B800">
+        html += `<div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#C53030">
           ⚠️ Q10(품질) N 이력 기록됨
         </div>`;
       }
@@ -2069,7 +2293,7 @@ function renderCompare(root) {
       html += '<div class="section-divider" style="background:#F0FFF4;color:#276749;border-color:#9AE6B4">📋 그룹장 최초점검 전체 결과</div>';
       html += '<div class="meta-row"><span>그룹장: ' + (d2.writerName||"") + '</span><span>' + fmtDate(d2.visitDate) + '</span></div>';
       if (d2.glQ10IsN) {
-        html += '<div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#E8B800">⚠️ Q10(품질) N 이력 기록됨</div>';
+        html += '<div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#C53030">⚠️ Q10(품질) N 이력 기록됨</div>';
       }
       let glCatElse = "";
       GL_QUESTIONS.forEach(q => {
@@ -2167,24 +2391,6 @@ function renderCompare(root) {
       html += `<div class="card-section">${rejNotice2}<button class="btn-primary" onclick="goBack()">돌아가기</button></div>`;
     }
   }
-
-  // ── 삭제 버튼 (compare 화면 하단 공통) ──
-  if (d2) {
-    const canDelC = !d2.tlConfirmed && !d2.finalConfirmed && !d2.tlRejected && !d2.glRejected &&
-                    (_authRole === "admin" || d2.writerName === _authName);
-    const hasFuC  = !!(d2.followupSvAnswers || d2.followupTlAnswers);
-    if (canDelC) {
-      html += `
-        <div style="padding:0 16px 16px">
-          <button onclick="deleteRecordById('${d2.id}', ${hasFuC})"
-            style="width:100%;padding:10px;border-radius:8px;border:1.5px solid #FEB2B2;
-                   background:#FFF5F5;color:#E8B800;font-size:14px;cursor:pointer;font-weight:500">
-            🗑️ ${hasFuC ? "보완점검 기록 삭제" : "점검 기록 삭제"}
-          </button>
-        </div>`;
-    }
-  }
-
   root.innerHTML = html;
 }
 
@@ -2216,6 +2422,10 @@ async function renderPhotoSetting(root) {
   _dateLimitLoaded = false;
   await loadDateLimitSetting();
   _dateLimitUIValue = _dateLimitSetting;
+  _npEnabledLoaded = false;
+  await loadNpEnabled();
+  _npPhotoSettingsLoaded = false;
+  await loadNpPhotoSettings();
 
   const svItems = [
     {id:1,  title:"KIOSK 비프 품절"},
@@ -2257,7 +2467,23 @@ async function renderPhotoSetting(root) {
       <span style="font-size:14px">${label}</span>
       <div id="toggle_wrap_${key}"
         onclick="togglePhoto('${key}')"
-        style="width:44px;height:24px;border-radius:12px;background:${isOn?"#FDC838":"#CBD5E0"};
+        style="width:44px;height:24px;border-radius:12px;background:${isOn?"#E53E3E":"#CBD5E0"};
+               position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+        <div id="toggle_thumb_${key}"
+          style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
+                 top:3px;left:${isOn?"23px":"3px"};transition:left .2s"></div>
+      </div>
+    </div>`;
+  };
+
+  const makeNpToggle = (key, label) => {
+    const isOn = _npPhotoSettings[key] !== false;
+    return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">${label}</span>
+      <div id="toggle_wrap_${key}"
+        onclick="toggleNpPhoto('${key}')"
+        style="width:44px;height:24px;border-radius:12px;background:${isOn?"#D69E0E":"#CBD5E0"};
                position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
         <div id="toggle_thumb_${key}"
           style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
@@ -2268,7 +2494,7 @@ async function renderPhotoSetting(root) {
 
   root.innerHTML = `
     <div class="page-header">
-      <button class="btn-back" onclick="go('home')">←</button>
+      <button class="btn-back" onclick="goBack()">←</button>
       <h2>⚙️ 관리자 설정</h2>
     </div>
     <div class="card-section">
@@ -2291,8 +2517,8 @@ async function renderPhotoSetting(root) {
         ].map(opt => `
           <button id="dl_${opt.v}" onclick="setDateLimitUI('${opt.v}')"
             style="padding:8px 16px;border-radius:20px;font-size:13px;cursor:pointer;
-                   border:1.5px solid ${_dateLimitSetting===opt.v ? "#FDC838" : "var(--border)"};
-                   background:${_dateLimitSetting===opt.v ? "#FDC838" : "white"};
+                   border:1.5px solid ${_dateLimitSetting===opt.v ? "#E53E3E" : "var(--border)"};
+                   background:${_dateLimitSetting===opt.v ? "#E53E3E" : "white"};
                    color:${_dateLimitSetting===opt.v ? "white" : "#4A5568"};font-weight:${_dateLimitSetting===opt.v?"600":"400"}">
             ${opt.label}
           </button>`).join("")}
@@ -2300,9 +2526,50 @@ async function renderPhotoSetting(root) {
       <div style="font-size:12px;color:#718096;margin-bottom:16px">
         예) 1일 선택 시 오늘이 6/20이면 6/19~6/20 작성건만 제출 가능
       </div>
-      <button class="btn-primary" onclick="applyAdminSettings()" style="margin-top:8px">저장하기</button>
-      <button class="btn-ghost" onclick="go('home')" style="margin-top:8px">취소</button>
+
+      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:20px;margin-bottom:4px">📋 매장 데이터 관리</div>
+      <div class="store-upload-section">
+        <div class="store-upload-header">
+          <div>
+            <div class="store-upload-title">📋 매장 데이터 관리</div>
+            <div id="storeDataStatus" class="store-upload-sub">불러오는 중...</div>
+          </div>
+          <label class="btn-upload" for="storeFileInput">
+            📤 Excel 업로드
+            <input type="file" id="storeFileInput" accept=".xlsx,.xls" style="display:none"
+              onchange="handleStoreUpload(this)">
+          </label>
+        </div>
+        <div id="uploadProgress" style="display:none" class="upload-progress">
+          <div class="upload-progress-bar"><div id="uploadProgressFill" class="upload-progress-fill"></div></div>
+          <span id="uploadProgressText">업로드 중...</span>
+        </div>
+      </div>
+
+      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:24px;margin-bottom:4px">🆕 신제품 현장점검</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:14px">신제품 현장점검 사용</span>
+        <div id="toggle_wrap_npEnabled"
+          onclick="toggleNpEnabled()"
+          style="width:44px;height:24px;border-radius:12px;background:${_npEnabled?"#D69E0E":"#CBD5E0"};
+                 position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+          <div id="toggle_thumb_npEnabled"
+            style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
+                   top:3px;left:${_npEnabled?"23px":"3px"};transition:left .2s"></div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:#718096;margin:6px 0 12px">OFF 시 허브 화면의 신제품 현장점검 카드가 비활성 처리됩니다.</div>
+
+      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:8px;margin-bottom:4px">신제품 문항별 사진 필수 첨부</div>
+      ${NP_QUESTIONS.length === 0 ? `
+        <div style="background:#FFFBEB;border:1px solid #F6AD55;border-radius:8px;padding:10px 12px;font-size:12px;color:#744210">
+          아직 신제품 점검 문항이 등록되지 않았습니다. 문항이 확정되어 NP_QUESTIONS에 반영되면 이 자리에 문항별 토글이 자동으로 생성됩니다.
+        </div>` : NP_QUESTIONS.map(q => makeNpToggle(`NP_Q${q.id}`, `NP_Q${q.id}. ${q.title}`)).join("")}
+
+      <button class="btn-primary" onclick="applyAdminSettings()" style="margin-top:20px">저장하기</button>
+      <button class="btn-ghost" onclick="goBack()" style="margin-top:8px">취소</button>
     </div>`;
+  updateStoreDataStatus();
 }
 
 let _dateLimitUIValue = _dateLimitSetting;
@@ -2312,8 +2579,8 @@ function setDateLimitUI(val) {
     const btn = document.getElementById("dl_"+v);
     if (!btn) return;
     const active = v === val;
-    btn.style.border = "1.5px solid " + (active ? "#FDC838" : "var(--border)");
-    btn.style.background = active ? "#FDC838" : "white";
+    btn.style.border = "1.5px solid " + (active ? "#E53E3E" : "var(--border)");
+    btn.style.background = active ? "#E53E3E" : "white";
     btn.style.color = active ? "white" : "#4A5568";
     btn.style.fontWeight = active ? "600" : "400";
   });
@@ -2327,11 +2594,16 @@ async function applyAdminSettings() {
     ["GL_Q1","GL_Q2","GL_Q3","GL_Q4","GL_Q5","GL_Q6","GL_Q7","GL_Q8","GL_Q9","GL_Q10","GL_Q11"].forEach(key => {
       if (!(key in _photoSettings)) _photoSettings[key] = true;
     });
+    NP_QUESTIONS.forEach(q => {
+      if (!(`NP_Q${q.id}` in _npPhotoSettings)) _npPhotoSettings[`NP_Q${q.id}`] = true;
+    });
     await setDoc(doc(db, "settings", "photoRequired"), _photoSettings);
     await setDoc(doc(db, "settings", "dateLimit"), { value: _dateLimitUIValue });
+    await setDoc(doc(db, "settings", "npEnabled"), { value: _npEnabled });
+    await setDoc(doc(db, "settings", "npPhotoRequired"), _npPhotoSettings);
     _dateLimitSetting = _dateLimitUIValue;
     alert("✅ 설정이 저장되었습니다.");
-    go("home");
+    goBack();
   } catch(e) {
     alert("저장 오류: " + e.message);
   }
@@ -2346,7 +2618,25 @@ function togglePhoto(key) {
   // 시각적 업데이트 (DOM 재렌더 없이 직접 변경)
   const wrap  = document.getElementById(`toggle_wrap_${key}`);
   const thumb = document.getElementById(`toggle_thumb_${key}`);
-  if (wrap)  wrap.style.background = isOn ? "#FDC838" : "#CBD5E0";
+  if (wrap)  wrap.style.background = isOn ? "#E53E3E" : "#CBD5E0";
+  if (thumb) thumb.style.left      = isOn ? "23px" : "3px";
+}
+
+function toggleNpEnabled() {
+  _npEnabled = !_npEnabled;
+  const wrap  = document.getElementById("toggle_wrap_npEnabled");
+  const thumb = document.getElementById("toggle_thumb_npEnabled");
+  if (wrap)  wrap.style.background = _npEnabled ? "#D69E0E" : "#CBD5E0";
+  if (thumb) thumb.style.left      = _npEnabled ? "23px" : "3px";
+}
+
+function toggleNpPhoto(key) {
+  const current = _npPhotoSettings[key] !== false;
+  _npPhotoSettings[key] = !current;
+  const isOn = _npPhotoSettings[key];
+  const wrap  = document.getElementById(`toggle_wrap_${key}`);
+  const thumb = document.getElementById(`toggle_thumb_${key}`);
+  if (wrap)  wrap.style.background = isOn ? "#D69E0E" : "#CBD5E0";
   if (thumb) thumb.style.left      = isOn ? "23px" : "3px";
 }
 
@@ -2402,6 +2692,11 @@ async function loadPhotoSettings() {
 }
 
 function isPhotoRequired(qId, isGL) {
+  if (S.category === "np") {
+    const npKey = `NP_Q${qId}`;
+    if (npKey in _npPhotoSettings) return _npPhotoSettings[npKey];
+    return true;
+  }
   const key = isGL ? `GL_Q${qId}` : `Q${qId}`;
   if (key in _photoSettings) return _photoSettings[key];
   // 설정 로드 안 됨 = 기본값: 필수
@@ -2482,7 +2777,7 @@ function renderChangePw(root) {
       <label class="field-label" style="margin-top:12px">새 비밀번호 확인</label>
       <input id="newPw2" class="input-field" type="password" placeholder="새 비밀번호 재입력"
         onkeydown="if(event.key==='Enter')doChangePw()" />
-      <div id="pwErr" style="color:#FDC838;font-size:13px;display:none;margin-top:6px"></div>
+      <div id="pwErr" style="color:#E53E3E;font-size:13px;display:none;margin-top:6px"></div>
       <div id="pwOk"  style="color:#38A169;font-size:13px;display:none;margin-top:6px">✅ 비밀번호가 변경되었습니다.</div>
       <button class="btn-primary" style="margin-top:16px" onclick="doChangePw()">변경하기</button>
       <button class="btn-ghost" onclick="go('home')" style="margin-top:8px">취소</button>
@@ -2519,7 +2814,7 @@ async function doChangePw() {
     document.getElementById("curPw").value  = "";
     document.getElementById("newPw").value  = "";
     document.getElementById("newPw2").value = "";
-    setTimeout(() => go("home"), 1500);
+    setTimeout(() => goBack(), 1500);
   } else {
     errEl.textContent = result.msg;
     errEl.style.display = "block";
@@ -2655,6 +2950,7 @@ const _cache = {
   dashboard: { data: null, ts: 0, ttl: 600 }, // 10분
   records:   { data: null, ts: 0, ttl: 480 }, // 8분
   followup:  { data: null, ts: 0, ttl: 900 }, // 15분
+  dashboardNP: { data: null, ts: 0, ttl: 600 }, // 10분 (신제품 현장점검, surveys_np 별도 컬렉션)
 };
 // 방법3: 점검결과 문서 ID 기반 캐시 (세션 내 중복 읽기 방지)
 const _compareCache = new Map();
@@ -2697,99 +2993,6 @@ function getInspStatusBadge(r) {
   } else {
     // N 없음 → 점검완료
     return `<span class="status-badge status-done">점검완료</span>`;
-  }
-}
-
-// ── 점검 삭제 기능 ─────────────────────────────────
-
-// 삭제 가능 여부 판단
-function canDeleteRecord(r) {
-  if (!r) return false;
-  // 상위 권한자 확인/반려 시 삭제 불가
-  if (r.tlConfirmed || r.finalConfirmed) return false;
-  if (r.tlRejected || r.glRejected) return false;
-  // admin은 전체 삭제 가능
-  if (_authRole === "admin") return true;
-  // 본인 제출 건만 삭제 가능
-  return r.writerName === _authName;
-}
-
-// 목록에서 직접 삭제 (docId로 캐시 조회 후 compareData 설정 후 삭제)
-async function deleteRecordById(docId, hasFu) {
-  // 캐시에서 문서 데이터 찾기
-  const allCached = [...(cacheGet("records")||[]), ...(cacheGet("dashboard")||[])];
-  let r = allCached.find(x => x.id === docId);
-  if (!r) {
-    // 캐시 없으면 Firestore에서 직접 조회
-    const snap = await getDoc(doc(db, "surveys", docId));
-    if (!snap.exists()) { alert("점검 데이터를 찾을 수 없습니다."); return; }
-    r = { id: snap.id, ...snap.data() };
-  }
-  S.compareData = { id: docId, ...r };
-  if (hasFu) {
-    await deleteFollowup(docId);
-  } else {
-    await deleteRecord(docId);
-  }
-}
-
-// 보완점검 데이터 존재 여부
-function hasFollowupData(r) {
-  if (!r) return false;
-  const hasSv = r.followupSvAnswers && Object.keys(r.followupSvAnswers).length > 0;
-  const hasTl = r.followupTlAnswers && Object.keys(r.followupTlAnswers).length > 0;
-  return hasSv || hasTl;
-}
-
-// 보완점검만 삭제 (followup 필드 제거, 최초점검 문서 유지)
-async function deleteFollowup(docId) {
-  const r = S.compareData?.id === docId ? S.compareData : null;
-  if (!r) { alert("데이터를 찾을 수 없습니다."); return; }
-  if (!canDeleteRecord(r)) { alert("⛔ 삭제 권한이 없거나 상위 권한자 처리 후에는 삭제할 수 없습니다."); return; }
-  if (!confirm("보완점검 기록을 삭제하시겠습니까?\n최초점검 기록은 유지됩니다.\n이 작업은 되돌릴 수 없습니다.")) return;
-  try {
-    // followup 관련 필드 전체 제거 (추가적 확인/반려 상태도 초기화)
-    await updateDoc(doc(db, "surveys", docId), {
-      followupSvAnswers:     deleteField(),
-      followupSvWriterName:  deleteField(),
-      followupSvVisitDate:   deleteField(),
-      followupTlAnswers:     deleteField(),
-      followupTlWriterName:  deleteField(),
-      followupTlVisitDate:   deleteField(),
-      svFollowupIds:         deleteField(),
-      tlConfirmed:           deleteField(),
-      tlConfirmerName:       deleteField(),
-      tlConfirmedAt:         deleteField(),
-    });
-    _compareCache.delete(docId);
-    cacheInvalidate("records");
-    cacheInvalidate("dashboard");
-    alert("✅ 보완점검 기록이 삭제되었습니다.");
-    go("records");
-  } catch(e) {
-    alert("삭제 오류: " + e.message);
-  }
-}
-
-// 점검 전체 삭제 (문서 통째로)
-async function deleteRecord(docId) {
-  const r = S.compareData?.id === docId ? S.compareData : null;
-  if (!r) { alert("데이터를 찾을 수 없습니다."); return; }
-  if (!canDeleteRecord(r)) { alert("⛔ 삭제 권한이 없거나 상위 권한자 처리 후에는 삭제할 수 없습니다."); return; }
-  if (hasFollowupData(r)) {
-    alert("⚠️ 보완점검 기록이 있습니다.\n점검 전체를 삭제하려면 먼저 보완점검 기록을 삭제해주세요.");
-    return;
-  }
-  if (!confirm("점검 기록 전체를 삭제하시겠습니까?\n최초점검 및 모든 관련 데이터가 삭제됩니다.\n이 작업은 되돌릴 수 없습니다.")) return;
-  try {
-    await deleteDoc(doc(db, "surveys", docId));
-    _compareCache.delete(docId);
-    cacheInvalidate("records");
-    cacheInvalidate("dashboard");
-    alert("✅ 점검 기록이 삭제되었습니다.");
-    goBack();
-  } catch(e) {
-    alert("삭제 오류: " + e.message);
   }
 }
 
@@ -2960,9 +3163,9 @@ async function renderRecords(root) {
         <button onclick="fetchRecords()" style="flex-shrink:0;padding:12px 20px;background:var(--red);color:white;border:none;border-radius:var(--radius);font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap">검색</button>
       </div>
       <div id="recStatusFilterWrap" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px">
-        <button id="rsf_all" onclick="setRecStatusFilter('')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FDC838;background:#FDC838;color:white;cursor:pointer;font-weight:500">전체</button>
+        <button id="rsf_all" onclick="setRecStatusFilter('')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #E53E3E;background:#E53E3E;color:white;cursor:pointer;font-weight:500">전체</button>
         <button id="rsf_need" onclick="setRecStatusFilter('추가점검필요')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #F6AD55;background:#FFFBEB;color:#744210;cursor:pointer">추가점검필요</button>
-        <button id="rsf_reject" onclick="setRecStatusFilter('반려')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FEB2B2;background:#FFF5F5;color:#E8B800;cursor:pointer">반려</button>
+        <button id="rsf_reject" onclick="setRecStatusFilter('반려')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FEB2B2;background:#FFF5F5;color:#C53030;cursor:pointer">반려</button>
         <button id="rsf_followup" onclick="setRecStatusFilter('보완점검완료')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #9AE6B4;background:#F0FFF4;color:#276749;cursor:pointer">보완점검완료</button>
         <button id="rsf_final" onclick="setRecStatusFilter('최종완료')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #90CDF4;background:#EBF8FF;color:#2B6CB0;cursor:pointer">최종완료</button>
       </div>
@@ -2991,7 +3194,6 @@ async function buildFollowupNeeded() {
   if (!root) return;
 
   // 데이터 로드 (fetchRecords 캐시 활용)
-  // 최적화3: records 캐시 공유 (중복 읽기 제거)
   let records = cacheGet("records");
   if (!records) {
     try {
@@ -3007,9 +3209,9 @@ async function buildFollowupNeeded() {
       glSnap.forEach(d => records.push({id:d.id,...d.data()}));
       adSnap.forEach(d => records.push({id:d.id,...d.data()}));
       records.sort((a,b) => (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
-      cacheSet("records", records); // fetchRecords/renderDashboard와 캐시 공유
+      cacheSet("records", records);
     } catch(e) {
-      root.innerHTML = `<div style="text-align:center;padding:20px;color:var(--red)">데이터 로드 오류: ${e.message}</div>`;
+      root.innerHTML = `<div style="text-align:center;padding:20px;color:#E53E3E">데이터 로드 오류: ${e.message}</div>`;
       return;
     }
   }
@@ -3077,10 +3279,10 @@ async function buildFollowupNeeded() {
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <input id="fnSearchInput" type="text" placeholder="매장명 검색..." value="${_followupFilter.keyword}"
         onkeydown="if(event.key==='Enter') fnSearch()"
-        style="flex:1;padding:8px 12px;border:1.5px solid ${_followupFilter.keyword ? "#FDC838" : "var(--border)"};border-radius:8px;font-size:13px">
-      <button onclick="fnSearch()" style="padding:8px 16px;background:#FDC838;color:#2D3748;border:none;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap">검색</button>
+        style="flex:1;padding:8px 12px;border:1.5px solid ${_followupFilter.keyword ? "#E53E3E" : "var(--border)"};border-radius:8px;font-size:13px">
+      <button onclick="fnSearch()" style="padding:8px 16px;background:#E53E3E;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap">검색</button>
     </div>
-    ${_followupFilter.keyword ? `<div style="font-size:12px;color:#FDC838;margin-bottom:8px">"${_followupFilter.keyword}" 검색 결과 ${filtered.length}건</div>` : `<div style="font-size:12px;color:#718096;margin-bottom:8px">E코드 · 점포명 · 최초점검일시 · 점검자</div>`}
+    ${_followupFilter.keyword ? `<div style="font-size:12px;color:#E53E3E;margin-bottom:8px">"${_followupFilter.keyword}" 검색 결과 ${filtered.length}건</div>` : `<div style="font-size:12px;color:#718096;margin-bottom:8px">E코드 · 점포명 · 최초점검일시 · 점검자</div>`}
     ${filtered.length === 0 ? `<div style="text-align:center;padding:40px;color:#718096">해당 조건의 보완점검 필요 점포가 없습니다.</div>` : rows}`;
 }
 
@@ -3230,9 +3432,9 @@ async function fetchRecords() {
       const map = {all:"",need:"추가점검필요",reject:"반려",followup:"보완점검완료",final:"최종완료"};
       const isActive = map[k] === _sf;
       const styles = {
-        all:     {bg:"#FDC838", border:"#FDC838", color:"white"},
+        all:     {bg:"#E53E3E", border:"#E53E3E", color:"white"},
         need:    {bg:"#FFFBEB", border:"#F6AD55", color:"#744210"},
-        reject:  {bg:"#FFF5F5", border:"#FEB2B2", color:"#E8B800"},
+        reject:  {bg:"#FFF5F5", border:"#FEB2B2", color:"#C53030"},
         followup:{bg:"#F0FFF4", border:"#9AE6B4", color:"#276749"},
         final:   {bg:"#EBF8FF", border:"#90CDF4", color:"#2B6CB0"},
       };
@@ -3267,19 +3469,10 @@ async function fetchRecords() {
         : "";
       const closedInfoR = (window._closedMap||new Map()).get(r.storeCode) || null;
       const closedBadgeR = closedInfoR ? `<span class="badge-closed">🚫 폐점</span>` : "";
-      // 삭제 버튼: 권한/상태 조건 충족 시만 노출
-      const canDel = !r.tlConfirmed && !r.finalConfirmed && !r.tlRejected && !r.glRejected &&
-                     (_authRole === "admin" || r.writerName === _authName);
-      const hasFu  = !!(r.followupSvAnswers || r.followupTlAnswers);
-      const delBtn = canDel ? `
-        <button onclick="event.stopPropagation(); deleteRecordById('${r.id}', ${hasFu})"
-          style="font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid #FEB2B2;background:#FFF5F5;color:#E8B800;cursor:pointer;flex-shrink:0">
-          ${hasFu ? "보완 삭제" : "점검 삭제"}
-        </button>` : "";
       html += `<div class="search-item" onclick="viewRecord('${r.id}')">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0">${typeBadge}<span class="si-store">${r.storeName}</span>${transferBadgeR}${closedBadgeR}</div>
-          <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">${productBadges((window._activeStores||[]).find(s=>s.code===r.storeCode))}${delBtn}</div>
+          <div style="display:flex;gap:3px;flex-shrink:0">${productBadges((window._activeStores||[]).find(s=>s.code===r.storeCode))}</div>
         </div>
         <div class="si-meta">${r.role==="gl"?"그룹장":r.role==="tl"?"팀장":"SV"}: ${r.writerName} · ${dt}</div>
         <div class="si-tags">${statusBadge}</div>
@@ -3337,9 +3530,9 @@ async function viewRecord(docId) {
 function renderLogin(root) {
   root.innerHTML = `
     <div class="hero">
-      <div class="logo-wrap"><span class="logo-icon">🍔</span><span class="logo-text">맘스터치</span></div>
-      <h1 class="hero-title">신규플랫폼<br>현장점검</h1>
-      <p class="hero-sub">비프 · 피자 · 스파쿨</p>
+      <div class="logo-wrap">${LOGO_SVG}</div>
+      <h1 class="hero-title">현장점검</h1>
+      <p class="hero-sub">신규플랫폼 · 신제품</p>
     </div>
     <div class="card-section">
       <label class="field-label">아이디 (이메일)</label>
@@ -3350,7 +3543,7 @@ function renderLogin(root) {
       <input id="loginPw" class="input-field" type="password"
         placeholder="비밀번호 입력"
         onkeydown="if(event.key==='Enter')doLogin()" />
-      <div id="loginErr" style="color:#FDC838;font-size:13px;display:none;margin-top:4px"></div>
+      <div id="loginErr" style="color:#E53E3E;font-size:13px;display:none;margin-top:4px"></div>
       <button class="btn-primary" style="margin-top:16px" onclick="doLogin()">로그인</button>
     </div>`;
   // 이메일 자동 포커스
@@ -3445,7 +3638,7 @@ async function renderDashboard(root) {
     buildDashboard(root, records);
     updateStoreDataStatus();
   } catch(e) {
-    root.innerHTML += `<p style="padding:20px;color:#FDC838">오류: ${e.message}</p>`;
+    root.innerHTML += `<p style="padding:20px;color:#E53E3E">오류: ${e.message}</p>`;
   }
 }
 
@@ -3663,7 +3856,7 @@ function buildDashboard(root, records) {
   const tabActive  = t => tab===t ? "dash-tab active" : "dash-tab";
   const statActive = f => dashFilter===f && tab==="전체" ? "stat-card active-stat" : "stat-card";
   const { label: dateLabel } = getDashDateRange();
-  const dfBtn = f => `<button onclick="setDashDateFilter('${f}')" style="font-size:11px;padding:3px 8px;border-radius:20px;${df===f?'background:#FDC838;color:white;border:none;':''}cursor:pointer;">${f}</button>`;
+  const dfBtn = f => `<button onclick="setDashDateFilter('${f}')" style="font-size:11px;padding:3px 8px;border-radius:20px;${df===f?'background:#E53E3E;color:white;border:none;':''}cursor:pointer;">${f}</button>`;
 
   // ── Step 10: HTML 렌더링 ──
   root.innerHTML = `
@@ -3689,7 +3882,7 @@ function buildDashboard(root, records) {
         <input type="date" id="dashDateFrom" style="font-size:12px;padding:4px 6px;border-radius:6px;border:1px solid #CBD5E0;flex:1;" value="${window._dashDateFrom||''}">
         <span style="font-size:12px;color:#718096">~</span>
         <input type="date" id="dashDateTo" style="font-size:12px;padding:4px 6px;border-radius:6px;border:1px solid #CBD5E0;flex:1;" value="${window._dashDateTo||''}">
-        <button onclick="applyDateRange()" style="font-size:11px;padding:4px 8px;border-radius:6px;background:#FDC838;color:white;border:none;cursor:pointer;">조회</button>
+        <button onclick="applyDateRange()" style="font-size:11px;padding:4px 8px;border-radius:6px;background:#E53E3E;color:white;border:none;cursor:pointer;">조회</button>
       </div>
     </div>` : `
     <div style="padding:8px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0;">
@@ -3712,24 +3905,6 @@ function buildDashboard(root, records) {
       </div>
       <div class="${statActive('최종확인')}" onclick="setDashFilter('최종확인')">
         <div class="stat-num" style="color:#6B46C1">${finalConfirmed}</div><div class="stat-label">최종확인</div>
-      </div>
-    </div>
-
-    <div class="store-upload-section">
-      <div class="store-upload-header">
-        <div>
-          <div class="store-upload-title">📋 매장 데이터 관리</div>
-          <div id="storeDataStatus" class="store-upload-sub">불러오는 중...</div>
-        </div>
-        <label class="btn-upload" for="storeFileInput">
-          📤 Excel 업로드
-          <input type="file" id="storeFileInput" accept=".xlsx,.xls" style="display:none"
-            onchange="handleStoreUpload(this)">
-        </label>
-      </div>
-      <div id="uploadProgress" style="display:none" class="upload-progress">
-        <div class="upload-progress-bar"><div id="uploadProgressFill" class="upload-progress-fill"></div></div>
-        <span id="uploadProgressText">업로드 중...</span>
       </div>
     </div>
 
@@ -3829,7 +4004,7 @@ async function updateStoreDataStatus() {
     }
   } catch(e) {
     statusEl.textContent = "매장 데이터 상태 확인 실패";
-    statusEl.style.color = "#FDC838";
+    statusEl.style.color = "#E53E3E";
   }
 }
 
@@ -3870,6 +4045,11 @@ async function handleStoreUpload(input) {
     try { localStorage.removeItem("momstouch_store_master"); } catch(e) {}
     _cache.store = { data: null, ts: 0 };
     _mapsLoadedAt = 0; // 양도양수/폐점점포 맵도 강제 재조회
+    // 방법B: 업로드 버전 타임스탬프 Firestore에 기록 → 모든 기기 자동 무효화
+    const _uploadTs = Date.now();
+    try {
+      await setDoc(doc(db, "settings", "storeMasterVersion"), { ts: _uploadTs });
+    } catch(e) { console.warn("버전 기록 실패:", e.message); }
     alert(`✅ 매장 데이터 업로드 완료!\n${count}개 매장이 등록되었습니다.`);
   } catch(e) {
     if (text) text.textContent = `오류: ${e}`;
@@ -3877,6 +4057,78 @@ async function handleStoreUpload(input) {
     alert(`업로드 실패: ${e}`);
   }
   input.value = "";
+}
+
+// ── DASHBOARD (신제품 현장점검, surveys_np 전용 · 기존 대시보드와 완전 분리) ──
+// 참고: 신규플랫폼 대시보드(renderDashboard/buildDashboard)의 팀장확인/그룹장확인 등
+// 승인 플로우는 신제품 문항이 확정되어 점검/보완/확인 로직이 정해진 뒤 이 화면에 확장 예정.
+// 지금은 surveys_np 데이터를 읽기 전용으로 집계해 보여주는 요약 화면임.
+async function renderDashboardNP(root) {
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>관리자 대시보드 (신제품)</h2>
+      <button class="btn-home-dash" onclick="go('homeNP')" style="margin-left:auto">🏠 Home</button>
+    </div>
+    <div style="padding:20px;text-align:center;color:#718096">데이터 불러오는 중...</div>`;
+  try {
+    let records = cacheGet("dashboardNP");
+    if (!records) {
+      const [dsvSnap, dtlSnap, dglSnap] = await Promise.all([
+        getDocs(query(collection(db,"surveys_np"), where("role","==","sv"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
+        getDocs(query(collection(db,"surveys_np"), where("role","==","tl"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
+        getDocs(query(collection(db,"surveys_np"), where("role","==","gl"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
+      ]);
+      records = [];
+      dsvSnap.forEach(d => records.push({id:d.id,...d.data()}));
+      dtlSnap.forEach(d => records.push({id:d.id,...d.data()}));
+      dglSnap.forEach(d => records.push({id:d.id,...d.data()}));
+      records.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+      cacheSet("dashboardNP", stripImages(records));
+    }
+    buildDashboardNP(root, records);
+  } catch(e) {
+    root.innerHTML += `<p style="padding:20px;color:#E53E3E">오류: ${e.message}</p>`;
+  }
+}
+
+function buildDashboardNP(root, records) {
+  const total = records.length;
+  const hasFirst = records.filter(r => (r.inspType||"최초") === "최초").length;
+  const hasFollowup = records.filter(r => (r.inspType) === "보완").length;
+  const roleLabel = {sv:"SV",tl:"팀장",gl:"그룹장",admin:"관리자"};
+  const rows = records.slice(0, 30).map(r => {
+    const dt = r.createdAt ? new Date(r.createdAt.seconds*1000) : (r.visitDate ? new Date(r.visitDate) : null);
+    const dtStr = dt ? `${dt.getMonth()+1}/${dt.getDate()} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}` : "-";
+    return `<tr>
+      <td>${r.storeName||"-"}</td>
+      <td>${r.writerName||"-"} (${roleLabel[r.role]||r.role||"-"})</td>
+      <td>${r.inspType||"최초"}</td>
+      <td style="color:#718096;font-size:12px">${dtStr}</td>
+    </tr>`;
+  }).join("");
+
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>관리자 대시보드 (신제품)</h2>
+      <button class="btn-home-dash" onclick="go('homeNP')" style="margin-left:auto">🏠 Home</button>
+    </div>
+    <div class="dash-stats">
+      <div class="active-stat"><div class="stat-num">${total}</div><div class="stat-label">전체점검</div></div>
+      <div><div class="stat-num" style="color:#3182CE">${hasFirst}</div><div class="stat-label">최초점검</div></div>
+      <div><div class="stat-num" style="color:#D69E2E">${hasFollowup}</div><div class="stat-label">보완점검</div></div>
+    </div>
+    <div style="padding:8px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0;font-size:12px;color:#718096">
+      최근 90일 · 신제품 현장점검 데이터만 표시 (surveys_np, 기존 신규플랫폼 데이터와 분리)
+    </div>
+    <div class="dash-table-wrap">
+      <div class="table-count">${records.length}건</div>
+      <table class="dash-table">
+        <thead><tr><th>매장명</th><th>작성자</th><th>구분</th><th>일시</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="4" style="text-align:center;padding:20px;color:#718096">데이터 없음 (문항 확정 후 점검 데이터가 쌓이면 표시됩니다)</td></tr>'}</tbody>
+      </table>
+    </div>`;
 }
 
 async function viewRecordDash(docId) {
@@ -3947,7 +4199,7 @@ async function downloadPDF() {
     if (r.finalConfirmed)            status = '<span style="color:#276749;font-weight:700">✅ 최종확인</span>';
     else if (r.tlConfirmed)          status = '<span style="color:#553C9A;font-weight:700">👥 그룹장확인 대기</span>';
     else if (r.followupSvAnswers && followupN===0) status = '<span style="color:#2B6CB0;font-weight:700">📋 팀장확인 대기</span>';
-    else if (r.followupSvAnswers)    status = '<span style="color:#E8B800;font-weight:700">보완중 N '+followupN+'건</span>';
+    else if (r.followupSvAnswers)    status = '<span style="color:#C53030;font-weight:700">보완중 N '+followupN+'건</span>';
     else if (nItems > 0)             status = '<span style="color:#D69E2E;font-weight:700">⏳ 보완필요</span>';
     else                             status = '<span style="color:#276749">이상없음</span>';
     return `<tr>
@@ -3956,7 +4208,7 @@ async function downloadPDF() {
       <td>${r.writerName||""}</td>
       <td>${dt}</td>
       <td>${r.inspType||"최초"}점검</td>
-      <td>${nItems > 0 ? '<span style="color:#E8B800;font-weight:700">N '+nItems+'건</span>' : '<span style="color:#276749">이상없음</span>'}</td>
+      <td>${nItems > 0 ? '<span style="color:#C53030;font-weight:700">N '+nItems+'건</span>' : '<span style="color:#276749">이상없음</span>'}</td>
       <td>${status}</td>
     </tr>`;
   }).join("");
@@ -3970,7 +4222,7 @@ async function downloadPDF() {
   @page { size: A4 landscape; margin: 15mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; font-size: 11px; color: #1A202C; }
-  .header { background: #FDC838; color: white; padding: 14px 20px; border-radius: 8px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .header { background: #E53E3E; color: white; padding: 14px 20px; border-radius: 8px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
   .header-title { font-size: 20px; font-weight: 800; }
   .header-sub { font-size: 12px; opacity: 0.85; }
   .stats { display: flex; gap: 10px; margin-bottom: 14px; }
@@ -3978,7 +4230,7 @@ async function downloadPDF() {
   .stat-num { font-size: 22px; font-weight: 800; }
   .stat-label { font-size: 10px; color: #718096; margin-top: 2px; }
   table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
-  th { background: #FDC838; color: white; padding: 7px 8px; text-align: left; font-size: 11px; }
+  th { background: #E53E3E; color: white; padding: 7px 8px; text-align: left; font-size: 11px; }
   td { padding: 6px 8px; border-bottom: 1px solid #E2E8F0; vertical-align: middle; }
   tr:nth-child(even) td { background: #F7F8FA; }
   .footer { margin-top: 12px; text-align: center; font-size: 10px; color: #718096; }
@@ -4129,7 +4381,7 @@ function goBack() {
   if (prev) { S.screen = prev; render(); }
   else go("home");
 }
-function confirmBack() { if(confirm("작성 중인 내용이 사라집니다. 돌아가시겠습니까?")) go("home"); }
+function confirmBack() { if(confirm("작성 중인 내용이 사라집니다. 돌아가시겠습니까?")) go(S.category === "np" ? "homeNP" : "home"); }
 function nowDTL() {
   const now=new Date(), pad=n=>String(n).padStart(2,"0");
   return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -4144,7 +4396,6 @@ Object.assign(window, {
   execDashTabSearch, setDashTabSearch,
   fnSetTeam, fnSearch, fnViewRecord, fnDownloadExcel,
   setRecStatusFilter, setDateLimitUI, applyAdminSettings,
-  deleteRecord, deleteFollowup, deleteRecordById,
 });
 // 앱 시작 시 세션 복원
 (async () => {
@@ -4164,7 +4415,7 @@ Object.assign(window, {
     } else {
       sessionClear();
       S.role = null; S.answers = {}; S.storeCode = "";
-      go("home");
+      go(S.category === "np" ? "homeNP" : "home");
       return;
     }
   }
@@ -4173,19 +4424,34 @@ Object.assign(window, {
 </script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--red:#FDC838;--red-dark:#E8B800;--btn-text:#2D3748;--bg:#F7F8FA;--border:#E2E8F0;--text:#1A202C;--sub:#718096;--radius:14px}
+:root{--red:#E53E3E;--amber:#D69E0E;--bg:#F7F8FA;--border:#E2E8F0;--text:#1A202C;--sub:#718096;--radius:14px}
 body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
 #app{max-width:480px;margin:0 auto;min-height:100vh}
-.hero{background:linear-gradient(135deg,#E8B800 0%,#FDC838 50%,#FFE07A 100%);padding:60px 24px 40px;text-align:center;color:#2D3748}
+.hero{background:linear-gradient(135deg,#C53030 0%,#E53E3E 50%,#FC8181 100%);padding:60px 24px 40px;text-align:center;color:white}
 .logo-wrap{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:20px}
 .logo-icon{font-size:32px}.logo-text{font-size:18px;font-weight:700}
 .hero-title{font-size:32px;font-weight:800;line-height:1.2;letter-spacing:-1px;margin-bottom:8px}
 .hero-sub{font-size:15px;opacity:.85;letter-spacing:2px}
 .card-section{padding:20px 16px;display:flex;flex-direction:column;gap:12px}
-.btn-primary{width:100%;padding:16px;background:var(--red);color:var(--btn-text);border:none;border-radius:var(--radius);font-size:16px;font-weight:700;cursor:pointer}
+.btn-primary{width:100%;padding:16px;background:var(--red);color:white;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;cursor:pointer}
 .btn-primary:active{opacity:.85}
 .btn-ghost{width:100%;padding:14px;background:white;color:var(--sub);border:1.5px solid var(--border);border-radius:var(--radius);font-size:15px;cursor:pointer}
 .btn-admin{color:#805AD5;border-color:#D6BCFA}
+.hero-np{background:linear-gradient(135deg,#D69E0E 0%,#F6C90E 55%,#FDE68A 100%);padding:60px 24px 40px;text-align:center;color:#3A2E00}
+.hero-np .hero-title{color:#3A2E00}
+.hero-np .hero-sub{opacity:.75}
+.hero-hub{background:white;padding:44px 24px 30px;text-align:center;border-bottom:0.5px solid var(--border)}
+.logo-chip{display:inline-flex;align-items:center;background:#1A202C;border-radius:8px;padding:8px 16px;margin-bottom:16px}
+.btn-primary-np{width:100%;padding:16px;background:var(--amber);color:white;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;cursor:pointer}
+.btn-primary-np:active{opacity:.85}
+.btn-admin-np{color:#805AD5;border-color:#D6BCFA}
+.hub-card{width:100%;background:white;border:1.5px solid var(--border);border-radius:var(--radius);padding:18px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left}
+.hub-card:active{border-color:var(--red)}
+.hub-card.np:active{border-color:var(--amber)}
+.hub-card.disabled{opacity:.5;cursor:not-allowed}
+.hub-card-icon{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0}
+.hub-card-title{font-size:16px;font-weight:700;color:var(--text)}
+.hub-card-sub{font-size:12px;color:var(--sub);margin-top:2px}
 .btn-back{background:none;border:none;font-size:20px;cursor:pointer;padding:4px 8px;color:var(--text)}
 .btn-excel{padding:8px 14px;background:#38A169;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
 .btn-pdf{padding:8px 14px;background:#805AD5;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
@@ -4203,7 +4469,7 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .role-badge{background:var(--red);color:white;display:inline-block;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600}
 .insp-badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:700}
 .badge-first{background:#EBF8FF;color:#2B6CB0}
-.badge-follow{background:#FFF5F5;color:#E8B800}
+.badge-follow{background:#FFF5F5;color:#C53030}
 .badge-sm{font-size:11px;padding:2px 8px}
 .field-label{font-size:14px;font-weight:600;color:var(--sub);display:block}
 .input-field{width:100%;padding:14px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;background:white;outline:none}
@@ -4220,23 +4486,23 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .progress-text{font-size:12px;color:var(--sub);white-space:nowrap}
 .cat-header{font-size:13px;font-weight:700;padding:8px 12px;margin:12px 0 8px;border-radius:6px;background:#F7F8FA}
 .section-divider{font-size:13px;font-weight:800;padding:10px 16px;margin:8px 0;letter-spacing:.3px}
-.divider-n{background:#FFF5F5;color:#E8B800;border-left:4px solid #FDC838}
+.divider-n{background:#FFF5F5;color:#C53030;border-left:4px solid #E53E3E}
 .divider-ok{background:#F0FFF4;color:#276749;border-left:4px solid #38A169}
 .divider-first{background:#EBF8FF;color:#2B6CB0;border-left:4px solid #3182CE}
-.divider-follow{background:#FFF5F5;color:#E8B800;border-left:4px solid #FDC838}
+.divider-follow{background:#FFF5F5;color:#C53030;border-left:4px solid #E53E3E}
 .question-card{background:white;border-radius:var(--radius);padding:16px;margin-bottom:12px;border:1.5px solid var(--border)}
 .question-card.answered{border-color:#C6F6D5}
 .q-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
 .q-num{font-size:11px;font-weight:700;color:white;background:var(--sub);padding:2px 7px;border-radius:10px}
 .q-title{font-size:15px;font-weight:700;flex:1}
-.n-label{font-size:11px;color:#E8B800;font-weight:700;background:#FFF5F5;padding:2px 7px;border-radius:10px}
+.n-label{font-size:11px;color:#C53030;font-weight:700;background:#FFF5F5;padding:2px 7px;border-radius:10px}
 .tag-badge{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600}
 .q-desc{font-size:13px;color:var(--sub);line-height:1.6;margin-bottom:12px}
 .answer-row{display:flex;gap:8px;margin-bottom:12px}
 .ans-btn{flex:1;padding:11px 6px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-weight:600;background:white;cursor:pointer}
 .ans-btn.selected{border-width:2px}
 [id$="-Y"].selected{border-color:#38A169;background:#F0FFF4;color:#276749}
-[id$="-N"].selected{border-color:var(--red);background:#FFF5F5;color:#E8B800}
+[id$="-N"].selected{border-color:var(--red);background:#FFF5F5;color:#C53030}
 [id$="-미취급"].selected{border-color:#718096;background:#EDF2F7;color:#4A5568}
 .ans-na{font-size:12px}
 .image-section{margin-top:4px}
@@ -4246,7 +4512,7 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .remove-img{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);color:white;border:none;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .submit-section{padding:20px 0 40px}
 .submit-warning{background:#FFF5F5;border:1px solid #FEB2B2;border-radius:10px;padding:12px;font-size:13px;color:var(--red);margin-bottom:12px}
-.btn-submit{width:100%;padding:18px;background:var(--red);color:var(--btn-text);border:none;border-radius:var(--radius);font-size:17px;font-weight:800;cursor:pointer}
+.btn-submit{width:100%;padding:18px;background:var(--red);color:white;border:none;border-radius:var(--radius);font-size:17px;font-weight:800;cursor:pointer}
 .btn-submit:disabled{opacity:.6}
 .compare-meta{padding:16px;background:white;border-bottom:1px solid var(--border)}
 .meta-store{font-size:20px;font-weight:800;margin-bottom:4px}
@@ -4263,7 +4529,7 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .cc-role{font-size:11px;color:var(--sub);margin-bottom:4px;font-weight:600}
 .cc-val{font-size:15px;font-weight:800;padding:8px 4px;border-radius:8px}
 .val-y{color:#276749;background:#F0FFF4}
-.val-n{color:#E8B800;background:#FFF5F5}
+.val-n{color:#C53030;background:#FFF5F5}
 .val-na{color:#4A5568;background:#EDF2F7}
 .cc-img{width:100%;max-width:100px;border-radius:6px;margin-top:6px;cursor:pointer}
 .dash-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:16px}
@@ -4279,11 +4545,11 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .badge-ok{display:inline-block;font-size:11px;color:#276749;background:#F0FFF4;padding:2px 7px;border-radius:10px}
 .status-badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px}
 .status-done{color:#276749;background:#F0FFF4;border:1px solid #9AE6B4}
-.status-need{color:#E8B800;background:#FFF5F5;border:1px solid #FEB2B2}
+.status-need{color:#C53030;background:#FFF5F5;border:1px solid #FEB2B2}
 .status-need-more{color:#744210;background:#FEFCBF;border:1px solid #F6E05E}
 .status-followup-done{color:#2B6CB0;background:#EBF8FF;border:1px solid #90CDF4}
 .badge-pend{display:inline-block;font-size:11px;color:#744210;background:#FEFCBF;padding:2px 7px;border-radius:10px}
-.badge-n{display:inline-block;font-size:11px;color:#E8B800;background:#FFF5F5;padding:2px 7px;border-radius:10px}
+.badge-n{display:inline-block;font-size:11px;color:#C53030;background:#FFF5F5;padding:2px 7px;border-radius:10px}
 .search-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
 .search-item{background:white;border:1.5px solid var(--border);border-radius:var(--radius);padding:14px 16px;cursor:pointer;display:flex;flex-direction:column;gap:4px;position:relative}
 .search-item:active{border-color:var(--red)}
@@ -4300,7 +4566,7 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .search-type-btn{flex:1;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-weight:600;background:white;color:var(--sub);cursor:pointer;transition:all .15s}
 .search-type-btn.active{border-color:var(--red);background:#FFF5F5;color:var(--red)}
 .follow-badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px}
-.follow-need{background:#FFF5F5;color:#E8B800;border:1px solid #FEB2B2}
+.follow-need{background:#FFF5F5;color:#C53030;border:1px solid #FEB2B2}
 .follow-done{background:#F0FFF4;color:#276749;border:1px solid #9AE6B4}
 .store-upload-section{margin:0 16px 12px;background:white;border:1.5px solid var(--border);border-radius:var(--radius);padding:14px}
 .store-upload-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -4323,13 +4589,13 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .stat-card:active{transform:scale(0.97)}
 .btn-gl-confirm{width:100%;padding:16px;background:#805AD5;color:white;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;cursor:pointer;margin-bottom:8px}
 .reject-notice{background:#FFF5F5;border:2px solid #FC8181;border-radius:12px;padding:14px;margin-bottom:12px}
-.reject-notice{font-size:15px;font-weight:700;color:#E8B800}
+.reject-notice{font-size:15px;font-weight:700;color:#C53030}
 .reject-reason{font-size:13px;color:#718096;margin-top:6px;font-weight:400}
 .reject-section{margin-top:8px;display:flex;flex-direction:column;gap:8px}
-.btn-tl-reject{width:100%;padding:14px;background:white;color:#E8B800;border:2px solid #FC8181;border-radius:var(--radius);font-size:15px;font-weight:700;cursor:pointer}
-.btn-gl-reject{width:100%;padding:14px;background:white;color:#E8B800;border:2px solid #FC8181;border-radius:var(--radius);font-size:15px;font-weight:700;cursor:pointer}
-.rej-badge{display:inline-block;font-size:11px;font-weight:700;color:#E8B800;background:#FFF5F5;border:1px solid #FC8181;padding:2px 8px;border-radius:10px}
-.rej-reason{font-size:11px;color:#E8B800;margin-top:4px}
+.btn-tl-reject{width:100%;padding:14px;background:white;color:#C53030;border:2px solid #FC8181;border-radius:var(--radius);font-size:15px;font-weight:700;cursor:pointer}
+.btn-gl-reject{width:100%;padding:14px;background:white;color:#C53030;border:2px solid #FC8181;border-radius:var(--radius);font-size:15px;font-weight:700;cursor:pointer}
+.rej-badge{display:inline-block;font-size:11px;font-weight:700;color:#C53030;background:#FFF5F5;border:1px solid #FC8181;padding:2px 8px;border-radius:10px}
+.rej-reason{font-size:11px;color:#C53030;margin-top:4px}
 .rejected-item{border-color:#FC8181!important;background:#FFF5F5!important}
 .btn-tl-confirm{width:100%;padding:16px;background:#3182CE;color:white;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;cursor:pointer;margin-bottom:8px}
 .btn-tl-confirm:disabled{opacity:.6}
@@ -4339,7 +4605,7 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .tl-filter-select:focus{border-color:var(--red)}
 .tl-confirmed-box{background:#EBF8FF;border:2px solid #90CDF4;border-radius:var(--radius);padding:16px;text-align:center;font-size:15px;font-weight:700;color:#2B6CB0;margin-bottom:8px}
 .badge-tl{display:inline-block;font-size:11px;color:#2B6CB0;background:#EBF8FF;padding:2px 7px;border-radius:10px}
-.badge-reject{display:inline-block;font-size:11px;color:#E8B800;background:#FFF5F5;border:1px solid #FC8181;padding:2px 7px;border-radius:10px;font-weight:700}
+.badge-reject{display:inline-block;font-size:11px;color:#C53030;background:#FFF5F5;border:1px solid #FC8181;padding:2px 7px;border-radius:10px;font-weight:700}
 .badge-gl{display:inline-block;font-size:11px;color:#553C9A;background:#FAF5FF;padding:2px 7px;border-radius:10px}
 .badge-final{display:inline-block;font-size:11px;color:#276749;background:#F0FFF4;padding:2px 7px;border-radius:10px}
 .badge-transfer{display:inline-block;font-size:11px;font-weight:700;color:#6B46C1;background:#FAF5FF;border:1px solid #D6BCFA;padding:2px 8px;border-radius:10px}
