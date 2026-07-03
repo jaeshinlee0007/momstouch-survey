@@ -356,7 +356,6 @@ const CAT_COLORS = {
 const NP_FORM = {
   q1Label: "최종적으로 교육이 완료되었는가?",
   q2Label: "교육 참석자명",
-  attendeeRoles: ["점주","매니저","맘스비"],
   photoSlots: [
     { key:"battering", label:"배터링", desc:"믹싱볼 내 배터액+계육" },
     { key:"breading",  label:"브래딩", desc:"인서트 내 브래더+계육" },
@@ -399,7 +398,7 @@ let S = {
   history:[], // 화면 히스토리 스택
   glFollowupIds:[], compareData:null,
   storeObj:null, // 매장 객체 (beef/pizza/spacool 배지용)
-  npAnswers:null, // 신제품 현장점검 전용 답변: {q1, attendees:[{name,role}], photos:{battering,breading,final}, memo}
+  npAnswers:null, // 신제품 현장점검 전용 답변: {q1, attendees:["이름", ...], photos:{battering,breading,final}, memo}
 };
 
 // ── 전역 설정 ─────────────────────────────────────
@@ -482,7 +481,7 @@ function render() {
   root.innerHTML = ""; window.scrollTo(0,0);
   const scr = S.screen;
   // 미로그인 상태에서 보호 화면 접근 시 로그인으로 리디렉션
-  const protectedScreens = ["hub","home","homeNP","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon"];
+  const protectedScreens = ["hub","home","homeNP","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP"];
   if (!_currentUser && protectedScreens.includes(scr)) {
     renderLogin(root);
     return;
@@ -504,6 +503,8 @@ function render() {
   else if (scr==="dashboard")  renderDashboard(root);
   else if (scr==="dashboardNP") renderDashboardNP(root); // async
   else if (scr==="npComingSoon") renderNpComingSoon(root);
+  else if (scr==="recordsNP")   renderRecordsNP(root); // async
+  else if (scr==="recordDetailNP") renderRecordDetailNP(root);
 }
 
 // ── HUB (신규플랫폼/신제품 선택 진입화면) ──────────
@@ -597,7 +598,7 @@ function renderHomeNP(root) {
     </div>
     <div class="card-section">
       <button class="btn-primary-np" onclick="startNpInspection()">📋 점검 시작하기</button>
-      <button class="btn-ghost" onclick="go('npComingSoon')">📂 점검 내역 조회</button>
+      <button class="btn-ghost" onclick="go('recordsNP')">📂 점검 내역 조회</button>
       ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminNP()">📊 관리자 대시보드 (신제품)</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
@@ -629,7 +630,7 @@ function goAdminNP() {
 function startNpInspection() {
   S.category = "np";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.npAnswers = { q1:null, attendees:[{name:"",role:"점주"}], photos:{battering:null,breading:null,final:null}, memo:"" };
+  S.npAnswers = { q1:null, attendees:[""], photos:{battering:null,breading:null,final:null}, memo:"" };
   go("storeSel");
 }
 
@@ -717,20 +718,17 @@ function renderFormNP(root) {
 }
 
 function renderNpRoster() {
-  const rows = S.npAnswers.attendees.map((att, i) => `
+  const rows = S.npAnswers.attendees.map((name, i) => `
     <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
       <input type="text" class="input-field" style="flex:1;margin:0" placeholder="성명 입력"
-        value="${att.name}" oninput="updateNpAttendeeName(${i},this.value)" />
-      <select class="input-field" style="width:104px;margin:0;flex-shrink:0" onchange="updateNpAttendeeRole(${i},this.value)">
-        ${NP_FORM.attendeeRoles.map(r => `<option value="${r}" ${att.role===r?"selected":""}>${r}</option>`).join("")}
-      </select>
+        value="${name}" oninput="updateNpAttendeeName(${i},this.value)" />
       ${S.npAnswers.attendees.length > 1 ? `<button onclick="removeNpAttendee(${i})" style="flex-shrink:0;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:white;color:var(--red);cursor:pointer">✕</button>` : ""}
     </div>`).join("");
   return `${rows}<button class="btn-ghost" onclick="addNpAttendee()" style="margin-top:2px">+ 참석자 추가</button>`;
 }
 
 function addNpAttendee() {
-  S.npAnswers.attendees.push({name:"", role:"점주"});
+  S.npAnswers.attendees.push("");
   const wrap = document.getElementById("npRosterWrap");
   if (wrap) wrap.innerHTML = renderNpRoster();
 }
@@ -743,11 +741,7 @@ function removeNpAttendee(idx) {
 }
 
 function updateNpAttendeeName(idx, val) {
-  if (S.npAnswers.attendees[idx]) S.npAnswers.attendees[idx].name = val;
-}
-
-function updateNpAttendeeRole(idx, val) {
-  if (S.npAnswers.attendees[idx]) S.npAnswers.attendees[idx].role = val;
+  S.npAnswers.attendees[idx] = val;
 }
 
 function updateNpMemo(val) {
@@ -798,7 +792,7 @@ async function submitFormNP() {
 
   if (a.q1 !== "Y" && a.q1 !== "N") { showWarn("NP.Q1 (교육 완료 여부)를 선택해주세요."); return; }
 
-  const validAttendees = a.attendees.filter(x => x.name && x.name.trim());
+  const validAttendees = a.attendees.map(x => (x||"").trim()).filter(x => x);
   if (validAttendees.length === 0) { showWarn("교육 참석자를 최소 1명 입력해주세요."); return; }
 
   if (_npPhotoRequired) {
@@ -827,6 +821,7 @@ async function submitFormNP() {
 
     sessionClear();
     cacheInvalidate("dashboardNP");
+    cacheInvalidate("recordsNP");
     S.history = [];
     alert("✅ 점검이 제출되었습니다.");
     go("homeNP");
@@ -1366,7 +1361,7 @@ function renderInfo(root) {
 function startForm() {
   S.visitDate = document.getElementById("visitDate").value;
   if (S.category === "np") {
-    S.npAnswers = { q1:null, attendees:[{name:"",role:"점주"}], photos:{battering:null,breading:null,final:null}, memo:"" };
+    S.npAnswers = { q1:null, attendees:[""], photos:{battering:null,breading:null,final:null}, memo:"" };
   } else {
     S.answers = {};
   }
@@ -3147,6 +3142,7 @@ const _cache = {
   records:   { data: null, ts: 0, ttl: 480 }, // 8분
   followup:  { data: null, ts: 0, ttl: 900 }, // 15분
   dashboardNP: { data: null, ts: 0, ttl: 600 }, // 10분 (신제품 현장점검, surveys_np 별도 컬렉션)
+  recordsNP:   { data: null, ts: 0, ttl: 480 }, // 8분
 };
 // 방법3: 점검결과 문서 ID 기반 캐시 (세션 내 중복 읽기 방지)
 const _compareCache = new Map();
@@ -4378,7 +4374,7 @@ async function downloadExcelNP() {
       s.code, s.name, s.team||"",
       rec?.npAnswers?.q1 || "미점검",
       rec?.npAnswers?.attendees?.length ?? "",
-      (rec?.npAnswers?.attendees||[]).map(a=>`${a.name}(${a.role})`).join(", "),
+      (rec?.npAnswers?.attendees||[]).join(", "),
       rec?.writerName || "",
       roleLabel[rec?.role] || rec?.role || "",
       dt ? dt.toLocaleString("ko-KR") : "",
@@ -4390,6 +4386,165 @@ async function downloadExcelNP() {
   const ws = XLSX.utils.aoa_to_sheet(rows);
   XLSX.utils.book_append_sheet(wb, ws, "신제품현장점검");
   XLSX.writeFile(wb, `신제품현장점검_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+// ── 점검 내역 조회 (신제품 현장점검) ────────────────
+// 작업지시서 1항: AC/TL/GL/ADMIN 별로 보이는 매장이 다름 (기존 점검내역조회와 동일한 스코프 규칙)
+async function renderRecordsNP(root) {
+  const autoDesc = _authRole==="sv" ? `${_authName} 담당 점포`
+                 : _authRole==="tl" ? `${_authName} 담당팀`
+                 : "전체";
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="go('homeNP')">←</button>
+      <h2>점검 내역 조회 (신제품)</h2>
+    </div>
+    <div class="card-section">
+      <div style="background:#FFFBEB;border:1px solid #F6AD55;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#744210;">
+        📋 <b>${autoDesc}</b> 점검 내역을 표시합니다
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:2px">
+        <input id="recSearchNP" class="input-field" type="text" placeholder="매장명으로 검색" style="flex:1;margin:0;width:auto"/>
+        <button onclick="fetchRecordsNP()" style="flex-shrink:0;padding:12px 20px;background:var(--amber);color:white;border:none;border-radius:var(--radius);font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap">검색</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px">
+        <button id="rnf_all" onclick="setRecNpFilter('')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid var(--amber);background:var(--amber);color:white;cursor:pointer;font-weight:600">전체</button>
+        <button id="rnf_y" onclick="setRecNpFilter('Y')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #9AE6B4;background:white;color:#276749;cursor:pointer">완료</button>
+        <button id="rnf_n" onclick="setRecNpFilter('N')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FEB2B2;background:white;color:#C53030;cursor:pointer">추가점검필요</button>
+      </div>
+      <div id="recListNP"></div>
+    </div>`;
+  window._recNpFilter = "";
+  fetchRecordsNP();
+}
+
+async function fetchRecordsNP() {
+  const searchEl = document.getElementById("recSearchNP");
+  const keyword = searchEl ? searchEl.value.trim() : "";
+  const recList = document.getElementById("recListNP");
+  if (!recList) return;
+  recList.innerHTML = `<p class="loading-text">불러오는 중...</p>`;
+  try {
+    let records = cacheGet("recordsNP");
+    if (!records) {
+      const snap = await getDocs(query(collection(db,"surveys_np"), orderBy("createdAt","desc")));
+      records = [];
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("recordsNP", records);
+    }
+    window._recordsNpAll = records; // 상세화면 재조회 없이 참조하기 위한 캐시
+
+    // 역할별 자동 필터 (AC/TL/GL/ADMIN 별 점포 노출)
+    if (_authRole === "sv" && _authName) {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const myCodes = new Set(activeStores.filter(s => s.sv === _authName).map(s => s.code));
+      records = records.filter(r => myCodes.has(r.storeCode));
+    } else if (_authRole === "tl" && _authName) {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
+      records = records.filter(r => teamCodes.has(r.storeCode));
+    }
+    // GL/admin: 전체 표시 (필터 없음)
+
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+
+    const filter = window._recNpFilter || "";
+    if (filter === "Y") records = records.filter(r => r.npAnswers?.q1 === "Y");
+    if (filter === "N") records = records.filter(r => r.npAnswers?.q1 === "N");
+
+    // 필터 버튼 활성화 스타일
+    const activeStyle = { all:"var(--amber)", y:"#9AE6B4", n:"#FEB2B2" };
+    const activeText  = { all:"white", y:"#276749", n:"#C53030" };
+    ["all","y","n"].forEach(k => {
+      const btn = document.getElementById("rnf_"+k);
+      if (!btn) return;
+      const map = {all:"", y:"Y", n:"N"};
+      const isActive = map[k] === filter;
+      btn.style.background = isActive ? activeStyle[k] : "white";
+      btn.style.color = isActive ? activeText[k] : (k==="all"?"#4A5568":activeText[k]);
+      btn.style.fontWeight = isActive ? "600" : "400";
+    });
+
+    if (records.length === 0) { recList.innerHTML = `<p class="error-text">검색 결과가 없습니다.</p>`; return; }
+    let html = `<div class="store-count" style="padding:8px 2px">${records.length}건</div><div class="search-list">`;
+    records.forEach(r => {
+      const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
+      const q1 = r.npAnswers?.q1;
+      const statusBadge = q1 === "Y" ? `<span class="insp-badge badge-first badge-sm">완료</span>`
+        : q1 === "N" ? `<span class="insp-badge badge-follow badge-sm">추가점검필요</span>`
+        : `<span class="insp-badge badge-sm">-</span>`;
+      const cnt = r.npAnswers?.attendees?.length ?? 0;
+      const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
+      html += `<div class="search-item" onclick="viewRecordNP('${r.id}')">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span class="si-store">${r.storeName}</span>
+          ${statusBadge}
+        </div>
+        <div class="si-meta">${roleLabel}: ${r.writerName} · 참석 ${cnt}명 · ${dt}</div>
+      </div>`;
+    });
+    recList.innerHTML = html + `</div>`;
+  } catch(e) {
+    recList.innerHTML = `<p class="error-text">오류: ${e.message}</p>`;
+  }
+}
+
+function setRecNpFilter(val) {
+  window._recNpFilter = val;
+  fetchRecordsNP();
+}
+
+async function viewRecordNP(docId) {
+  let rec = (window._recordsNpAll || []).find(r => r.id === docId);
+  if (!rec) {
+    try {
+      const snap = await getDoc(doc(db, "surveys_np", docId));
+      if (snap.exists()) rec = { id: docId, ...snap.data() };
+    } catch(e) { /* ignore, handled below */ }
+  }
+  if (!rec) { alert("데이터를 찾을 수 없습니다."); return; }
+  window._recordDetailNP = rec;
+  go("recordDetailNP");
+}
+
+function renderRecordDetailNP(root) {
+  const r = window._recordDetailNP;
+  if (!r) { go("recordsNP"); return; }
+  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
+  const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
+  const attendeesHtml = (r.npAnswers?.attendees||[]).length
+    ? (r.npAnswers.attendees||[]).map(name => `<div>${name}</div>`).join("")
+    : "-";
+  const photosHtml = NP_FORM.photoSlots.map(slot => {
+    const p = r.npAnswers?.photos?.[slot.key];
+    return `<div style="margin-bottom:12px">
+      <div style="font-size:12px;color:var(--sub);margin-bottom:4px">${slot.label}</div>
+      ${p?.image
+        ? `<img src="${p.image}" style="width:100%;border-radius:10px;cursor:pointer" onclick="openImageModal('${p.image}')">`
+        : `<div style="font-size:12px;color:#A0AEC0">미첨부</div>`}
+    </div>`;
+  }).join("");
+
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>점검 상세 (신제품)</h2>
+    </div>
+    <div class="card-section">
+      <label class="field-label">매장</label>
+      <div class="info-box">${r.storeName} <span style="color:#718096;font-size:13px">${r.storeCode||""} · ${r.storeTeam||""}</span></div>
+      <label class="field-label">작성자</label>
+      <div class="info-box">${r.writerName||"-"} (${roleLabel})</div>
+      <label class="field-label">점검일시</label>
+      <div class="info-box">${dt}</div>
+      <label class="field-label">NP.Q1 교육 완료 여부</label>
+      <div class="info-box">${r.npAnswers?.q1 === "Y" ? "✅ Y (완료)" : r.npAnswers?.q1 === "N" ? "❌ N (추가점검필요)" : "-"}</div>
+      <label class="field-label">교육 참석자</label>
+      <div class="info-box">${attendeesHtml}</div>
+      <label class="field-label" style="margin-top:4px">사진</label>
+      ${photosHtml}
+      ${r.npAnswers?.memo ? `<label class="field-label">메모</label><div class="info-box">${r.npAnswers.memo}</div>` : ""}
+    </div>`;
 }
 
 async function viewRecordDash(docId) {
@@ -4658,7 +4813,8 @@ Object.assign(window, {
   fnSetTeam, fnSearch, fnViewRecord, fnDownloadExcel,
   setRecStatusFilter, setDateLimitUI, applyAdminSettings,
   startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhotoRequired,
-  setNpQ1, addNpAttendee, removeNpAttendee, updateNpAttendeeName, updateNpAttendeeRole, updateNpMemo, handleNpImage, removeNpImage, submitFormNP, downloadExcelNP,
+  setNpQ1, addNpAttendee, removeNpAttendee, updateNpAttendeeName, updateNpMemo, handleNpImage, removeNpImage, submitFormNP, downloadExcelNP,
+  fetchRecordsNP, setRecNpFilter, viewRecordNP,
 });
 // 앱 시작 시 세션 복원
 (async () => {
