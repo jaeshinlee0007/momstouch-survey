@@ -350,10 +350,20 @@ const CAT_COLORS = {
   "신제품":"#D69E0E"
 };
 
-// ── 신제품 현장점검 문항 (미확정 - 문항 확정 후 채워 넣으면 즉시 반영됨) ──
-// SV/TL/GL 공통 문항(역할 구분 없음). 구조는 SV_QUESTIONS와 동일하게 맞출 것.
-// 예: { id:1, category:"신제품", title:"...", desc:"...", tag:null }
-const NP_QUESTIONS = [];
+// ── 신제품 현장점검(갓빠삭치킨 교육점검) 문항 구성 확정본 ──────────
+// SV/TL/GL 공통 폼(역할 구분 없음). 일반 문항형(SV_QUESTIONS)과 구조가 달라
+// 전용 렌더러(renderFormNP)에서 사용함.
+const NP_FORM = {
+  q1Label: "최종적으로 교육이 완료되었는가?",
+  q2Label: "교육 참석자명",
+  attendeeRoles: ["점주","매니저","맘스비"],
+  photoSlots: [
+    { key:"battering", label:"배터링", desc:"믹싱볼 내 배터액+계육" },
+    { key:"breading",  label:"브래딩", desc:"인서트 내 브래더+계육" },
+    { key:"final",     label:"완조리", desc:"품질" },
+  ],
+  memoMaxLen: 100,
+};
 
 // 맘스터치 BI 로고 (흰색/#FDC838 조합, 원본 viewBox 유지 후 CSS로 크기 제어)
 const LOGO_SVG = `<svg viewBox="0 0 299 35" xmlns="http://www.w3.org/2000/svg" style="height:20px;width:auto;display:block">
@@ -368,11 +378,8 @@ const LOGO_SVG = `<svg viewBox="0 0 299 35" xmlns="http://www.w3.org/2000/svg" s
 <path d="M295.765 5.03616C293.986 5.03616 292.531 6.49225 292.531 8.27191V16.426H280.337V8.27191C280.337 6.49225 278.881 5.03616 277.102 5.03616C275.323 5.03616 273.868 6.49225 273.868 8.27191V30.9869C273.868 32.7665 275.323 34.2226 277.102 34.2226C278.881 34.2226 280.337 32.7665 280.337 30.9869V22.8975H292.531V30.9869C292.531 32.7665 293.986 34.2226 295.765 34.2226C297.544 34.2226 299 32.7665 299 30.9869V8.27191C299 6.45989 297.544 5.03616 295.765 5.03616Z" fill="#FDC838"/>
 <path d="M105.381 14.614C105.834 14.8405 106.319 14.9699 106.804 14.9699C107.969 14.9699 109.036 14.3228 109.554 13.2873L114.05 4.51844C114.826 2.99764 114.244 1.1209 112.723 0.344322C111.203 -0.432257 109.327 0.150178 108.551 1.67098L104.055 10.4399C103.279 11.9607 103.861 13.8374 105.381 14.614Z" fill="#FDC838"/>
 </svg>`;
-// 현재 진행 중인 점검(S.category/S.role)에 맞는 문항 세트를 반환
-// - category === "np": 역할 구분 없이 NP_QUESTIONS 공통 사용
-// - 그 외(default): 기존과 동일하게 GL/SV 문항 세트 분기
+// 현재 진행 중인 점검(S.role)에 맞는 문항 세트를 반환 (신규플랫폼 전용, 신제품은 renderFormNP가 별도 처리)
 function currentQuestionSet() {
-  if (S.category === "np") return NP_QUESTIONS;
   return S.role === "gl" ? GL_QUESTIONS : SV_QUESTIONS;
 }
 // 현재 진행 중인 점검이 저장될 Firestore 컬렉션명
@@ -392,6 +399,7 @@ let S = {
   history:[], // 화면 히스토리 스택
   glFollowupIds:[], compareData:null,
   storeObj:null, // 매장 객체 (beef/pizza/spacool 배지용)
+  npAnswers:null, // 신제품 현장점검 전용 답변: {q1, attendees:[{name,role}], photos:{battering,breading,final}, memo}
 };
 
 // ── 전역 설정 ─────────────────────────────────────
@@ -403,8 +411,8 @@ let _photoSettingsLoaded = false;
 // 신제품 현장점검 설정 (settings/npEnabled, settings/npPhotoRequired)
 let _npEnabled = false;
 let _npEnabledLoaded = false;
-let _npPhotoSettings = {}; // { NP_Q1: true, ... } true=사진필수
-let _npPhotoSettingsLoaded = false;
+let _npPhotoRequired = true; // 사진 3장(배터링/브래딩/완조리) 일괄 필수 여부
+let _npPhotoRequiredLoaded = false;
 
 async function loadNpEnabled() {
   if (_npEnabledLoaded) return;
@@ -417,18 +425,15 @@ async function loadNpEnabled() {
   _npEnabledLoaded = true;
 }
 
-async function loadNpPhotoSettings() {
-  if (_npPhotoSettingsLoaded) return;
+async function loadNpPhotoRequired() {
+  if (_npPhotoRequiredLoaded) return;
   try {
     const snap = await getDoc(doc(db, "settings", "npPhotoRequired"));
-    _npPhotoSettings = snap.exists() ? snap.data() : {};
+    _npPhotoRequired = snap.exists() ? (snap.data().value !== false) : true;
   } catch(e) {
-    _npPhotoSettings = {};
+    _npPhotoRequired = true;
   }
-  NP_QUESTIONS.forEach(q => {
-    if (!(`NP_Q${q.id}` in _npPhotoSettings)) _npPhotoSettings[`NP_Q${q.id}`] = true;
-  });
-  _npPhotoSettingsLoaded = true;
+  _npPhotoRequiredLoaded = true;
 }
 
 // 점검일 제한 설정: "none"|"0"|"1"|"3"|"7" (0=당일, 1/3/7=N일전까지)
@@ -492,7 +497,7 @@ function render() {
   else if (scr==="role")       renderRole(root);
   else if (scr==="storeSel")   renderStoreSel(root);
   else if (scr==="info")       renderInfo(root);
-  else if (scr==="form")       renderForm(root);
+  else if (scr==="form")       (S.category==="np" ? renderFormNP(root) : renderForm(root));
   else if (scr==="compare")    renderCompare(root);
   else if (scr==="followupNeeded") renderFollowupNeeded(root);
   else if (scr==="records")    renderRecords(root);
@@ -582,19 +587,17 @@ function renderHome(root) {
 function renderHomeNP(root) {
   const roleLabel = _authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":_authRole==="admin"?"관리자":"";
   const canDash = ["tl","gl","admin"].includes(_authRole);
-  const ready = NP_QUESTIONS.length > 0;
 
   root.innerHTML = `
     <div class="hero-np" style="padding-bottom:16px;position:relative">
       <button onclick="go('hub')" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
       <h1 class="hero-title">신제품<br>현장점검</h1>
-      <p class="hero-sub">${ready ? "" : "문항 준비중"}</p>
+      <p class="hero-sub">갓빠삭치킨 교육점검</p>
     </div>
     <div class="card-section">
-      <button class="btn-primary-np" onclick="${ready ? "startNpInspection()" : "go('npComingSoon')"}">📋 점검 시작하기</button>
+      <button class="btn-primary-np" onclick="startNpInspection()">📋 점검 시작하기</button>
       <button class="btn-ghost" onclick="go('npComingSoon')">📂 점검 내역 조회</button>
-      ${["tl","gl","admin"].includes(_authRole) ? `<button class="btn-ghost" onclick="go('npComingSoon')" style="color:#744210;border-color:#F6AD55;background:#FFFBEB">⚠️ 보완점검 필요점</button>` : ""}
       ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminNP()">📊 관리자 대시보드 (신제품)</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
@@ -622,14 +625,15 @@ function goAdminNP() {
   go("dashboardNP");
 }
 
-// 신제품 현장점검 시작: category 플래그만 세팅하고 기존 최초/보완 선택 화면(inspType)을 그대로 재사용
+// 신제품 현장점검 시작: 최초/보완 구분 없음 → inspType 화면 건너뛰고 바로 매장선택으로 이동
 function startNpInspection() {
   S.category = "np";
-  S.role = null; S.inspType = null; S.answers = {};
-  go("inspType");
+  S.role = _authRole; S.inspType = "최초"; S.answers = {};
+  S.npAnswers = { q1:null, attendees:[{name:"",role:"점주"}], photos:{battering:null,breading:null,final:null}, memo:"" };
+  go("storeSel");
 }
 
-// 신제품 문항 확정 전 안내 화면 (문항 업로드 즉시 실제 점검 플로우로 교체될 자리)
+// 점검내역조회 화면 준비중 안내 (점검시작하기/대시보드는 이미 정상 동작)
 function renderNpComingSoon(root) {
   root.innerHTML = `
     <div class="page-header">
@@ -638,10 +642,197 @@ function renderNpComingSoon(root) {
     </div>
     <div class="card-section" style="text-align:center;padding-top:40px">
       <div style="font-size:40px;margin-bottom:12px">🛠️</div>
-      <div style="font-size:15px;color:var(--text);font-weight:500;margin-bottom:6px">점검 문항 준비중입니다</div>
-      <div style="font-size:13px;color:var(--sub);line-height:1.6">문항이 확정되면 신규플랫폼 현장점검과<br>동일한 방식으로 바로 이용하실 수 있습니다.</div>
+      <div style="font-size:15px;color:var(--text);font-weight:500;margin-bottom:6px">점검 내역 조회 화면 준비중입니다</div>
+      <div style="font-size:13px;color:var(--sub);line-height:1.6">점검 시작하기 / 관리자 대시보드는<br>정상적으로 이용하실 수 있습니다.</div>
       <button class="btn-ghost" onclick="go('homeNP')" style="margin-top:24px">돌아가기</button>
     </div>`;
+}
+
+// ── FORM (신제품 현장점검 · 갓빠삭치킨 교육점검 전용) ──────────
+function renderFormNP(root) {
+  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
+  const a = S.npAnswers;
+
+  const photoBlocks = NP_FORM.photoSlots.map(slot => {
+    const photo = a.photos[slot.key];
+    return `
+      <div style="margin-bottom:14px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">${slot.label} <span style="font-weight:400;color:var(--sub);font-size:12px">(${slot.desc})</span></div>
+        <label class="img-upload-btn" for="npimg-${slot.key}">📷 사진 첨부
+          <input type="file" id="npimg-${slot.key}" accept="image/*" style="display:none" onchange="handleNpImage('${slot.key}',this)">
+        </label>
+        <div id="npimg-preview-${slot.key}">${photo?.image ? `
+          <div class="preview-container">
+            <img src="${photo.image}" class="preview-img" onclick="openImageModal('${photo.image}')">
+            <button class="remove-img" onclick="removeNpImage('${slot.key}')">✕</button>
+          </div>` : ""}</div>
+      </div>`;
+  }).join("");
+
+  root.innerHTML = `
+    <div class="sticky-header" style="display:flex;align-items:center;gap:8px;padding:16px;background:white;border-bottom:1px solid var(--border)">
+      <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
+      <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
+        <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
+        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">신제품 현장점검 · ${roleLabel}</span>
+      </div>
+    </div>
+    <div class="form-body">
+      <div class="question-card">
+        <span class="q-title">NP.Q1. ${NP_FORM.q1Label}</span>
+        <div class="answer-row" style="margin-top:10px">
+          <button class="ans-btn ${a.q1==='Y'?'selected':''}" id="ans-npq1-Y" onclick="setNpQ1('Y')">✅ Y</button>
+          <button class="ans-btn ${a.q1==='N'?'selected':''}" id="ans-npq1-N" onclick="setNpQ1('N')">❌ N</button>
+        </div>
+        ${a.q1==='N' ? `<div class="notice-box" style="margin-top:10px">⚠️ 추가점검 필요로 표시됩니다. (제출 자체는 정상 진행)</div>` : ""}
+      </div>
+
+      <div class="question-card">
+        <span class="q-title">NP.Q2. ${NP_FORM.q2Label}</span>
+        <div id="npRosterWrap" style="margin-top:10px">${renderNpRoster()}</div>
+      </div>
+
+      <div class="question-card">
+        <span class="q-title">사진 첨부 ${_npPhotoRequired ? "(필수)" : "(선택)"}</span>
+        <div style="margin-top:10px">${photoBlocks}</div>
+      </div>
+
+      <div class="question-card">
+        <span class="q-title">메모 (선택)</span>
+        <div class="memo-wrap" style="margin-top:10px">
+          <input type="text" id="npMemo" class="memo-input"
+            placeholder="점검 간 특이사항 (선택, 최대 ${NP_FORM.memoMaxLen}자)"
+            maxlength="${NP_FORM.memoMaxLen}"
+            oninput="updateNpMemo(this.value)"
+            value="${a.memo || ""}" />
+          <span class="memo-counter" id="npMemoCnt">${(a.memo||"").length}/${NP_FORM.memoMaxLen}</span>
+        </div>
+      </div>
+
+      <div class="submit-section">
+        <div id="submitWarning" class="submit-warning" style="display:none">⚠️ 필수 항목을 확인해주세요.</div>
+        <button class="btn-submit" onclick="submitFormNP()">점검 제출하기</button>
+      </div>
+    </div>`;
+}
+
+function renderNpRoster() {
+  const rows = S.npAnswers.attendees.map((att, i) => `
+    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+      <input type="text" class="input-field" style="flex:1;margin:0" placeholder="성명 입력"
+        value="${att.name}" oninput="updateNpAttendeeName(${i},this.value)" />
+      <select class="input-field" style="width:104px;margin:0;flex-shrink:0" onchange="updateNpAttendeeRole(${i},this.value)">
+        ${NP_FORM.attendeeRoles.map(r => `<option value="${r}" ${att.role===r?"selected":""}>${r}</option>`).join("")}
+      </select>
+      ${S.npAnswers.attendees.length > 1 ? `<button onclick="removeNpAttendee(${i})" style="flex-shrink:0;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:white;color:var(--red);cursor:pointer">✕</button>` : ""}
+    </div>`).join("");
+  return `${rows}<button class="btn-ghost" onclick="addNpAttendee()" style="margin-top:2px">+ 참석자 추가</button>`;
+}
+
+function addNpAttendee() {
+  S.npAnswers.attendees.push({name:"", role:"점주"});
+  const wrap = document.getElementById("npRosterWrap");
+  if (wrap) wrap.innerHTML = renderNpRoster();
+}
+
+function removeNpAttendee(idx) {
+  if (S.npAnswers.attendees.length <= 1) return; // 최소 1명 유지
+  S.npAnswers.attendees.splice(idx, 1);
+  const wrap = document.getElementById("npRosterWrap");
+  if (wrap) wrap.innerHTML = renderNpRoster();
+}
+
+function updateNpAttendeeName(idx, val) {
+  if (S.npAnswers.attendees[idx]) S.npAnswers.attendees[idx].name = val;
+}
+
+function updateNpAttendeeRole(idx, val) {
+  if (S.npAnswers.attendees[idx]) S.npAnswers.attendees[idx].role = val;
+}
+
+function updateNpMemo(val) {
+  S.npAnswers.memo = val;
+  const cnt = document.getElementById("npMemoCnt");
+  if (cnt) cnt.textContent = `${val.length}/${NP_FORM.memoMaxLen}`;
+}
+
+function setNpQ1(val) {
+  S.npAnswers.q1 = val;
+  sessionSave();
+  // N 선택 시 안내 문구 표시 위해 폼 재렌더 (상태는 S.npAnswers에 보존되어 손실 없음)
+  renderFormNP(document.getElementById("app"));
+}
+
+async function handleNpImage(slotKey, input) {
+  const file = input.files[0]; if (!file) return;
+  if (file.size > 20 * 1024 * 1024) {
+    alert("파일 크기가 너무 큽니다. (20MB 이하만 가능)\n더 낮은 화질로 촬영하거나 갤러리에서 다른 사진을 선택해주세요.");
+    input.value = "";
+    return;
+  }
+  const compressed = await compressImage(file, 400, 0.35);
+  const path = `inspections_np/${S.storeCode}/${Date.now()}_${slotKey}.jpg`;
+  const { ok, url } = await uploadImageToStorage(compressed, path);
+  S.npAnswers.photos[slotKey] = { image: ok ? url : compressed };
+  sessionSave();
+  const preview = document.getElementById(`npimg-preview-${slotKey}`);
+  if (preview) preview.innerHTML = `
+    <div class="preview-container">
+      <img src="${compressed}" class="preview-img" onclick="openImageModal('${compressed}')">
+      <button class="remove-img" onclick="removeNpImage('${slotKey}')">✕</button>
+    </div>`;
+}
+
+function removeNpImage(slotKey) {
+  S.npAnswers.photos[slotKey] = null;
+  const p = document.getElementById(`npimg-preview-${slotKey}`); if (p) p.innerHTML = "";
+  const i = document.getElementById(`npimg-${slotKey}`); if (i) i.value = "";
+}
+
+async function submitFormNP() {
+  const a = S.npAnswers;
+  const warnEl = document.getElementById("submitWarning");
+  const showWarn = (msg) => { if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; } else alert(msg); };
+
+  if (!_npPhotoRequiredLoaded) await loadNpPhotoRequired();
+
+  if (a.q1 !== "Y" && a.q1 !== "N") { showWarn("NP.Q1 (교육 완료 여부)를 선택해주세요."); return; }
+
+  const validAttendees = a.attendees.filter(x => x.name && x.name.trim());
+  if (validAttendees.length === 0) { showWarn("교육 참석자를 최소 1명 입력해주세요."); return; }
+
+  if (_npPhotoRequired) {
+    const missing = NP_FORM.photoSlots.filter(s => !a.photos[s.key]?.image);
+    if (missing.length > 0) { showWarn(`사진 첨부가 필요합니다: ${missing.map(s=>s.label).join(", ")}`); return; }
+  }
+
+  if (warnEl) warnEl.style.display = "none";
+
+  try {
+    const payload = {
+      storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
+      writerName: S.writerName, role: S.role,
+      inspType: "최초", // 신제품 현장점검은 최초/보완 구분 없음 (작업지시서 기준)
+      visitDate: S.visitDate,
+      npAnswers: {
+        q1: a.q1,
+        attendees: validAttendees,
+        photos: a.photos,
+        memo: (a.memo || "").slice(0, NP_FORM.memoMaxLen),
+      },
+      needsFollowup: a.q1 === "N", // 완료 미판정 → 대시보드에서 "추가점검 필요"로 표시
+      createdAt: new Date(),
+    };
+    await addDoc(collection(db, "surveys_np"), payload);
+
+    sessionClear();
+    cacheInvalidate("dashboardNP");
+    S.history = [];
+    alert("✅ 점검이 제출되었습니다.");
+    go("homeNP");
+  } catch(e) {
+    alert("제출 중 오류가 발생했습니다: " + e.message);
+  }
 }
 
 // ── INSP TYPE ──────────────────────────────────────
@@ -744,7 +935,23 @@ async function searchStores() {
   const activeStores = await getActiveStoreData();
 
   let matched = [];
-  if (S.role === "sv") {
+  if (S.category === "np") {
+    // 신제품 현장점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출
+    if (S.role === "sv") {
+      // 본인 담당 매장에서 소속 TL을 역으로 찾아 그 TL 팀 전체로 확장
+      const myStore = activeStores.find(s => s.sv === name);
+      const teamTl = myStore ? myStore.tl : null;
+      matched = teamTl ? activeStores.filter(s => s.tl === teamTl) : activeStores.filter(s => s.sv === name);
+    } else if (S.role === "tl") {
+      const svStores = activeStores.filter(s => s.sv === name);
+      const tlStores = activeStores.filter(s => s.tl === name);
+      const codeSet  = new Set(svStores.map(s => s.code));
+      matched = [...svStores, ...tlStores.filter(s => !codeSet.has(s.code))];
+    } else {
+      // GL/admin: 전체 매장
+      matched = activeStores.slice();
+    }
+  } else if (S.role === "sv") {
     // SV: 본인 담당 점포만
     matched = activeStores.filter(s => s.sv === name);
   } else if (S.role === "tl") {
@@ -1158,7 +1365,12 @@ function renderInfo(root) {
 
 function startForm() {
   S.visitDate = document.getElementById("visitDate").value;
-  S.answers = {}; go("form");
+  if (S.category === "np") {
+    S.npAnswers = { q1:null, attendees:[{name:"",role:"점주"}], photos:{battering:null,breading:null,final:null}, memo:"" };
+  } else {
+    S.answers = {};
+  }
+  go("form");
 }
 
 // ── FORM ───────────────────────────────────────────
@@ -1581,7 +1793,6 @@ async function submitForm() {
   // photoSettings 미로드 시 재시도 (로그인 후 로드 보장)
   if (!_photoSettingsLoaded) await loadPhotoSettings();
   if (!_dateLimitLoaded) await loadDateLimitSetting();
-  if (S.category === "np" && !_npPhotoSettingsLoaded) await loadNpPhotoSettings();
   // 디버그: 현재 photoSettings 상태 확인
   console.log("[submitForm] _photoSettingsLoaded:", _photoSettingsLoaded);
   console.log("[submitForm] _photoSettings:", JSON.stringify(_photoSettings));
@@ -2423,8 +2634,8 @@ async function renderPhotoSetting(root) {
   _dateLimitUIValue = _dateLimitSetting;
   _npEnabledLoaded = false;
   await loadNpEnabled();
-  _npPhotoSettingsLoaded = false;
-  await loadNpPhotoSettings();
+  _npPhotoRequiredLoaded = false;
+  await loadNpPhotoRequired();
 
   const svItems = [
     {id:1,  title:"KIOSK 비프 품절"},
@@ -2467,22 +2678,6 @@ async function renderPhotoSetting(root) {
       <div id="toggle_wrap_${key}"
         onclick="togglePhoto('${key}')"
         style="width:44px;height:24px;border-radius:12px;background:${isOn?"#E53E3E":"#CBD5E0"};
-               position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
-        <div id="toggle_thumb_${key}"
-          style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
-                 top:3px;left:${isOn?"23px":"3px"};transition:left .2s"></div>
-      </div>
-    </div>`;
-  };
-
-  const makeNpToggle = (key, label) => {
-    const isOn = _npPhotoSettings[key] !== false;
-    return `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:14px">${label}</span>
-      <div id="toggle_wrap_${key}"
-        onclick="toggleNpPhoto('${key}')"
-        style="width:44px;height:24px;border-radius:12px;background:${isOn?"#D69E0E":"#CBD5E0"};
                position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
         <div id="toggle_thumb_${key}"
           style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
@@ -2559,11 +2754,19 @@ async function renderPhotoSetting(root) {
       </div>
       <div style="font-size:12px;color:#718096;margin:6px 0 12px">OFF 시 허브 화면의 신제품 현장점검 카드가 비활성 처리됩니다.</div>
 
-      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:8px;margin-bottom:4px">신제품 문항별 사진 필수 첨부</div>
-      ${NP_QUESTIONS.length === 0 ? `
-        <div style="background:#FFFBEB;border:1px solid #F6AD55;border-radius:8px;padding:10px 12px;font-size:12px;color:#744210">
-          아직 신제품 점검 문항이 등록되지 않았습니다. 문항이 확정되어 NP_QUESTIONS에 반영되면 이 자리에 문항별 토글이 자동으로 생성됩니다.
-        </div>` : NP_QUESTIONS.map(q => makeNpToggle(`NP_Q${q.id}`, `NP_Q${q.id}. ${q.title}`)).join("")}
+      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:8px;margin-bottom:4px">신제품 사진 첨부 필수 (배터링/브래딩/완조리 3장)</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:14px">사진 3장 첨부 필수</span>
+        <div id="toggle_wrap_npPhotoRequired"
+          onclick="toggleNpPhotoRequired()"
+          style="width:44px;height:24px;border-radius:12px;background:${_npPhotoRequired?"#D69E0E":"#CBD5E0"};
+                 position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+          <div id="toggle_thumb_npPhotoRequired"
+            style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
+                   top:3px;left:${_npPhotoRequired?"23px":"3px"};transition:left .2s"></div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:#718096;margin:6px 0 12px">OFF 시 3장 모두 선택 첨부로 전환됩니다. (문항별 개별 설정 없음)</div>
 
       <button class="btn-primary" onclick="applyAdminSettings()" style="margin-top:20px">저장하기</button>
       <button class="btn-ghost" onclick="goBack()" style="margin-top:8px">취소</button>
@@ -2593,13 +2796,10 @@ async function applyAdminSettings() {
     ["GL_Q1","GL_Q2","GL_Q3","GL_Q4","GL_Q5","GL_Q6","GL_Q7","GL_Q8","GL_Q9","GL_Q10","GL_Q11"].forEach(key => {
       if (!(key in _photoSettings)) _photoSettings[key] = true;
     });
-    NP_QUESTIONS.forEach(q => {
-      if (!(`NP_Q${q.id}` in _npPhotoSettings)) _npPhotoSettings[`NP_Q${q.id}`] = true;
-    });
     await setDoc(doc(db, "settings", "photoRequired"), _photoSettings);
     await setDoc(doc(db, "settings", "dateLimit"), { value: _dateLimitUIValue });
     await setDoc(doc(db, "settings", "npEnabled"), { value: _npEnabled });
-    await setDoc(doc(db, "settings", "npPhotoRequired"), _npPhotoSettings);
+    await setDoc(doc(db, "settings", "npPhotoRequired"), { value: _npPhotoRequired });
     _dateLimitSetting = _dateLimitUIValue;
     alert("✅ 설정이 저장되었습니다.");
     goBack();
@@ -2629,14 +2829,12 @@ function toggleNpEnabled() {
   if (thumb) thumb.style.left      = _npEnabled ? "23px" : "3px";
 }
 
-function toggleNpPhoto(key) {
-  const current = _npPhotoSettings[key] !== false;
-  _npPhotoSettings[key] = !current;
-  const isOn = _npPhotoSettings[key];
-  const wrap  = document.getElementById(`toggle_wrap_${key}`);
-  const thumb = document.getElementById(`toggle_thumb_${key}`);
-  if (wrap)  wrap.style.background = isOn ? "#D69E0E" : "#CBD5E0";
-  if (thumb) thumb.style.left      = isOn ? "23px" : "3px";
+function toggleNpPhotoRequired() {
+  _npPhotoRequired = !_npPhotoRequired;
+  const wrap  = document.getElementById("toggle_wrap_npPhotoRequired");
+  const thumb = document.getElementById("toggle_thumb_npPhotoRequired");
+  if (wrap)  wrap.style.background = _npPhotoRequired ? "#D69E0E" : "#CBD5E0";
+  if (thumb) thumb.style.left      = _npPhotoRequired ? "23px" : "3px";
 }
 
 async function applyPhotoSettings() {
@@ -2691,11 +2889,6 @@ async function loadPhotoSettings() {
 }
 
 function isPhotoRequired(qId, isGL) {
-  if (S.category === "np") {
-    const npKey = `NP_Q${qId}`;
-    if (npKey in _npPhotoSettings) return _npPhotoSettings[npKey];
-    return true;
-  }
   const key = isGL ? `GL_Q${qId}` : `Q${qId}`;
   if (key in _photoSettings) return _photoSettings[key];
   // 설정 로드 안 됨 = 기본값: 필수
@@ -2711,6 +2904,7 @@ function sessionSave() {
     const data = {
       screen:      S.screen,
       role:        S.role,
+      category:    S.category,
       inspType:    S.inspType,
       writerName:  S.writerName,
       storeCode:   S.storeCode,
@@ -2718,6 +2912,7 @@ function sessionSave() {
       storeTeam:   S.storeTeam,
       visitDate:   S.visitDate,
       answers:     S.answers,
+      npAnswers:   S.npAnswers,
       loadedDocId: S.loadedDocId,
       prevNItems:  S.prevNItems,
       storeObj:    S.storeObj,
@@ -2741,6 +2936,7 @@ function sessionRestore() {
     const inspScreens = ["form","info","storeSel","inspType","compare"];
     if (!inspScreens.includes(data.screen)) return false;
     S.role       = data.role;
+    S.category   = data.category || "default";
     S.inspType   = data.inspType;
     S.writerName = data.writerName;
     S.storeCode  = data.storeCode;
@@ -2748,6 +2944,7 @@ function sessionRestore() {
     S.storeTeam  = data.storeTeam;
     S.visitDate  = data.visitDate;
     S.answers    = data.answers || {};
+    S.npAnswers  = data.npAnswers || null;
     S.loadedDocId= data.loadedDocId;
     S.prevNItems = data.prevNItems || [];
     S.storeObj   = data.storeObj || null;
@@ -4058,10 +4255,9 @@ async function handleStoreUpload(input) {
   input.value = "";
 }
 
-// ── DASHBOARD (신제품 현장점검, surveys_np 전용 · 기존 대시보드와 완전 분리) ──
-// 참고: 신규플랫폼 대시보드(renderDashboard/buildDashboard)의 팀장확인/그룹장확인 등
-// 승인 플로우는 신제품 문항이 확정되어 점검/보완/확인 로직이 정해진 뒤 이 화면에 확장 예정.
-// 지금은 surveys_np 데이터를 읽기 전용으로 집계해 보여주는 요약 화면임.
+// ── DASHBOARD (신제품 현장점검 · 갓빠삭치킨 교육점검, surveys_np 전용) ──
+// 작업지시서 7항: TL=담당팀 매장만, GL/관리자=전체 매장, 매장별 교육완료여부(Y/N)+교육인원 표시.
+// 승인/반려 없음 (작업지시서 명시) — 읽기 전용 집계 화면.
 async function renderDashboardNP(root) {
   root.innerHTML = `
     <div class="page-header">
@@ -4073,36 +4269,60 @@ async function renderDashboardNP(root) {
   try {
     let records = cacheGet("dashboardNP");
     if (!records) {
-      const [dsvSnap, dtlSnap, dglSnap] = await Promise.all([
-        getDocs(query(collection(db,"surveys_np"), where("role","==","sv"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
-        getDocs(query(collection(db,"surveys_np"), where("role","==","tl"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
-        getDocs(query(collection(db,"surveys_np"), where("role","==","gl"), where("createdAt",">=",_dashFromTs()), orderBy("createdAt","desc"))),
-      ]);
+      const snap = await getDocs(query(collection(db,"surveys_np"), orderBy("createdAt","desc")));
       records = [];
-      dsvSnap.forEach(d => records.push({id:d.id,...d.data()}));
-      dtlSnap.forEach(d => records.push({id:d.id,...d.data()}));
-      dglSnap.forEach(d => records.push({id:d.id,...d.data()}));
-      records.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
-      cacheSet("dashboardNP", stripImages(records));
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("dashboardNP", records);
     }
-    buildDashboardNP(root, records);
+    const activeStores = await getActiveStoreData();
+
+    // 열람 범위: TL은 담당팀(store_master.tl === 본인 이름)만, GL/관리자는 전체
+    let scopeStores = activeStores;
+    if (_authRole === "tl") {
+      scopeStores = activeStores.filter(s => s.tl === _authName || s.sv === _authName);
+    }
+
+    window._dashNpRecords = records; // 엑셀 다운로드용
+    window._dashNpScope = scopeStores;
+    buildDashboardNP(root, records, scopeStores);
   } catch(e) {
     root.innerHTML += `<p style="padding:20px;color:#E53E3E">오류: ${e.message}</p>`;
   }
 }
 
-function buildDashboardNP(root, records) {
-  const total = records.length;
-  const hasFirst = records.filter(r => (r.inspType||"최초") === "최초").length;
-  const hasFollowup = records.filter(r => (r.inspType) === "보완").length;
-  const roleLabel = {sv:"SV",tl:"팀장",gl:"그룹장",admin:"관리자"};
-  const rows = records.slice(0, 30).map(r => {
-    const dt = r.createdAt ? new Date(r.createdAt.seconds*1000) : (r.visitDate ? new Date(r.visitDate) : null);
-    const dtStr = dt ? `${dt.getMonth()+1}/${dt.getDate()} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}` : "-";
+function buildDashboardNP(root, records, scopeStores) {
+  // storeCode → 최신 문서 매핑
+  const latestByStore = new Map();
+  records.forEach(r => {
+    const ex = latestByStore.get(r.storeCode);
+    const t = r.createdAt?.seconds || 0;
+    const exT = ex?.createdAt?.seconds || 0;
+    if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+  });
+
+  const scopeCodes = new Set(scopeStores.map(s => s.code));
+  const rowsData = scopeStores.map(s => {
+    const rec = latestByStore.get(s.code) || null;
+    return { store: s, rec };
+  });
+
+  const doneCount    = rowsData.filter(r => r.rec?.npAnswers?.q1 === "Y").length;
+  const needCount    = rowsData.filter(r => r.rec?.npAnswers?.q1 === "N").length;
+  const notYetCount  = rowsData.filter(r => !r.rec).length;
+
+  const rows = rowsData.map(({store, rec}) => {
+    const q1 = rec?.npAnswers?.q1;
+    const statusHtml = q1 === "Y" ? `<span style="color:#276749;font-weight:700">Y</span>`
+      : q1 === "N" ? `<span style="color:#C53030;font-weight:700">N (추가점검필요)</span>`
+      : `<span style="color:#A0AEC0">미점검</span>`;
+    const cnt = rec?.npAnswers?.attendees?.length ?? "-";
+    const dt = rec?.createdAt ? new Date(rec.createdAt.seconds*1000) : null;
+    const dtStr = dt ? `${dt.getMonth()+1}/${dt.getDate()}` : "-";
     return `<tr>
-      <td>${r.storeName||"-"}</td>
-      <td>${r.writerName||"-"} (${roleLabel[r.role]||r.role||"-"})</td>
-      <td>${r.inspType||"최초"}</td>
+      <td>${store.name}</td>
+      <td style="color:#718096;font-size:12px">${store.team||"-"}</td>
+      <td>${statusHtml}</td>
+      <td style="text-align:center">${cnt}</td>
       <td style="color:#718096;font-size:12px">${dtStr}</td>
     </tr>`;
   }).join("");
@@ -4114,20 +4334,62 @@ function buildDashboardNP(root, records) {
       <button class="btn-home-dash" onclick="go('homeNP')" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="dash-stats">
-      <div class="active-stat"><div class="stat-num">${total}</div><div class="stat-label">전체점검</div></div>
-      <div><div class="stat-num" style="color:#3182CE">${hasFirst}</div><div class="stat-label">최초점검</div></div>
-      <div><div class="stat-num" style="color:#D69E2E">${hasFollowup}</div><div class="stat-label">보완점검</div></div>
+      <div class="active-stat"><div class="stat-num">${scopeStores.length}</div><div class="stat-label">대상 매장</div></div>
+      <div><div class="stat-num" style="color:#276749">${doneCount}</div><div class="stat-label">완료(Y)</div></div>
+      <div><div class="stat-num" style="color:#C53030">${needCount}</div><div class="stat-label">추가점검필요(N)</div></div>
+      <div><div class="stat-num" style="color:#A0AEC0">${notYetCount}</div><div class="stat-label">미점검</div></div>
     </div>
-    <div style="padding:8px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0;font-size:12px;color:#718096">
-      최근 90일 · 신제품 현장점검 데이터만 표시 (surveys_np, 기존 신규플랫폼 데이터와 분리)
+    <div style="padding:8px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0;font-size:12px;color:#718096;display:flex;justify-content:space-between;align-items:center">
+      <span>${_authRole==="tl" ? "담당팀" : "전체"} 매장 기준 · 매장별 최신 점검 결과</span>
+      <button class="btn-ghost" onclick="downloadExcelNP()" style="padding:6px 12px;font-size:12px;width:auto">📥 엑셀 다운로드</button>
     </div>
     <div class="dash-table-wrap">
-      <div class="table-count">${records.length}건</div>
+      <div class="table-count">${scopeStores.length}개 매장</div>
       <table class="dash-table">
-        <thead><tr><th>매장명</th><th>작성자</th><th>구분</th><th>일시</th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="4" style="text-align:center;padding:20px;color:#718096">데이터 없음 (문항 확정 후 점검 데이터가 쌓이면 표시됩니다)</td></tr>'}</tbody>
+        <thead><tr><th>매장명</th><th>팀</th><th>교육완료</th><th>교육인원</th><th>최근점검일</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="5" style="text-align:center;padding:20px;color:#718096">대상 매장이 없습니다</td></tr>'}</tbody>
       </table>
     </div>`;
+}
+
+async function downloadExcelNP() {
+  const records = window._dashNpRecords || [];
+  const scopeStores = window._dashNpScope || [];
+  try {
+    await loadXLSX();
+  } catch(e) {
+    alert("엑셀 라이브러리 로드 실패: " + e.message);
+    return;
+  }
+  const latestByStore = new Map();
+  records.forEach(r => {
+    const ex = latestByStore.get(r.storeCode);
+    const t = r.createdAt?.seconds || 0;
+    const exT = ex?.createdAt?.seconds || 0;
+    if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+  });
+
+  const rows = [["매장코드","매장명","팀","교육완료여부","교육인원","참석자명단","작성자","역할","점검일시","메모"]];
+  scopeStores.forEach(s => {
+    const rec = latestByStore.get(s.code);
+    const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"};
+    const dt = rec?.createdAt ? new Date(rec.createdAt.seconds*1000) : null;
+    rows.push([
+      s.code, s.name, s.team||"",
+      rec?.npAnswers?.q1 || "미점검",
+      rec?.npAnswers?.attendees?.length ?? "",
+      (rec?.npAnswers?.attendees||[]).map(a=>`${a.name}(${a.role})`).join(", "),
+      rec?.writerName || "",
+      roleLabel[rec?.role] || rec?.role || "",
+      dt ? dt.toLocaleString("ko-KR") : "",
+      rec?.npAnswers?.memo || "",
+    ]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, "신제품현장점검");
+  XLSX.writeFile(wb, `신제품현장점검_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
 async function viewRecordDash(docId) {
@@ -4395,7 +4657,8 @@ Object.assign(window, {
   execDashTabSearch, setDashTabSearch,
   fnSetTeam, fnSearch, fnViewRecord, fnDownloadExcel,
   setRecStatusFilter, setDateLimitUI, applyAdminSettings,
-  startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhoto,
+  startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhotoRequired,
+  setNpQ1, addNpAttendee, removeNpAttendee, updateNpAttendeeName, updateNpAttendeeRole, updateNpMemo, handleNpImage, removeNpImage, submitFormNP, downloadExcelNP,
 });
 // 앱 시작 시 세션 복원
 (async () => {
