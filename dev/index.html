@@ -556,7 +556,7 @@ function renderHome(root) {
 
   root.innerHTML = `
     <div class="hero" style="padding-bottom:16px;position:relative">
-      <button onclick="go('hub')" style="position:absolute;top:14px;left:14px;background:rgba(255,255,255,0.18);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
+      <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(255,255,255,0.18);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
       <h1 class="hero-title">신규플랫폼<br>현장점검</h1>
       <p class="hero-sub">비프 · 피자 · 스파쿨</p>
@@ -591,7 +591,7 @@ function renderHomeNP(root) {
 
   root.innerHTML = `
     <div class="hero-np" style="padding-bottom:16px;position:relative">
-      <button onclick="go('hub')" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
+      <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
       <h1 class="hero-title">신제품<br>현장점검</h1>
       <p class="hero-sub">갓빠삭치킨 교육점검</p>
@@ -638,14 +638,14 @@ function startNpInspection() {
 function renderNpComingSoon(root) {
   root.innerHTML = `
     <div class="page-header">
-      <button class="btn-back" onclick="go('homeNP')">←</button>
+      <button class="btn-back" onclick="goBack()">←</button>
       <h2>신제품 현장점검</h2>
     </div>
     <div class="card-section" style="text-align:center;padding-top:40px">
       <div style="font-size:40px;margin-bottom:12px">🛠️</div>
       <div style="font-size:15px;color:var(--text);font-weight:500;margin-bottom:6px">점검 내역 조회 화면 준비중입니다</div>
       <div style="font-size:13px;color:var(--sub);line-height:1.6">점검 시작하기 / 관리자 대시보드는<br>정상적으로 이용하실 수 있습니다.</div>
-      <button class="btn-ghost" onclick="go('homeNP')" style="margin-top:24px">돌아가기</button>
+      <button class="btn-ghost" onclick="goBack()" style="margin-top:24px">돌아가기</button>
     </div>`;
 }
 
@@ -1335,7 +1335,7 @@ function renderInfo(root) {
   const roleLabel = {sv:"SV",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
   root.innerHTML = `
     <div class="page-header">
-      <button class="btn-back" onclick="go('storeSel')">←</button>
+      <button class="btn-back" onclick="goBack()">←</button>
       <h2>기본 정보 확인</h2>
     </div>
     <div class="card-section">
@@ -2955,7 +2955,7 @@ function sessionClear() {
 function renderChangePw(root) {
   root.innerHTML = `
     <div class="page-header">
-      <button class="btn-back" onclick="go('home')">←</button>
+      <button class="btn-back" onclick="goBack()">←</button>
       <h2>비밀번호 변경</h2>
     </div>
     <div class="card-section" style="margin-top:16px">
@@ -2971,7 +2971,7 @@ function renderChangePw(root) {
       <div id="pwErr" style="color:#E53E3E;font-size:13px;display:none;margin-top:6px"></div>
       <div id="pwOk"  style="color:#38A169;font-size:13px;display:none;margin-top:6px">✅ 비밀번호가 변경되었습니다.</div>
       <button class="btn-primary" style="margin-top:16px" onclick="doChangePw()">변경하기</button>
-      <button class="btn-ghost" onclick="go('home')" style="margin-top:8px">취소</button>
+      <button class="btn-ghost" onclick="goBack()" style="margin-top:8px">취소</button>
     </div>`;
 }
 
@@ -3342,7 +3342,7 @@ async function renderRecords(root) {
                   : "전체";
   root.innerHTML = `
     <div class="page-header">
-      <button class="btn-back" onclick="go('home')">←</button>
+      <button class="btn-back" onclick="goBack()">←</button>
       <h2>점검 내역 조회</h2>
     </div>
     <div class="card-section">
@@ -4255,6 +4255,7 @@ async function handleStoreUpload(input) {
 // 작업지시서 7항: TL=담당팀 매장만, GL/관리자=전체 매장, 매장별 교육완료여부(Y/N)+교육인원 표시.
 // 승인/반려 없음 (작업지시서 명시) — 읽기 전용 집계 화면.
 async function renderDashboardNP(root) {
+  window._dashNpStatusFilter = "";
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
@@ -4296,15 +4297,27 @@ function buildDashboardNP(root, records, scopeStores) {
     if (!ex || t > exT) latestByStore.set(r.storeCode, r);
   });
 
-  const scopeCodes = new Set(scopeStores.map(s => s.code));
-  const rowsData = scopeStores.map(s => {
+  const rowsDataAll = scopeStores.map(s => {
     const rec = latestByStore.get(s.code) || null;
     return { store: s, rec };
   });
 
-  const doneCount    = rowsData.filter(r => r.rec?.npAnswers?.q1 === "Y").length;
-  const needCount    = rowsData.filter(r => r.rec?.npAnswers?.q1 === "N").length;
-  const notYetCount  = rowsData.filter(r => !r.rec).length;
+  const doneCount    = rowsDataAll.filter(r => r.rec?.npAnswers?.q1 === "Y").length;
+  const needCount    = rowsDataAll.filter(r => r.rec?.npAnswers?.q1 === "N").length;
+  const notYetCount  = rowsDataAll.filter(r => !r.rec).length;
+
+  // 스탯카드 필터 적용 ("" = 전체, "Y"/"N"/"none")
+  const statFilter = window._dashNpStatusFilter || "";
+  const rowsData = !statFilter ? rowsDataAll
+    : statFilter === "none" ? rowsDataAll.filter(r => !r.rec)
+    : rowsDataAll.filter(r => r.rec?.npAnswers?.q1 === statFilter);
+
+  const cardStyle = (key, activeColor) => {
+    const isActive = statFilter === key;
+    return isActive
+      ? `cursor:pointer;border-radius:10px;border:2px solid ${activeColor};box-shadow:0 0 0 3px ${activeColor}26`
+      : `cursor:pointer`;
+  };
 
   const rows = rowsData.map(({store, rec}) => {
     const q1 = rec?.npAnswers?.q1;
@@ -4318,6 +4331,7 @@ function buildDashboardNP(root, records, scopeStores) {
       <td>${store.name}</td>
       <td style="color:#718096;font-size:12px">${store.team||"-"}</td>
       <td>${statusHtml}</td>
+      <td style="font-size:13px">${rec?.writerName || "-"}</td>
       <td style="text-align:center">${cnt}</td>
       <td style="color:#718096;font-size:12px">${dtStr}</td>
     </tr>`;
@@ -4330,22 +4344,27 @@ function buildDashboardNP(root, records, scopeStores) {
       <button class="btn-home-dash" onclick="go('homeNP')" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="dash-stats">
-      <div class="active-stat"><div class="stat-num">${scopeStores.length}</div><div class="stat-label">대상 매장</div></div>
-      <div><div class="stat-num" style="color:#276749">${doneCount}</div><div class="stat-label">완료(Y)</div></div>
-      <div><div class="stat-num" style="color:#C53030">${needCount}</div><div class="stat-label">추가점검필요(N)</div></div>
-      <div><div class="stat-num" style="color:#A0AEC0">${notYetCount}</div><div class="stat-label">미점검</div></div>
+      <div style="${cardStyle('', '#4A5568')}" onclick="setDashNpFilter('')"><div class="stat-num">${scopeStores.length}</div><div class="stat-label">대상 매장</div></div>
+      <div style="${cardStyle('Y', '#276749')}" onclick="setDashNpFilter('Y')"><div class="stat-num" style="color:#276749">${doneCount}</div><div class="stat-label">완료(Y)</div></div>
+      <div style="${cardStyle('N', '#C53030')}" onclick="setDashNpFilter('N')"><div class="stat-num" style="color:#C53030">${needCount}</div><div class="stat-label">추가점검필요(N)</div></div>
+      <div style="${cardStyle('none', '#A0AEC0')}" onclick="setDashNpFilter('none')"><div class="stat-num" style="color:#A0AEC0">${notYetCount}</div><div class="stat-label">미점검</div></div>
     </div>
     <div style="padding:8px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0;font-size:12px;color:#718096;display:flex;justify-content:space-between;align-items:center">
-      <span>${_authRole==="tl" ? "담당팀" : "전체"} 매장 기준 · 매장별 최신 점검 결과</span>
+      <span>${_authRole==="tl" ? "담당팀" : "전체"} 매장 기준 · 매장별 최신 점검 결과${statFilter ? " · 필터 적용중" : ""}</span>
       <button class="btn-ghost" onclick="downloadExcelNP()" style="padding:6px 12px;font-size:12px;width:auto">📥 엑셀 다운로드</button>
     </div>
     <div class="dash-table-wrap">
-      <div class="table-count">${scopeStores.length}개 매장</div>
+      <div class="table-count">${rowsData.length}개 매장${statFilter ? ` (전체 ${scopeStores.length}개 중)` : ""}</div>
       <table class="dash-table">
-        <thead><tr><th>매장명</th><th>팀</th><th>교육완료</th><th>교육인원</th><th>최근점검일</th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="5" style="text-align:center;padding:20px;color:#718096">대상 매장이 없습니다</td></tr>'}</tbody>
+        <thead><tr><th>매장명</th><th>팀</th><th>교육완료</th><th>점검자명</th><th>교육인원</th><th>최근점검일</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:20px;color:#718096">해당 조건의 매장이 없습니다</td></tr>'}</tbody>
       </table>
     </div>`;
+}
+
+function setDashNpFilter(val) {
+  window._dashNpStatusFilter = val;
+  buildDashboardNP(document.getElementById("app"), window._dashNpRecords || [], window._dashNpScope || []);
 }
 
 async function downloadExcelNP() {
@@ -4396,7 +4415,7 @@ async function renderRecordsNP(root) {
                  : "전체";
   root.innerHTML = `
     <div class="page-header">
-      <button class="btn-back" onclick="go('homeNP')">←</button>
+      <button class="btn-back" onclick="goBack()">←</button>
       <h2>점검 내역 조회 (신제품)</h2>
     </div>
     <div class="card-section">
@@ -4797,7 +4816,7 @@ function goBack() {
   if (prev) { S.screen = prev; render(); }
   else go("home");
 }
-function confirmBack() { if(confirm("작성 중인 내용이 사라집니다. 돌아가시겠습니까?")) go(S.category === "np" ? "homeNP" : "home"); }
+function confirmBack() { if(confirm("작성 중인 내용이 사라집니다. 돌아가시겠습니까?")) { S.history = []; go(S.category === "np" ? "homeNP" : "home"); } }
 function nowDTL() {
   const now=new Date(), pad=n=>String(n).padStart(2,"0");
   return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -4814,7 +4833,7 @@ Object.assign(window, {
   setRecStatusFilter, setDateLimitUI, applyAdminSettings,
   startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhotoRequired,
   setNpQ1, addNpAttendee, removeNpAttendee, updateNpAttendeeName, updateNpMemo, handleNpImage, removeNpImage, submitFormNP, downloadExcelNP,
-  fetchRecordsNP, setRecNpFilter, viewRecordNP,
+  fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter,
 });
 // 앱 시작 시 세션 복원
 (async () => {
