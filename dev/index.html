@@ -3409,11 +3409,11 @@ async function buildFollowupNeeded() {
     }
   }
 
-  // 보완점검 필요 조건: N항목 있고 보완점검 미실시 + 최종확인 미완료
+  // 보완점검 필요 조건: N항목 있거나 반려된 건 + 보완점검 미실시 + 최종확인 미완료
   const isPending = r =>
     !r.finalConfirmed &&
-    Object.values(r.answers||{}).some(a => a.value === "N") &&
-    !r.followupSvAnswers && !r.followupTlAnswers;
+    !r.followupSvAnswers && !r.followupTlAnswers &&
+    (Object.values(r.answers||{}).some(a => a.value === "N") || r.tlRejected || r.glRejected);
 
   let pending = records.filter(isPending);
 
@@ -3450,11 +3450,15 @@ async function buildFollowupNeeded() {
     const dt = r.visitDate ? new Date(r.visitDate) : (r.createdAt ? new Date(r.createdAt.seconds*1000) : null);
     const dtStr = dt ? `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,"0")}.${String(dt.getDate()).padStart(2,"0")} ${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}` : "-";
     const nCount = getNCount(r);
+    const isRejectedNoN = nCount === 0 && (r.tlRejected || r.glRejected);
+    const badgeHtml = isRejectedNoN
+      ? `<span style="font-size:12px;background:#FFF5F5;color:#C53030;border:0.5px solid #FEB2B2;padding:2px 8px;border-radius:12px">🚫 반려</span>`
+      : `<span style="font-size:12px;background:#FFFBEB;color:#744210;border:0.5px solid #F6AD55;padding:2px 8px;border-radius:12px">N ${nCount}건</span>`;
     return `
     <div onclick="fnViewRecord('${r.id}')" style="background:white;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;cursor:pointer;margin-bottom:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
         <span style="font-size:14px;font-weight:500;color:#2D3748">${r.storeName||"-"}</span>
-        <span style="font-size:12px;background:#FFFBEB;color:#744210;border:0.5px solid #F6AD55;padding:2px 8px;border-radius:12px">N ${nCount}건</span>
+        ${badgeHtml}
       </div>
       <div style="font-size:12px;color:#718096">${r.storeCode||""} · ${r.storeTeam||""}</div>
       <div style="font-size:12px;color:#718096;margin-top:2px">${dtStr} · ${r.writerName||""}</div>
@@ -3500,8 +3504,8 @@ async function fnDownloadExcel() {
   let records = cacheGet("records") || [];
   const isPending = r =>
     !r.finalConfirmed &&
-    Object.values(r.answers||{}).some(a => a.value === "N") &&
-    !r.followupSvAnswers && !r.followupTlAnswers;
+    !r.followupSvAnswers && !r.followupTlAnswers &&
+    (Object.values(r.answers||{}).some(a => a.value === "N") || r.tlRejected || r.glRejected);
 
   let pending = records.filter(isPending);
   if (_authRole === "tl" && _authName) {
