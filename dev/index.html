@@ -481,7 +481,7 @@ function render() {
   root.innerHTML = ""; window.scrollTo(0,0);
   const scr = S.screen;
   // 미로그인 상태에서 보호 화면 접근 시 로그인으로 리디렉션
-  const protectedScreens = ["hub","home","homeNP","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP"];
+  const protectedScreens = ["hub","home","homeNP","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP"];
   if (!_currentUser && protectedScreens.includes(scr)) {
     renderLogin(root);
     return;
@@ -505,6 +505,7 @@ function render() {
   else if (scr==="npComingSoon") renderNpComingSoon(root);
   else if (scr==="recordsNP")   renderRecordsNP(root); // async
   else if (scr==="recordDetailNP") renderRecordDetailNP(root);
+  else if (scr==="storeHistoryNP") renderStoreHistoryNP(root);
 }
 
 // ── HUB (신규플랫폼/신제품 선택 진입화면) ──────────
@@ -4327,7 +4328,8 @@ function buildDashboardNP(root, records, scopeStores) {
     const cnt = rec?.npAnswers?.attendees?.length ?? "-";
     const dt = rec?.createdAt ? new Date(rec.createdAt.seconds*1000) : null;
     const dtStr = dt ? `${dt.getMonth()+1}/${dt.getDate()}` : "-";
-    return `<tr>
+    const clickAttr = rec ? ` onclick="viewStoreHistoryNP('${store.code}')" style="cursor:pointer"` : "";
+    return `<tr${clickAttr}>
       <td>${store.name}</td>
       <td style="color:#718096;font-size:12px">${store.team||"-"}</td>
       <td>${statusHtml}</td>
@@ -4365,6 +4367,47 @@ function buildDashboardNP(root, records, scopeStores) {
 function setDashNpFilter(val) {
   window._dashNpStatusFilter = val;
   buildDashboardNP(document.getElementById("app"), window._dashNpRecords || [], window._dashNpScope || []);
+}
+
+// 매장 탭 시 그 매장의 점검 이력 전체를 최신순으로 보여줌 (Firestore 추가 조회 없이 대시보드 캐시 재사용)
+function viewStoreHistoryNP(storeCode) {
+  const all = window._dashNpRecords || [];
+  const recs = all.filter(r => r.storeCode === storeCode)
+                   .sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+  if (recs.length === 0) { alert("점검 이력이 없습니다."); return; }
+  window._storeHistoryNP = { storeCode, storeName: recs[0].storeName, records: recs };
+  go("storeHistoryNP");
+}
+
+function renderStoreHistoryNP(root) {
+  const h = window._storeHistoryNP;
+  if (!h) { go("dashboardNP"); return; }
+  const rows = h.records.map(r => {
+    const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
+    const q1 = r.npAnswers?.q1;
+    const statusBadge = q1 === "Y" ? `<span class="insp-badge badge-first badge-sm">완료</span>`
+      : q1 === "N" ? `<span class="insp-badge badge-follow badge-sm">추가점검필요</span>`
+      : `<span class="insp-badge badge-sm">-</span>`;
+    const cnt = r.npAnswers?.attendees?.length ?? 0;
+    const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
+    return `<div class="search-item" onclick="viewRecordNP('${r.id}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span class="si-store">${dt}</span>
+        ${statusBadge}
+      </div>
+      <div class="si-meta">${roleLabel}: ${r.writerName||"-"} · 참석 ${cnt}명</div>
+    </div>`;
+  }).join("");
+
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>${h.storeName} 점검 이력</h2>
+    </div>
+    <div class="card-section">
+      <div class="store-count" style="padding:0 2px 8px">${h.records.length}건 · 최신순</div>
+      <div class="search-list">${rows}</div>
+    </div>`;
 }
 
 async function downloadExcelNP() {
@@ -4833,7 +4876,7 @@ Object.assign(window, {
   setRecStatusFilter, setDateLimitUI, applyAdminSettings,
   startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhotoRequired,
   setNpQ1, addNpAttendee, removeNpAttendee, updateNpAttendeeName, updateNpMemo, handleNpImage, removeNpImage, submitFormNP, downloadExcelNP,
-  fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter,
+  fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter, viewStoreHistoryNP,
 });
 // 앱 시작 시 세션 복원
 (async () => {
