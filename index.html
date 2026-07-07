@@ -4783,13 +4783,13 @@ async function downloadExcel() {
         r.finalConfirmed ? "Y" : "N",
       ];
       // 최초점검일: visitDate
-      // 보완점검일: N값 있으면 followup 날짜, 없으면 최초점검일과 동일
+      // 보완점검일: N값 있으면 followup 날짜, 없으면(해당없음) 빈칸
       const firstDate   = r.visitDate ? fmtDateExcel(r.visitDate) : "";
       const hasNItems   = Object.values(r.answers||{}).some(a => a.value === "N");
       const followupDate = hasNItems
         ? (r.followupSvVisitDate ? fmtDateExcel(r.followupSvVisitDate)
           : r.followupTlVisitDate ? fmtDateExcel(r.followupTlVisitDate) : "")
-        : firstDate; // N없음 → 최초점검일과 동일
+        : ""; // N없음 → 보완점검 해당없음이므로 빈칸 (최초점검일 복사 안 함)
       const dateVals = [firstDate, followupDate];
       rows.push([r.storeCode,r.storeName,r.storeTeam,type,role,name||"",fmtDateExcel(date),...svVals,...tlVals,...glVals,...confirmVals,...dateVals]);
     };
