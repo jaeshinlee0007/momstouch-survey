@@ -4762,7 +4762,7 @@ async function downloadExcel() {
   const svH  = SV_QUESTIONS.map(q=>`[SV] Q${q.id} ${q.title}`);
   const tlH  = SV_QUESTIONS.map(q=>`[팀장] Q${q.id} ${q.title}`);
   const glH  = GL_QUESTIONS.map(q=>`[그룹장] Q${q.id} ${q.title}`);
-  const confirmH = ["팀장확인자","팀장확인일시","그룹장확인일시","최종확인여부"];
+  const confirmH = ["팀장확인자","팀장확인일시","그룹장확인일시","최종확인여부","반려여부"];
   const dateH    = ["최초점검일","보완점검일"];
 
   const rows = [["매장코드","매장명","팀","점검유형","역할","점검자","방문일시",...svH,...tlH,...glH,...confirmH,...dateH]];
@@ -4781,6 +4781,7 @@ async function downloadExcel() {
         r.tlConfirmedAt ? fmtDateExcel(r.tlConfirmedAt) : "",
         r.finalConfirmedAt ? fmtDateExcel(r.finalConfirmedAt) : "",
         r.finalConfirmed ? "Y" : "N",
+        (r.tlRejected || r.glRejected) ? "Y" : "N",
       ];
       // 최초점검일: visitDate
       // 보완점검일: N값 있으면 followup 날짜, 없으면(해당없음) 빈칸
@@ -4835,7 +4836,7 @@ async function downloadExcel() {
     ...Array(SV_QUESTIONS.length).fill({wch:10}),
     ...Array(SV_QUESTIONS.length).fill({wch:10}),
     ...Array(GL_QUESTIONS.length).fill({wch:10}),
-    {wch:12},{wch:18},{wch:18},{wch:10},
+    {wch:12},{wch:18},{wch:18},{wch:10},{wch:10},
     {wch:14},{wch:14}]; // 최초점검일, 보완점검일
   ws["!cols"] = colW;
 
