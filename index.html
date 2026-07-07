@@ -386,6 +386,20 @@ function currentSurveyCollection() {
   return S.category === "np" ? "surveys_np" : "surveys";
 }
 
+// 신제품 현장점검 건의 상태 계산: "none"(미점검) | "needs"(재점검필요) | "pending"(승인대기) | "done"(완료)
+// - SV의 Q1=Y는 담당 팀장 승인(tlApproved===true)이 있어야 완료. 필드가 없는 과거 데이터도 승인대기로 취급.
+// - TL/GL/관리자 본인 점검의 Y는 승인 절차 없이 즉시 완료.
+function npStatus(rec) {
+  if (!rec) return "none";
+  const q1 = rec.npAnswers?.q1;
+  if (q1 === "N") return "needs";
+  if (q1 === "Y") {
+    if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
+    return "done";
+  }
+  return "none";
+}
+
 // ── STATE ──────────────────────────────────────────
 let S = {
   screen:"home", role:null, inspType:null, // inspType: "최초"|"보완"
@@ -481,7 +495,7 @@ function render() {
   root.innerHTML = ""; window.scrollTo(0,0);
   const scr = S.screen;
   // 미로그인 상태에서 보호 화면 접근 시 로그인으로 리디렉션
-  const protectedScreens = ["hub","home","homeNP","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP"];
+  const protectedScreens = ["hub","home","homeNP","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP","approvalNP"];
   if (!_currentUser && protectedScreens.includes(scr)) {
     renderLogin(root);
     return;
@@ -505,6 +519,7 @@ function render() {
   else if (scr==="npComingSoon") renderNpComingSoon(root);
   else if (scr==="recordsNP")   renderRecordsNP(root); // async
   else if (scr==="recordDetailNP") renderRecordDetailNP(root);
+  else if (scr==="approvalNP")     renderApprovalNP(root); // async
   else if (scr==="storeHistoryNP") renderStoreHistoryNP(root);
 }
 
@@ -600,6 +615,7 @@ function renderHomeNP(root) {
     <div class="card-section">
       <button class="btn-primary-np" onclick="startNpInspection()">📋 점검 시작하기</button>
       <button class="btn-ghost" onclick="go('recordsNP')">📂 점검 내역 조회</button>
+      ${canDash ? `<button class="btn-ghost" onclick="go('approvalNP')" style="color:#B7791F;border-color:#F6D384;background:#FFFBEB">✅ 승인대기</button>` : ""}
       ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminNP()">📊 관리자 대시보드 (신제품)</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
@@ -818,6 +834,11 @@ async function submitFormNP() {
       needsFollowup: a.q1 === "N", // 완료 미판정 → 대시보드에서 "추가점검 필요"로 표시
       createdAt: new Date(),
     };
+    // SV가 Q1=Y로 제출한 건은 담당 팀장 승인이 있어야 최종 완료로 인정됨.
+    // TL/GL/관리자 본인 점검은 승인 절차 없이 즉시 완료 처리 (필드 자체를 넣지 않음).
+    if (S.role === "sv" && a.q1 === "Y") {
+      payload.tlApproved = false;
+    }
     await addDoc(collection(db, "surveys_np"), payload);
 
     sessionClear();
@@ -4304,18 +4325,17 @@ function buildDashboardNP(root, records, scopeStores) {
 
   const rowsDataAll = scopeStores.map(s => {
     const rec = latestByStore.get(s.code) || null;
-    return { store: s, rec };
+    return { store: s, rec, status: npStatus(rec) };
   });
 
-  const doneCount    = rowsDataAll.filter(r => r.rec?.npAnswers?.q1 === "Y").length;
-  const needCount    = rowsDataAll.filter(r => r.rec?.npAnswers?.q1 === "N").length;
-  const notYetCount  = rowsDataAll.filter(r => !r.rec).length;
+  const doneCount    = rowsDataAll.filter(r => r.status === "done").length;
+  const pendingCount = rowsDataAll.filter(r => r.status === "pending").length;
+  const needCount    = rowsDataAll.filter(r => r.status === "needs").length;
+  const notYetCount  = rowsDataAll.filter(r => r.status === "none").length;
 
-  // 스탯카드 필터 적용 ("" = 전체, "Y"/"N"/"none")
+  // 스탯카드 필터 적용 ("" = 전체, "done"/"pending"/"needs"/"none")
   const statFilter = window._dashNpStatusFilter || "";
-  const rowsData = !statFilter ? rowsDataAll
-    : statFilter === "none" ? rowsDataAll.filter(r => !r.rec)
-    : rowsDataAll.filter(r => r.rec?.npAnswers?.q1 === statFilter);
+  const rowsData = !statFilter ? rowsDataAll : rowsDataAll.filter(r => r.status === statFilter);
 
   const cardStyle = (key, activeColor) => {
     const isActive = statFilter === key;
@@ -4324,22 +4344,28 @@ function buildDashboardNP(root, records, scopeStores) {
       : `cursor:pointer`;
   };
 
-  const rows = rowsData.map(({store, rec}) => {
-    const q1 = rec?.npAnswers?.q1;
-    const statusHtml = q1 === "Y" ? `<span style="color:#276749;font-weight:700">Y</span>`
-      : q1 === "N" ? `<span style="color:#C53030;font-weight:700">N (추가점검필요)</span>`
-      : `<span style="color:#A0AEC0">미점검</span>`;
+  const statusBadge = (status) => ({
+    done:    `<span style="color:#276749;font-weight:700">완료</span>`,
+    pending: `<span style="color:#B7791F;font-weight:700">승인대기</span>`,
+    needs:   `<span style="color:#C53030;font-weight:700">재점검필요</span>`,
+    none:    `<span style="color:#A0AEC0">미점검</span>`,
+  }[status]);
+
+  const rows = rowsData.map(({store, rec, status}) => {
     const cnt = rec?.npAnswers?.attendees?.length ?? "-";
     const dt = rec?.createdAt ? new Date(rec.createdAt.seconds*1000) : null;
     const dtStr = dt ? `${dt.getMonth()+1}/${dt.getDate()}` : "-";
+    const memo = rec?.npAnswers?.memo || "";
+    const memoShort = memo.length > 16 ? memo.slice(0,16) + "…" : (memo || "-");
     const clickAttr = rec ? ` onclick="viewStoreHistoryNP('${store.code}')" style="cursor:pointer"` : "";
     return `<tr${clickAttr}>
       <td>${store.name}</td>
       <td style="color:#718096;font-size:12px">${store.team||"-"}</td>
-      <td>${statusHtml}</td>
+      <td>${statusBadge(status)}</td>
       <td style="font-size:13px">${rec?.writerName || "-"}</td>
       <td style="text-align:center">${cnt}</td>
       <td style="color:#718096;font-size:12px">${dtStr}</td>
+      <td style="color:#718096;font-size:12px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${memo.replace(/"/g,'&quot;')}">${memoShort}</td>
     </tr>`;
   }).join("");
 
@@ -4351,8 +4377,9 @@ function buildDashboardNP(root, records, scopeStores) {
     </div>
     <div class="dash-stats">
       <div style="${cardStyle('', '#4A5568')}" onclick="setDashNpFilter('')"><div class="stat-num">${scopeStores.length}</div><div class="stat-label">대상 매장</div></div>
-      <div style="${cardStyle('Y', '#276749')}" onclick="setDashNpFilter('Y')"><div class="stat-num" style="color:#276749">${doneCount}</div><div class="stat-label">완료(Y)</div></div>
-      <div style="${cardStyle('N', '#C53030')}" onclick="setDashNpFilter('N')"><div class="stat-num" style="color:#C53030">${needCount}</div><div class="stat-label">추가점검필요(N)</div></div>
+      <div style="${cardStyle('done', '#276749')}" onclick="setDashNpFilter('done')"><div class="stat-num" style="color:#276749">${doneCount}</div><div class="stat-label">완료</div></div>
+      <div style="${cardStyle('pending', '#B7791F')}" onclick="setDashNpFilter('pending')"><div class="stat-num" style="color:#B7791F">${pendingCount}</div><div class="stat-label">승인대기</div></div>
+      <div style="${cardStyle('needs', '#C53030')}" onclick="setDashNpFilter('needs')"><div class="stat-num" style="color:#C53030">${needCount}</div><div class="stat-label">재점검필요</div></div>
       <div style="${cardStyle('none', '#A0AEC0')}" onclick="setDashNpFilter('none')"><div class="stat-num" style="color:#A0AEC0">${notYetCount}</div><div class="stat-label">미점검</div></div>
     </div>
     <div style="padding:8px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0;font-size:12px;color:#718096;display:flex;justify-content:space-between;align-items:center">
@@ -4362,8 +4389,8 @@ function buildDashboardNP(root, records, scopeStores) {
     <div class="dash-table-wrap">
       <div class="table-count">${rowsData.length}개 매장${statFilter ? ` (전체 ${scopeStores.length}개 중)` : ""}</div>
       <table class="dash-table">
-        <thead><tr><th>매장명</th><th>팀</th><th>교육완료</th><th>점검자명</th><th>교육인원</th><th>최근점검일</th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:20px;color:#718096">해당 조건의 매장이 없습니다</td></tr>'}</tbody>
+        <thead><tr><th>매장명</th><th>팀</th><th>상태</th><th>점검자명</th><th>교육인원</th><th>최근점검일</th><th>메모</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="7" style="text-align:center;padding:20px;color:#718096">해당 조건의 매장이 없습니다</td></tr>'}</tbody>
       </table>
     </div>`;
 }
@@ -4388,9 +4415,10 @@ function renderStoreHistoryNP(root) {
   if (!h) { go("dashboardNP"); return; }
   const rows = h.records.map(r => {
     const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
-    const q1 = r.npAnswers?.q1;
-    const statusBadge = q1 === "Y" ? `<span class="insp-badge badge-first badge-sm">완료</span>`
-      : q1 === "N" ? `<span class="insp-badge badge-follow badge-sm">추가점검필요</span>`
+    const status = npStatus(r);
+    const statusBadge = status === "done" ? `<span class="insp-badge badge-first badge-sm">완료</span>`
+      : status === "pending" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">승인대기</span>`
+      : status === "needs" ? `<span class="insp-badge badge-follow badge-sm">재점검필요</span>`
       : `<span class="insp-badge badge-sm">-</span>`;
     const cnt = r.npAnswers?.attendees?.length ?? 0;
     const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
@@ -4431,14 +4459,15 @@ async function downloadExcelNP() {
     if (!ex || t > exT) latestByStore.set(r.storeCode, r);
   });
 
-  const rows = [["매장코드","매장명","팀","교육완료여부","교육인원","참석자명단","작성자","역할","점검일시","메모"]];
+  const rows = [["매장코드","매장명","팀","상태","교육인원","참석자명단","작성자","역할","점검일시","메모"]];
+  const statusLabel = { done:"완료", pending:"승인대기", needs:"재점검필요", none:"미점검" };
   scopeStores.forEach(s => {
     const rec = latestByStore.get(s.code);
     const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"};
     const dt = rec?.createdAt ? new Date(rec.createdAt.seconds*1000) : null;
     rows.push([
       s.code, s.name, s.team||"",
-      rec?.npAnswers?.q1 || "미점검",
+      statusLabel[npStatus(rec)],
       rec?.npAnswers?.attendees?.length ?? "",
       (rec?.npAnswers?.attendees||[]).join(", "),
       rec?.writerName || "",
@@ -4475,8 +4504,9 @@ async function renderRecordsNP(root) {
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px">
         <button id="rnf_all" onclick="setRecNpFilter('')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid var(--amber);background:var(--amber);color:white;cursor:pointer;font-weight:600">전체</button>
-        <button id="rnf_y" onclick="setRecNpFilter('Y')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #9AE6B4;background:white;color:#276749;cursor:pointer">완료</button>
-        <button id="rnf_n" onclick="setRecNpFilter('N')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FEB2B2;background:white;color:#C53030;cursor:pointer">추가점검필요</button>
+        <button id="rnf_done" onclick="setRecNpFilter('done')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #9AE6B4;background:white;color:#276749;cursor:pointer">완료</button>
+        <button id="rnf_pending" onclick="setRecNpFilter('pending')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #F6D384;background:white;color:#B7791F;cursor:pointer">승인대기</button>
+        <button id="rnf_needs" onclick="setRecNpFilter('needs')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FEB2B2;background:white;color:#C53030;cursor:pointer">재점검필요</button>
       </div>
       <div id="recListNP"></div>
     </div>`;
@@ -4515,16 +4545,15 @@ async function fetchRecordsNP() {
     if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
 
     const filter = window._recNpFilter || "";
-    if (filter === "Y") records = records.filter(r => r.npAnswers?.q1 === "Y");
-    if (filter === "N") records = records.filter(r => r.npAnswers?.q1 === "N");
+    if (filter) records = records.filter(r => npStatus(r) === filter);
 
     // 필터 버튼 활성화 스타일
-    const activeStyle = { all:"var(--amber)", y:"#9AE6B4", n:"#FEB2B2" };
-    const activeText  = { all:"white", y:"#276749", n:"#C53030" };
-    ["all","y","n"].forEach(k => {
+    const activeStyle = { all:"var(--amber)", done:"#9AE6B4", pending:"#F6D384", needs:"#FEB2B2" };
+    const activeText  = { all:"white", done:"#276749", pending:"#B7791F", needs:"#C53030" };
+    ["all","done","pending","needs"].forEach(k => {
       const btn = document.getElementById("rnf_"+k);
       if (!btn) return;
-      const map = {all:"", y:"Y", n:"N"};
+      const map = {all:"", done:"done", pending:"pending", needs:"needs"};
       const isActive = map[k] === filter;
       btn.style.background = isActive ? activeStyle[k] : "white";
       btn.style.color = isActive ? activeText[k] : (k==="all"?"#4A5568":activeText[k]);
@@ -4535,9 +4564,10 @@ async function fetchRecordsNP() {
     let html = `<div class="store-count" style="padding:8px 2px">${records.length}건</div><div class="search-list">`;
     records.forEach(r => {
       const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
-      const q1 = r.npAnswers?.q1;
-      const statusBadge = q1 === "Y" ? `<span class="insp-badge badge-first badge-sm">완료</span>`
-        : q1 === "N" ? `<span class="insp-badge badge-follow badge-sm">추가점검필요</span>`
+      const status = npStatus(r);
+      const statusBadge = status === "done" ? `<span class="insp-badge badge-first badge-sm">완료</span>`
+        : status === "pending" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">승인대기</span>`
+        : status === "needs" ? `<span class="insp-badge badge-follow badge-sm">재점검필요</span>`
         : `<span class="insp-badge badge-sm">-</span>`;
       const cnt = r.npAnswers?.attendees?.length ?? 0;
       const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
@@ -4560,6 +4590,64 @@ function setRecNpFilter(val) {
   fetchRecordsNP();
 }
 
+// ── 승인대기 (신제품, SV의 Q1=Y 건 중 담당 팀장 승인 전) ──
+async function renderApprovalNP(root) {
+  if (!["tl","gl","admin"].includes(_authRole)) { go("homeNP"); return; }
+  const scopeDesc = _authRole === "tl" ? `${_authName} 담당팀` : "전체";
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>승인대기 (신제품)</h2>
+    </div>
+    <div style="padding:8px 16px 0;font-size:12px;color:#718096">${scopeDesc} 기준</div>
+    <div id="approvalListNP" style="padding:12px 16px">불러오는 중...</div>`;
+  try {
+    let records = cacheGet("recordsNP");
+    if (!records) {
+      const snap = await getDocs(query(collection(db,"surveys_np"), orderBy("createdAt","desc")));
+      records = [];
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("recordsNP", records);
+    }
+    // storeCode별 최신 건만 대상으로 함 (오래된 이력이 승인대기로 잘못 뜨는 것 방지)
+    const latestByStore = new Map();
+    records.forEach(r => {
+      const ex = latestByStore.get(r.storeCode);
+      const t = r.createdAt?.seconds || 0;
+      const exT = ex?.createdAt?.seconds || 0;
+      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    });
+    let pending = [...latestByStore.values()].filter(r => npStatus(r) === "pending");
+
+    if (_authRole === "tl") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
+      pending = pending.filter(r => teamCodes.has(r.storeCode));
+    }
+    pending.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+
+    window._recordsNpAll = records; // 상세화면에서 재조회 없이 참조
+    const listEl = document.getElementById("approvalListNP");
+    if (!listEl) return;
+    if (pending.length === 0) { listEl.innerHTML = `<p class="error-text">승인 대기 중인 건이 없습니다.</p>`; return; }
+
+    listEl.innerHTML = `<div class="store-count" style="padding:0 2px 8px">${pending.length}건</div><div class="search-list">` + pending.map(r => {
+      const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
+      const roleLabel = {sv:"AC"}[r.role] || r.role || "";
+      return `<div class="search-item" onclick="viewRecordNP('${r.id}')">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span class="si-store">${r.storeName}</span>
+          <span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">Y 승인대기</span>
+        </div>
+        <div class="si-meta">${r.writerName||"-"}(${roleLabel}) · ${dt}</div>
+      </div>`;
+    }).join("") + `</div>`;
+  } catch(e) {
+    const listEl = document.getElementById("approvalListNP");
+    if (listEl) listEl.innerHTML = `<p class="error-text">오류: ${e.message}</p>`;
+  }
+}
+
 async function viewRecordNP(docId) {
   let rec = (window._recordsNpAll || []).find(r => r.id === docId);
   if (!rec) {
@@ -4578,6 +4666,8 @@ function renderRecordDetailNP(root) {
   if (!r) { go("recordsNP"); return; }
   const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
   const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
+  const status = npStatus(r);
+  const statusText = { done:"✅ 완료", pending:"🟡 승인대기 (담당 팀장 승인 필요)", needs:"❌ 재점검필요", none:"-" }[status];
   const attendeesHtml = (r.npAnswers?.attendees||[]).length
     ? (r.npAnswers.attendees||[]).map(name => `<div>${name}</div>`).join("")
     : "-";
@@ -4590,6 +4680,7 @@ function renderRecordDetailNP(root) {
         : `<div style="font-size:12px;color:#A0AEC0">미첨부</div>`}
     </div>`;
   }).join("");
+  const canApprove = status === "pending" && ["tl","gl","admin"].includes(_authRole);
 
   root.innerHTML = `
     <div class="page-header">
@@ -4604,13 +4695,37 @@ function renderRecordDetailNP(root) {
       <label class="field-label">점검일시</label>
       <div class="info-box">${dt}</div>
       <label class="field-label">NP.Q1 교육 완료 여부</label>
-      <div class="info-box">${r.npAnswers?.q1 === "Y" ? "✅ Y (완료)" : r.npAnswers?.q1 === "N" ? "❌ N (추가점검필요)" : "-"}</div>
+      <div class="info-box">${statusText}</div>
       <label class="field-label">교육 참석자</label>
       <div class="info-box">${attendeesHtml}</div>
       <label class="field-label" style="margin-top:4px">사진</label>
       ${photosHtml}
       ${r.npAnswers?.memo ? `<label class="field-label">메모</label><div class="info-box">${r.npAnswers.memo}</div>` : ""}
+      ${canApprove ? `
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+        <div style="text-align:center;font-size:12px;color:#B7791F;margin-bottom:10px">이 건은 담당 팀장 승인이 필요합니다</div>
+        <button class="btn-primary-np" onclick="approveNpRecord('${r.id}')">이 점검 승인하기</button>
+      </div>` : ""}
     </div>`;
+}
+
+async function approveNpRecord(docId) {
+  if (!confirm("이 점검을 승인하시겠습니까?")) return;
+  try {
+    await updateDoc(doc(db, "surveys_np", docId), {
+      tlApproved: true,
+      tlApprovedBy: _authName,
+      tlApprovedAt: new Date(),
+    });
+    cacheInvalidate("dashboardNP");
+    cacheInvalidate("recordsNP");
+    const r = window._recordDetailNP;
+    if (r && r.id === docId) { r.tlApproved = true; }
+    alert("✅ 승인 처리되었습니다.");
+    goBack();
+  } catch(e) {
+    alert("승인 처리 중 오류가 발생했습니다: " + e.message);
+  }
 }
 
 async function viewRecordDash(docId) {
@@ -4899,7 +5014,7 @@ Object.assign(window, {
   setRecStatusFilter, setDateLimitUI, applyAdminSettings,
   startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhotoRequired,
   setNpQ1, addNpAttendee, removeNpAttendee, updateNpAttendeeName, updateNpMemo, handleNpImage, removeNpImage, submitFormNP, downloadExcelNP,
-  fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter, viewStoreHistoryNP,
+  fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter, viewStoreHistoryNP, approveNpRecord,
 });
 // 앱 시작 시 세션 복원
 (async () => {
