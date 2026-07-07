@@ -4767,6 +4767,8 @@ async function downloadExcel() {
 
   const rows = [["매장코드","매장명","팀","점검유형","역할","점검자","방문일시",...svH,...tlH,...glH,...confirmH,...dateH]];
 
+  const roleLabelMap = { sv:"SV", tl:"팀장", gl:"그룹장" };
+
   records.forEach(r => {
     const addRow = (type, role, name, date, answers, tla, gla) => {
       if (!name && !Object.keys(answers||{}).length) return;
@@ -4776,22 +4778,26 @@ async function downloadExcel() {
       const glVals = GL_QUESTIONS.map(q=> gla?.[q.id]?.value||"");
       const confirmVals = [
         r.tlConfirmerName||"",
-        r.tlConfirmedAt ? fmtDate(r.tlConfirmedAt) : "",
-        r.finalConfirmedAt ? fmtDate(r.finalConfirmedAt) : "",
+        r.tlConfirmedAt ? fmtDateExcel(r.tlConfirmedAt) : "",
+        r.finalConfirmedAt ? fmtDateExcel(r.finalConfirmedAt) : "",
         r.finalConfirmed ? "Y" : "N",
       ];
       // 최초점검일: visitDate
       // 보완점검일: N값 있으면 followup 날짜, 없으면 최초점검일과 동일
-      const firstDate   = r.visitDate ? fmtDate(r.visitDate) : "";
+      const firstDate   = r.visitDate ? fmtDateExcel(r.visitDate) : "";
       const hasNItems   = Object.values(r.answers||{}).some(a => a.value === "N");
       const followupDate = hasNItems
-        ? (r.followupSvVisitDate ? fmtDate(r.followupSvVisitDate)
-          : r.followupTlVisitDate ? fmtDate(r.followupTlVisitDate) : "")
+        ? (r.followupSvVisitDate ? fmtDateExcel(r.followupSvVisitDate)
+          : r.followupTlVisitDate ? fmtDateExcel(r.followupTlVisitDate) : "")
         : firstDate; // N없음 → 최초점검일과 동일
       const dateVals = [firstDate, followupDate];
-      rows.push([r.storeCode,r.storeName,r.storeTeam,type,role,name||"",fmtDate(date),...svVals,...tlVals,...glVals,...confirmVals,...dateVals]);
+      rows.push([r.storeCode,r.storeName,r.storeTeam,type,role,name||"",fmtDateExcel(date),...svVals,...tlVals,...glVals,...confirmVals,...dateVals]);
     };
-    addRow("최초점검","SV",r.writerName,r.visitDate,r.answers,r.tlAnswers,r.glAnswers);
+    const roleLabel = roleLabelMap[r.role] || "SV";
+    // GL 자체 최초점검(role==="gl")은 SV 문항과 무관한 별도 11문항 체크리스트이므로
+    // SV Q1~Q16 칸에는 값을 넣지 않고(빈칸), 그룹장 Q1~Q11 칸(glAnswers)에만 표시한다.
+    const svAnswersForRow = r.role === "gl" ? null : r.answers;
+    addRow("최초점검", roleLabel, r.writerName, r.visitDate, svAnswersForRow, r.tlAnswers, r.glAnswers);
     // 보완점검: SV 또는 TL 누가 진행했는지에 따라 동적으로 role/name/date/answers 결정
     // (GL 최초점검 N → TL 보완 등, 보완 주체가 SV가 아닌 경우도 별도 "보완점검" 행으로 정확히 출력)
     const hasSvFu = r.followupSvAnswers && Object.keys(r.followupSvAnswers).length > 0;
@@ -4869,6 +4875,18 @@ function nowDTL() {
   return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 function fmtDate(v) { if(!v) return "-"; try { return new Date(v).toLocaleString("ko-KR"); } catch { return v; } }
+// 엑셀 export 전용: 자릿수가 항상 고정된 형식(YYYY-MM-DD HH:mm)으로 저장해
+// 분석 도구에서 .slice(0,10) 등으로 날짜만 잘라써도 항상 정확히 잘리도록 함.
+// (fmtDate는 화면 표시용이라 한국어 로케일 형식을 그대로 유지하고, 여긴 별도 함수로 분리)
+function fmtDateExcel(v) {
+  if (!v) return "-";
+  try {
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return String(v);
+    const pad = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch { return String(v); }
+}
 
 Object.assign(window, {
   go, goBack, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
