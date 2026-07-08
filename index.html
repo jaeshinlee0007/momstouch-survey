@@ -389,8 +389,10 @@ function currentSurveyCollection() {
 // 신제품 현장점검 건의 상태 계산: "none"(미점검) | "needs"(재점검필요) | "pending"(승인대기) | "done"(완료)
 // - SV의 Q1=Y는 담당 팀장 승인(tlApproved===true)이 있어야 완료. 필드가 없는 과거 데이터도 승인대기로 취급.
 // - TL/GL/관리자 본인 점검의 Y는 승인 절차 없이 즉시 완료.
+// - 팀장(또는 GL/관리자)이 반려한 건은 재점검필요로 취급 (기존 N항목과 동일 버킷).
 function npStatus(rec) {
   if (!rec) return "none";
+  if (rec.tlRejected) return "needs";
   const q1 = rec.npAnswers?.q1;
   if (q1 === "N") return "needs";
   if (q1 === "Y") {
@@ -4667,7 +4669,7 @@ function renderRecordDetailNP(root) {
   const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
   const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
   const status = npStatus(r);
-  const statusText = { done:"✅ 완료", pending:"🟡 승인대기 (담당 팀장 승인 필요)", needs:"❌ 재점검필요", none:"-" }[status];
+  const statusText = { done:"✅ 완료", pending:"🟡 승인대기 (담당 팀장 승인 필요)", needs: r.tlRejected ? "❌ 재점검필요 (팀장 반려)" : "❌ 재점검필요", none:"-" }[status];
   const attendeesHtml = (r.npAnswers?.attendees||[]).length
     ? (r.npAnswers.attendees||[]).map(name => `<div>${name}</div>`).join("")
     : "-";
@@ -4680,7 +4682,7 @@ function renderRecordDetailNP(root) {
         : `<div style="font-size:12px;color:#A0AEC0">미첨부</div>`}
     </div>`;
   }).join("");
-  const canApprove = status === "pending" && ["tl","gl","admin"].includes(_authRole);
+  const canDecide = status === "pending" && ["tl","gl","admin"].includes(_authRole);
 
   root.innerHTML = `
     <div class="page-header">
@@ -4701,30 +4703,53 @@ function renderRecordDetailNP(root) {
       <label class="field-label" style="margin-top:4px">사진</label>
       ${photosHtml}
       ${r.npAnswers?.memo ? `<label class="field-label">메모</label><div class="info-box">${r.npAnswers.memo}</div>` : ""}
-      ${canApprove ? `
+      ${r.tlComment ? `<label class="field-label">팀장 코멘트</label><div class="info-box">${r.tlComment}</div>` : ""}
+      ${canDecide ? `
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
         <div style="text-align:center;font-size:12px;color:#B7791F;margin-bottom:10px">이 건은 담당 팀장 승인이 필요합니다</div>
-        <button class="btn-primary-np" onclick="approveNpRecord('${r.id}')">이 점검 승인하기</button>
+        <label class="field-label">팀장 코멘트 (선택)</label>
+        <textarea id="tlCommentInput" class="memo-input" style="width:100%;min-height:64px;margin-bottom:10px" placeholder="승인/반려 시 함께 저장됩니다"></textarea>
+        <div style="display:flex;gap:8px">
+          <button class="btn-ghost" style="color:#C53030;border-color:#FEB2B2;flex:1" onclick="rejectNpRecord('${r.id}')">반려</button>
+          <button class="btn-primary-np" style="flex:1" onclick="approveNpRecord('${r.id}')">승인</button>
+        </div>
       </div>` : ""}
     </div>`;
 }
 
 async function approveNpRecord(docId) {
+  const comment = (document.getElementById("tlCommentInput")?.value || "").trim();
   if (!confirm("이 점검을 승인하시겠습니까?")) return;
   try {
-    await updateDoc(doc(db, "surveys_np", docId), {
-      tlApproved: true,
-      tlApprovedBy: _authName,
-      tlApprovedAt: new Date(),
-    });
+    const payload = { tlApproved: true, tlApprovedBy: _authName, tlApprovedAt: new Date() };
+    if (comment) payload.tlComment = comment;
+    await updateDoc(doc(db, "surveys_np", docId), payload);
     cacheInvalidate("dashboardNP");
     cacheInvalidate("recordsNP");
     const r = window._recordDetailNP;
-    if (r && r.id === docId) { r.tlApproved = true; }
+    if (r && r.id === docId) { r.tlApproved = true; if (comment) r.tlComment = comment; }
     alert("✅ 승인 처리되었습니다.");
     goBack();
   } catch(e) {
     alert("승인 처리 중 오류가 발생했습니다: " + e.message);
+  }
+}
+
+async function rejectNpRecord(docId) {
+  const comment = (document.getElementById("tlCommentInput")?.value || "").trim();
+  if (!confirm("이 점검을 반려하시겠습니까?\n반려 시 해당 매장은 재점검필요 상태로 표시됩니다.")) return;
+  try {
+    const payload = { tlRejected: true, tlRejectedBy: _authName, tlRejectedAt: new Date() };
+    if (comment) payload.tlComment = comment;
+    await updateDoc(doc(db, "surveys_np", docId), payload);
+    cacheInvalidate("dashboardNP");
+    cacheInvalidate("recordsNP");
+    const r = window._recordDetailNP;
+    if (r && r.id === docId) { r.tlRejected = true; if (comment) r.tlComment = comment; }
+    alert("🚫 반려 처리되었습니다.");
+    goBack();
+  } catch(e) {
+    alert("반려 처리 중 오류가 발생했습니다: " + e.message);
   }
 }
 
@@ -5014,7 +5039,7 @@ Object.assign(window, {
   setRecStatusFilter, setDateLimitUI, applyAdminSettings,
   startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhotoRequired,
   setNpQ1, addNpAttendee, removeNpAttendee, updateNpAttendeeName, updateNpMemo, handleNpImage, removeNpImage, submitFormNP, downloadExcelNP,
-  fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter, viewStoreHistoryNP, approveNpRecord,
+  fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter, viewStoreHistoryNP, approveNpRecord, rejectNpRecord,
 });
 // 앱 시작 시 세션 복원
 (async () => {
