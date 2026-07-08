@@ -4284,6 +4284,7 @@ async function handleStoreUpload(input) {
 // 승인/반려 없음 (작업지시서 명시) — 읽기 전용 집계 화면.
 async function renderDashboardNP(root) {
   window._dashNpStatusFilter = "";
+  window._dashNpKeyword = "";
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
@@ -4337,7 +4338,15 @@ function buildDashboardNP(root, records, scopeStores) {
 
   // 스탯카드 필터 적용 ("" = 전체, "done"/"pending"/"needs"/"none")
   const statFilter = window._dashNpStatusFilter || "";
-  const rowsData = !statFilter ? rowsDataAll : rowsDataAll.filter(r => r.status === statFilter);
+  let rowsData = !statFilter ? rowsDataAll : rowsDataAll.filter(r => r.status === statFilter);
+
+  // 매장명 검색 (스탯카드 필터와 AND 조건으로 동시 적용)
+  const keyword = (window._dashNpKeyword || "").trim().toLowerCase();
+  if (keyword) rowsData = rowsData.filter(r =>
+    r.store.name.toLowerCase().includes(keyword) ||
+    (r.store.code||"").toLowerCase().includes(keyword) ||
+    (r.rec?.writerName||"").toLowerCase().includes(keyword)
+  );
 
   const cardStyle = (key, activeColor) => {
     const isActive = statFilter === key;
@@ -4384,12 +4393,16 @@ function buildDashboardNP(root, records, scopeStores) {
       <div style="${cardStyle('needs', '#C53030')}" onclick="setDashNpFilter('needs')"><div class="stat-num" style="color:#C53030">${needCount}</div><div class="stat-label">재점검필요</div></div>
       <div style="${cardStyle('none', '#A0AEC0')}" onclick="setDashNpFilter('none')"><div class="stat-num" style="color:#A0AEC0">${notYetCount}</div><div class="stat-label">미점검</div></div>
     </div>
+    <div style="display:flex;gap:6px;padding:10px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0">
+      <input type="text" id="dashSearchNP" value="${(window._dashNpKeyword||"").replace(/"/g,'&quot;')}" placeholder="매장명/점검자명 검색" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px" onkeydown="if(event.key==='Enter')searchDashNP()">
+      <button onclick="searchDashNP()" style="flex-shrink:0;padding:8px 16px;background:var(--amber);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">검색</button>
+    </div>
     <div style="padding:8px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0;font-size:12px;color:#718096;display:flex;justify-content:space-between;align-items:center">
-      <span>${_authRole==="tl" ? "담당팀" : "전체"} 매장 기준 · 매장별 최신 점검 결과${statFilter ? " · 필터 적용중" : ""}</span>
+      <span>${_authRole==="tl" ? "담당팀" : "전체"} 매장 기준 · 매장별 최신 점검 결과${statFilter || keyword ? " · 필터 적용중" : ""}</span>
       <button class="btn-ghost" onclick="downloadExcelNP()" style="padding:6px 12px;font-size:12px;width:auto">📥 엑셀 다운로드</button>
     </div>
     <div class="dash-table-wrap">
-      <div class="table-count">${rowsData.length}개 매장${statFilter ? ` (전체 ${scopeStores.length}개 중)` : ""}</div>
+      <div class="table-count">${rowsData.length}개 매장${(statFilter || keyword) ? ` (전체 ${scopeStores.length}개 중)` : ""}</div>
       <table class="dash-table">
         <thead><tr><th>매장명</th><th>팀</th><th>상태</th><th>점검자명</th><th>교육인원</th><th>최근점검일</th><th>메모</th></tr></thead>
         <tbody>${rows||'<tr><td colspan="7" style="text-align:center;padding:20px;color:#718096">해당 조건의 매장이 없습니다</td></tr>'}</tbody>
@@ -4399,6 +4412,12 @@ function buildDashboardNP(root, records, scopeStores) {
 
 function setDashNpFilter(val) {
   window._dashNpStatusFilter = val;
+  buildDashboardNP(document.getElementById("app"), window._dashNpRecords || [], window._dashNpScope || []);
+}
+
+function searchDashNP() {
+  const input = document.getElementById("dashSearchNP");
+  window._dashNpKeyword = input ? input.value : "";
   buildDashboardNP(document.getElementById("app"), window._dashNpRecords || [], window._dashNpScope || []);
 }
 
@@ -5039,7 +5058,7 @@ Object.assign(window, {
   setRecStatusFilter, setDateLimitUI, applyAdminSettings,
   startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhotoRequired,
   setNpQ1, addNpAttendee, removeNpAttendee, updateNpAttendeeName, updateNpMemo, handleNpImage, removeNpImage, submitFormNP, downloadExcelNP,
-  fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter, viewStoreHistoryNP, approveNpRecord, rejectNpRecord,
+  fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter, viewStoreHistoryNP, approveNpRecord, rejectNpRecord, searchDashNP,
 });
 // 앱 시작 시 세션 복원
 (async () => {
