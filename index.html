@@ -40,32 +40,35 @@ window.addEventListener("beforeunload", () => {
 // ── Auth 상태 관리 ─────────────────────────────────
 // 현재 로그인 사용자 정보 (null = 미로그인)
 let _currentUser = null;
+// 미등록 계정 로그인 시도 시 로그인 화면에 표시할 안내 메시지 (signOut → onAuthStateChanged(null) 사이에도 유지되도록 전역 보관)
+let _loginRejectMsg = null;
 
 // Auth 상태 변경 감지 (로그인/로그아웃 시 자동 처리)
 onAuthStateChanged(auth, async user => {
   _currentUser = user;
   if (user) {
-    // users 컬렉션에서 역할/이름 로드
+    // users 컬렉션에서 역할/이름 로드. 등록된 계정(문서 존재)만 통과시킴.
+    let authorized = false;
     try {
       const userDoc = await getDoc(doc(db, "users", user.uid));
       if (userDoc.exists()) {
         const ud = userDoc.data();
         _authName = ud.name || "";
         _authRole = ud.role || "sv";
-      } else {
-        // users 미등록 시 이메일 fallback
-        const [namePart] = user.email.split("@");
-        const parts = namePart.split("_");
-        _authRole = parts[parts.length - 1] || "sv";
-        _authName = parts.slice(0, -1).join("_");
+        authorized = true;
       }
     } catch(e) {
-      // 오류 시 이메일 fallback
-      const [namePart] = user.email.split("@");
-      const parts = namePart.split("_");
-      _authRole = parts[parts.length - 1] || "sv";
-      _authName = parts.slice(0, -1).join("_");
+      authorized = false; // 조회 실패도 미등록과 동일하게 취급 (fail-closed)
     }
+
+    if (!authorized) {
+      // users 문서가 없는 계정(부여되지 않은/미등록 계정)은 즉시 로그아웃 처리
+      _authName = ""; _authRole = "";
+      _loginRejectMsg = "등록되지 않은 계정입니다. 관리자에게 계정 등록을 요청해주세요.";
+      await signOut(auth); // → 아래 else 분기가 재호출되며 로그인 화면에 안내 표시
+      return;
+    }
+
     if (document.getElementById("app")) {
       if (["tl","gl","admin"].includes(_authRole)) S.adminAuthed = true;
       // 로그인 완료 후 photoSettings 재로드 (인증 후 Firestore 접근 가능)
@@ -89,7 +92,14 @@ onAuthStateChanged(auth, async user => {
   } else {
     _authName = "";
     _authRole = "";
-    if (document.getElementById("app")) go("login");
+    if (document.getElementById("app")) {
+      go("login");
+      if (_loginRejectMsg) {
+        const errEl = document.getElementById("loginErr");
+        if (errEl) { errEl.textContent = _loginRejectMsg; errEl.style.display = "block"; }
+        _loginRejectMsg = null;
+      }
+    }
   }
 });
 
