@@ -4563,6 +4563,16 @@ async function fetchRecordsNP() {
     }
     // GL/admin: 전체 표시 (필터 없음)
 
+    // 매장별 최신 건만 남김 (반려 후 재점검·승인된 경우 예전 반려 이력이 남아있지 않도록)
+    const latestByStore = new Map();
+    records.forEach(r => {
+      const ex = latestByStore.get(r.storeCode);
+      const t = r.createdAt?.seconds || 0;
+      const exT = ex?.createdAt?.seconds || 0;
+      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    });
+    records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+
     if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
 
     const filter = window._recNpFilter || "";
