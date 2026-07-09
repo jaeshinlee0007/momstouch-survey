@@ -1337,9 +1337,11 @@ async function loadPrevNItems(storeCode) {
 
       // 전체 보완점검 대상: SV N + TL N + GL 매핑 (중복제거)
       const allFollowupIds = [...new Set([...normalNItems, ...tlNItems, ...glFollowupIds])];
-      S.prevNItems = allFollowupIds;
+      // 팀장 반려 건은 특정 N항목이 아니라 전체 재점검이 필요하므로 대상 목록을 비워
+      // renderForm의 "N목록 없으면 전체 문항 표시" 폴백을 타도록 함
+      S.prevNItems = targetDoc.tlRejected ? [] : allFollowupIds;
       S.loadedDocId = targetDoc.id;
-      S.glFollowupIds = glFollowupIds.filter(id => !normalNItems.includes(id) && !tlNItems.includes(id));
+      S.glFollowupIds = targetDoc.tlRejected ? [] : glFollowupIds.filter(id => !normalNItems.includes(id) && !tlNItems.includes(id));
       // 최초점검 결과 미리보기용 compareData 설정
       S.compareData = { id: targetDoc.id, ...targetDoc };
       
@@ -1383,7 +1385,11 @@ function renderInfo(root) {
       <div class="info-box">${S.writerName}</div>
       <label class="field-label">방문 일시</label>
       <input id="visitDate" class="input-field" type="datetime-local" value="${nowDTL()}" />
-      ${S.inspType==='보완' && S.prevNItems.length>0 ? `
+      ${S.inspType==='보완' && S.compareData?.tlRejected ? `
+        <div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#C53030">
+          🚫 팀장 반려로 인한 전체 재점검입니다. (전체 문항을 다시 응답해주세요)
+          ${S.compareData?.tlRejectedReason ? `<br><span style="font-size:12px">반려사유: ${S.compareData.tlRejectedReason}</span>` : ""}
+        </div>` : S.inspType==='보완' && S.prevNItems.length>0 ? `
         <div class="notice-box">
           ⚠️ 재점검 대상: ${S.prevNItems.length}개 항목
           ${(S.glFollowupIds||[]).length > 0 ? `<br><span style="color:#744210">🔍 그룹장 지적 카테고리 포함 ${(S.glFollowupIds||[]).length}개 항목</span>` : ""}
@@ -2278,8 +2284,8 @@ function renderCompare(root) {
     }
   }
 
-  // ── 보완점검 있을 때: PRE-POST 비교 (보완→최초 순서, N항목만)
-  if (!isGLDoc && hasFollowup && nIds.size > 0) {
+  // ── 보완점검 있을 때: PRE-POST 비교 (보완→최초 순서, N항목만) — 팀장 반려 건은 전체재검 섹션으로 대체되므로 제외
+  if (!isGLDoc && hasFollowup && nIds.size > 0 && !d.tlRejected) {
     html += `<div class="section-divider divider-follow">🔁 보완점검 PRE-POST 비교</div>`;
     html += `<div class="meta-row"><span>보완(POST): ${d.followupSvWriterName||""}</span><span>${fmtDate(d.followupSvVisitDate)}</span></div>`;
     html += `<div class="meta-row"><span>최초(PRE): ${d.writerName||""}</span><span>${fmtDate(d.visitDate)}</span></div>`;
@@ -2318,6 +2324,40 @@ function renderCompare(root) {
               <div class="cc-val ${valClass(preV)}">${preV}</div>
               ${preA?.image ? `<img src="${normalizeImageUrl(preA.image)}" class="cc-img" onclick="openImageModal('${normalizeImageUrl(preA.image)}')">` : ""}
               ${preA?.memo ? `<div class="compare-memo">💬 ${preA.memo}</div>` : ""}
+            </div>
+          </div>
+        </div>`;
+    });
+  }
+
+  // ── 보완점검 있는데 (a) 최초점검엔 N항목이 없었거나 (b) 팀장 반려로 전체 재점검이 필요한 경우
+  // → PRE-POST 좁은 비교 대신, 보완점검 제출 전체를 별도로 보여줌
+  if (!isGLDoc && hasFollowup && (nIds.size === 0 || d.tlRejected)) {
+    html += `<div class="section-divider divider-follow">🔁 보완점검 결과 (전체)</div>`;
+    html += d.tlRejected
+      ? `<div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#C53030">🚫 팀장 반려로 인한 전체 재점검 결과입니다.${d.tlRejectedReason ? `<br>반려사유: ${d.tlRejectedReason}` : ""}</div>`
+      : `<div class="notice-box" style="background:#FFFBEB;border-color:#F6AD55;color:#744210">ℹ️ 최초점검엔 N항목이 없었지만(반려 등의 사유로) 보완점검이 제출된 건입니다.</div>`;
+    html += `<div class="meta-row"><span>보완: ${d.followupSvWriterName||""}</span><span>${fmtDate(d.followupSvVisitDate)}</span></div>`;
+
+    let catCurrent3 = "";
+    SV_QUESTIONS.forEach(q => {
+      const postA = fuSvA[q.id];
+      if (!postA) return; // 보완점검에서 실제로 응답한 문항만 표시
+      const color = CAT_COLORS[q.category]||"#718096";
+      if (q.category !== catCurrent3) {
+        catCurrent3 = q.category;
+        html += `<div class="cat-header" style="border-left:4px solid ${color};color:${color}">${q.category}</div>`;
+      }
+      const postV = postA?.value || "-";
+      html += `
+        <div class="compare-card ${postV==="N" ? "changed" : ""}">
+          <div class="cc-title">Q${q.id} ${q.title} ${postV==="N" ? '<span class="change-badge">N</span>' : ""}</div>
+          <div class="cc-row">
+            <div class="cc-cell">
+              <div class="cc-role">보완</div>
+              <div class="cc-val ${valClass(postV)}">${postV}</div>
+              ${postA?.image ? `<img src="${normalizeImageUrl(postA.image)}" class="cc-img" onclick="openImageModal('${normalizeImageUrl(postA.image)}')">` : ""}
+              ${postA?.memo ? `<div class="compare-memo">💬 ${postA.memo}</div>` : ""}
             </div>
           </div>
         </div>`;
