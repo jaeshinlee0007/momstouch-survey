@@ -3733,8 +3733,8 @@ async function fetchRecords() {
   try {
     // 양도양수/폐점점포 배지 표시를 위해 역할 무관 항상 맵 갱신
     await _refreshTransferAndClosedMaps();
-    // 매장 데이터 로드 보장 (TL 역할 필터에 필요)
-    if (_authRole === "tl" && (!window._activeStores || window._activeStores.length === 0)) {
+    // 매장 데이터 로드 보장 (SV/TL 역할 필터에 필요)
+    if ((_authRole === "tl" || _authRole === "sv") && (!window._activeStores || window._activeStores.length === 0)) {
       window._activeStores = await getActiveStoreData();
     }
     // SV + TL + GL 전체 조회 후 병합
@@ -3762,8 +3762,12 @@ async function fetchRecords() {
     }));
     // ── 역할별 자동 필터 ──────────────────────────
     if (_currentUser && _authRole === "sv" && _authName) {
-      // SV: 본인이 작성한 점검 건만
+      // SV: 본인 담당 매장(store_master 기준) 건 전체 + 본인이 작성한 건(폐점/양도 등으로 담당매장 목록에서
+      // 빠졌더라도 본인이 쓴 건은 계속 보이도록 안전망 유지)
+      const activeStores = window._activeStores || [];
+      const myStoreCodes = new Set(activeStores.filter(s => s.sv === _authName).map(s => s.code));
       records = records.filter(r =>
+        myStoreCodes.has(r.storeCode) ||
         r.writerName === _authName ||
         r.followupSvWriterName === _authName
       );
