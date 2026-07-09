@@ -1621,9 +1621,12 @@ async function loadGLCompareAndShow(glDocId) {
 }
 
 // GL N항목 보완점검 시작 (compare 화면 버튼 클릭 시)
-function startGLFollowup() {
-  const tlName = document.getElementById("tlNameInput")?.value?.trim() || "";
+async function startGLFollowup() {
+  // 권한 검증: TL은 본인 담당 팀 점포만, admin은 전체 허용 (다른 확인/반려 함수들과 동일한 방식)
   const d2 = S.compareData;
+  const _ok = await _checkTLOwnership(d2?.storeCode);
+  if (!_ok) { alert("⛔ 본인 담당 팀 점포만 보완점검을 시작할 수 있습니다."); return; }
+  const tlName = document.getElementById("tlNameInput")?.value?.trim() || "";
   if (!d2 || !d2.svFollowupIds || d2.svFollowupIds.length === 0) {
     alert("보완점검 대상 문항이 없습니다."); return;
   }
@@ -2476,10 +2479,13 @@ function renderCompare(root) {
           <div class="notice-box" style="background:#FFF5F5;border-color:#FEB2B2;color:#742A2A">🚫 폐점된 매장입니다 — 보완점검을 진행할 수 없습니다</div>
           <button class="btn-ghost" disabled style="opacity:.5;cursor:not-allowed" title="폐점된 매장은 보완점검을 시작할 수 없습니다">📋 보완점검 시작</button>
           <button class="btn-ghost" onclick="goBack()">돌아가기</button>
-        </div>` : `
+        </div>` : ["tl","admin"].includes(_authRole) ? `
           <label class="field-label">결재의견 <span style="font-size:11px;color:#718096">(선택)</span></label>
           <input id="tlNameInput" class="input-field" type="text" placeholder="결재의견 입력 (생략 가능)" />
           <button class="btn-primary" onclick="startGLFollowup()">📋 보완점검 시작</button>
+          <button class="btn-ghost" onclick="goBack()">돌아가기</button>
+        </div>` : `
+          <div class="notice-box">🕐 담당 팀장의 보완점검 대기 중입니다</div>
           <button class="btn-ghost" onclick="goBack()">돌아가기</button>
         </div>`}
       `;
@@ -2530,12 +2536,14 @@ function renderCompare(root) {
           <div class="tl-confirmed-box">✅ 팀장확인 완료<br>
             <span style="font-size:12px;color:#718096">팀장: ${d2.tlConfirmerName||""} · ${fmtDate(d2.tlConfirmedAt)}</span>
           </div>
+          ${["gl","admin"].includes(_authRole) ? `
           <button class="btn-gl-confirm" onclick="confirmGL()">👥 그룹장 확인 완료</button>
           <div class="reject-section">
             <label class="field-label" style="margin-top:8px">반려 사유</label>
             <input id="glRejectReason" class="input-field" type="text" placeholder="반려 사유 입력" />
             <button class="btn-gl-reject" onclick="rejectGL()">🚫 반려</button>
-          </div>
+          </div>` : `
+          <div class="notice-box">🕐 그룹장 확인 대기 중입니다</div>`}
           <button class="btn-ghost" onclick="goBack()">돌아가기</button>
         </div>`;
 
@@ -2627,12 +2635,14 @@ function renderCompare(root) {
         <div class="tl-confirmed-box">✅ 팀장확인 완료<br>
           <span style="font-size:12px;color:#718096">팀장: ${d2.tlConfirmerName||""} · ${fmtDate(d2.tlConfirmedAt)}</span>
         </div>
+        ${["gl","admin"].includes(_authRole) ? `
         <button class="btn-gl-confirm" onclick="confirmGL()">👥 그룹장 확인 완료</button>
         <div class="reject-section">
           <label class="field-label" style="margin-top:8px">반려 사유</label>
           <input id="glRejectReason" class="input-field" type="text" placeholder="반려 사유 입력" />
           <button class="btn-gl-reject" onclick="rejectGL()">🚫 반려</button>
-        </div>
+        </div>` : `
+        <div class="notice-box">🕐 그룹장 확인 대기 중입니다</div>`}
         <button class="btn-ghost" onclick="goBack()">돌아가기</button>
       </div>`;
   } else if (d2 && isClean2 && !d2.tlConfirmed) {
@@ -2644,6 +2654,7 @@ function renderCompare(root) {
     html += `
       <div class="card-section">
         ${rejNotice}
+        ${["tl","admin"].includes(_authRole) ? `
         <label class="field-label">결재의견 <span style="font-size:11px;color:#718096">(선택)</span></label>
         <input id="tlNameInput" class="input-field" type="text" placeholder="결재의견 입력 (생략 가능)" />
         <button class="btn-tl-confirm" onclick="confirmTL()">📋 팀장 확인 완료</button>
@@ -2651,7 +2662,8 @@ function renderCompare(root) {
           <label class="field-label" style="margin-top:8px">반려 사유</label>
           <input id="tlRejectReason" class="input-field" type="text" placeholder="반려 사유 입력" />
           <button class="btn-tl-reject" onclick="rejectTL()">🚫 반려</button>
-        </div>
+        </div>` : `
+        <div class="notice-box">🕐 담당 팀장 확인 대기 중입니다</div>`}
         <button class="btn-ghost" onclick="goBack()">돌아가기</button>
       </div>`;
   } else {
@@ -3507,6 +3519,8 @@ async function rejectGL() {
     S.compareData.glRejected = true;
     S.compareData.glRejectedReason = reason;
     alert("🚫 반려 처리되었습니다.\nSV/팀장 보완점검 목록에 재노출됩니다.");
+    cacheInvalidate("dashboard");
+    cacheInvalidate("records");
     window._dashTab = "전체";
     window._dashFilter = null;
     go("dashboard");
@@ -4124,6 +4138,7 @@ function buildDashboard(root, records) {
     if (r.role === "gl") {
       return r.glRejected === true && !r.tlConfirmed && !r.finalConfirmed;
     }
+    if (r.tlRejected) return false; // 반려된 건은 재보완점검 전까지 "팀장확인 대기" 큐에서 제외
     const rNItems      = Object.values(r.answers||{}).filter(a=>a.value==="N").length;
     const rHasFollowup = !!r.followupSvAnswers;
     const rFollowupN   = Object.values(r.followupSvAnswers||{}).filter(a=>a.value==="N").length;
