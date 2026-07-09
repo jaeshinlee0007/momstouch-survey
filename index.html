@@ -815,7 +815,10 @@ function removeNpImage(slotKey) {
 async function submitFormNP() {
   const a = S.npAnswers;
   const warnEl = document.getElementById("submitWarning");
-  const showWarn = (msg) => { if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; } else alert(msg); };
+  const showWarn = (msg) => {
+    if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; }
+    alert("⚠️ " + msg + "\n제출되지 않았습니다.");
+  };
 
   if (!_npPhotoRequiredLoaded) await loadNpPhotoRequired();
 
@@ -1854,6 +1857,7 @@ async function submitForm() {
     const warn = document.getElementById("submitWarning");
     if(warn) { warn.style.display="block"; warn.textContent="⚠️ 아직 답변하지 않은 항목이 있습니다."; }
     document.getElementById(`qcard-${unanswered[0].id}`)?.scrollIntoView({behavior:"smooth"});
+    alert("⚠️ 아직 답변하지 않은 항목이 있습니다.\n제출되지 않았습니다. 모든 항목에 답한 뒤 다시 제출해주세요.");
     return;
   }
   // 이미지 필수 체크
@@ -1885,6 +1889,7 @@ async function submitForm() {
       const card = document.getElementById(`qcard-${q.id}`);
       if(card) card.style.borderColor = "#FC8181";
     });
+    alert(`📷 사진 첨부가 필요한 항목이 ${noImage.length}건 있습니다.\n제출되지 않았습니다. 빨간색으로 표시된 항목에 사진을 첨부한 뒤 다시 제출해주세요.`);
     return;
   }
   // 전체 이미지 용량 체크 (Firestore 1MB 문서 한도 고려)
