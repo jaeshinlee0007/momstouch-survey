@@ -1914,6 +1914,9 @@ async function submitForm() {
           followupSvWriterName: S.writerName,
           followupSvVisitDate: S.visitDate,
           followupSvUpdatedAt: new Date(),
+          // 반려 이후 재보완점검 제출 시 반려 상태 해제 (반려 사유/이력 필드는 보존)
+          tlRejected: false,
+          glRejected: false,
         });
       } else {
         // loadedDocId 없으면 매장코드로 최초점검 문서 재탐색
@@ -1935,6 +1938,8 @@ async function submitForm() {
             followupSvWriterName: S.writerName,
             followupSvVisitDate: S.visitDate,
             followupSvUpdatedAt: new Date(),
+            tlRejected: false,
+            glRejected: false,
           });
           S.loadedDocId = targetId;
         } else {
@@ -1995,6 +2000,11 @@ async function submitForm() {
           [`${prefix}Answers`]: S.answers,
           [`${prefix}UpdatedAt`]: new Date(),
         };
+        // 반려 이후 재보완점검 제출 시 반려 상태 해제 (반려 사유/이력 필드는 보존)
+        if (S.inspType === "보완") {
+          updatePayload.tlRejected = false;
+          updatePayload.glRejected = false;
+        }
         // SV 문서 기반 TL 보완점검: followupSvAnswers에도 저장 (세트 종결 호환)
         if (!isGLFollowup && S.inspType === "보완") {
           updatePayload.followupSvAnswers = S.answers;
@@ -2797,6 +2807,17 @@ async function renderPhotoSetting(root) {
       </div>
       <div style="font-size:12px;color:#718096;margin:6px 0 12px">OFF 시 3장 모두 선택 첨부로 전환됩니다. (문항별 개별 설정 없음)</div>
 
+      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:24px;margin-bottom:4px">🛠️ 데이터 정리 도구</div>
+      <div style="background:#FFFBEB;border:1px solid #F6AD55;border-radius:8px;padding:12px;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:500;color:#744210;margin-bottom:4px">반려 상태 불일치 건 정리</div>
+        <div style="font-size:12px;color:#744210;line-height:1.5;margin-bottom:10px">
+          반려 이후 재보완점검을 이미 제출했는데도 "반려" 상태로 계속 표시되는 과거 데이터를 찾아서 고칩니다.
+          재보완점검 답변이 없는(아직 미해결인) 건은 건드리지 않습니다.
+        </div>
+        <button class="btn-ghost" onclick="scanRejectedFlagIssues()" style="border-color:#F6AD57;color:#744210">🔍 대상 건 검색</button>
+        <div id="rejCleanupResult" style="margin-top:10px"></div>
+      </div>
+
       <button class="btn-primary" onclick="applyAdminSettings()" style="margin-top:20px">저장하기</button>
       <button class="btn-ghost" onclick="goBack()" style="margin-top:8px">취소</button>
     </div>`;
@@ -2816,6 +2837,83 @@ function setDateLimitUI(val) {
     btn.style.fontWeight = active ? "600" : "400";
   });
 }
+
+// ── 데이터 정리: 반려 후 재보완점검을 했는데도 tlRejected/glRejected가 안 풀린 건 찾기/수정 ──
+// 판별 기준: tlRejected(또는 glRejected)===true 인데 followupSvAnswers/followupTlAnswers에 실제 값이 있으면
+// "재보완점검은 했는데 플래그만 안 풀린 버그 건"으로 간주. 재보완점검이 아직 없는 건(진짜 미해결)은 건드리지 않음.
+function _hasContent(obj) {
+  return !!obj && typeof obj === "object" && Object.keys(obj).length > 0;
+}
+
+async function scanRejectedFlagIssues() {
+  const resultEl = document.getElementById("rejCleanupResult");
+  resultEl.innerHTML = `<div style="font-size:12px;color:#718096">검색 중...</div>`;
+  try {
+    const [tlSnap, glSnap] = await Promise.all([
+      getDocs(query(collection(db,"surveys"), where("tlRejected","==",true))),
+      getDocs(query(collection(db,"surveys"), where("glRejected","==",true))),
+    ]);
+    const targets = new Map(); // docId -> {storeName, storeCode, updates}
+    tlSnap.forEach(d => {
+      const data = d.data();
+      if (_hasContent(data.followupSvAnswers) || _hasContent(data.followupTlAnswers)) {
+        targets.set(d.id, { storeName: data.storeName, storeCode: data.storeCode, updates: { tlRejected: false } });
+      }
+    });
+    glSnap.forEach(d => {
+      const data = d.data();
+      if (_hasContent(data.followupSvAnswers) || _hasContent(data.followupTlAnswers)) {
+        const ex = targets.get(d.id);
+        if (ex) ex.updates.glRejected = false;
+        else targets.set(d.id, { storeName: data.storeName, storeCode: data.storeCode, updates: { glRejected: false } });
+      }
+    });
+
+    window._rejCleanupTargets = targets;
+
+    if (targets.size === 0) {
+      resultEl.innerHTML = `<div style="font-size:12px;color:#276749">✅ 수정 대상이 없습니다.</div>`;
+      return;
+    }
+
+    const listHtml = [...targets.entries()].map(([id, t]) =>
+      `<div style="font-size:12px;color:#4A5568;padding:4px 0;border-bottom:1px solid #FEEBC8">${t.storeName||"(매장명없음)"} (${t.storeCode||"-"})</div>`
+    ).join("");
+
+    resultEl.innerHTML = `
+      <div style="font-size:13px;font-weight:600;color:#744210;margin-bottom:6px">${targets.size}건 발견</div>
+      <div style="max-height:160px;overflow-y:auto;background:white;border-radius:6px;padding:8px 10px;margin-bottom:10px">${listHtml}</div>
+      <button class="btn-primary" onclick="applyRejectedFlagFix()" style="background:#DD6B20">이 ${targets.size}건 일괄 수정하기</button>`;
+  } catch(e) {
+    resultEl.innerHTML = `<div style="font-size:12px;color:#C53030">오류: ${e.message}</div>`;
+  }
+}
+
+async function applyRejectedFlagFix() {
+  const targets = window._rejCleanupTargets;
+  if (!targets || targets.size === 0) return;
+  if (!confirm(`${targets.size}건을 실제로 수정하시겠습니까? 되돌릴 수 없습니다.`)) return;
+
+  const resultEl = document.getElementById("rejCleanupResult");
+  resultEl.innerHTML = `<div style="font-size:12px;color:#718096">수정 중... (0/${targets.size})</div>`;
+  let done = 0;
+  const failed = [];
+  for (const [id, t] of targets) {
+    try {
+      await updateDoc(doc(db,"surveys",id), t.updates);
+      done++;
+      resultEl.innerHTML = `<div style="font-size:12px;color:#718096">수정 중... (${done}/${targets.size})</div>`;
+    } catch(e) {
+      failed.push(t.storeName || id);
+    }
+  }
+  cacheInvalidate("dashboard");
+  cacheInvalidate("records");
+  cacheInvalidate("followup");
+  window._rejCleanupTargets = null;
+  resultEl.innerHTML = `<div style="font-size:12px;color:#276749">✅ ${done}건 수정 완료.${failed.length ? ` (실패: ${failed.join(", ")})` : ""}</div>`;
+}
+
 
 async function applyAdminSettings() {
   try {
@@ -3207,18 +3305,28 @@ function getInspStatusBadge(r) {
   const hasFollowup = !!r.followupSvAnswers;
   const followupN  = Object.values(r.followupSvAnswers||{}).filter(a=>a.value==="N").length;
 
+  // 현재 반려 상태(재보완점검 미제출)면 최우선으로 명시 표시
+  if (r.tlRejected || r.glRejected) {
+    const byWho = r.glRejected ? "그룹장" : "팀장";
+    return `<span class="badge-reject">🚫 ${byWho} 반려</span>`;
+  }
+
+  // 예전에 반려됐다가 재보완점검으로 해소된 이력이 있으면 작은 힌트 추가
+  const rejHint = (r.tlRejectedReason || r.glRejectedReason)
+    ? ` <span style="font-size:10px;color:#A0AEC0">(반려 이력있음)</span>` : "";
+
   if (hasFollowup && followupN === 0) {
     // 보완점검 후 N 없음 → 보완점검완료
-    return `<span class="status-badge status-followup-done">보완점검완료</span>`;
+    return `<span class="status-badge status-followup-done">보완점검완료</span>${rejHint}`;
   } else if (hasFollowup && followupN > 0) {
     // 보완점검 했지만 N 잔존
-    return `<span class="status-badge status-need-more">추가점검필요 N ${followupN}건</span>`;
+    return `<span class="status-badge status-need-more">추가점검필요 N ${followupN}건</span>${rejHint}`;
   } else if (nItems > 0) {
     // 최초점검 N 있음, 보완 미실시
-    return `<span class="status-badge status-need">추가점검필요 N ${nItems}건</span>`;
+    return `<span class="status-badge status-need">추가점검필요 N ${nItems}건</span>${rejHint}`;
   } else {
     // N 없음 → 점검완료
-    return `<span class="status-badge status-done">점검완료</span>`;
+    return `<span class="status-badge status-done">점검완료</span>${rejHint}`;
   }
 }
 
@@ -5075,7 +5183,7 @@ Object.assign(window, {
   confirmBack, openImageModal, downloadExcel, handleMemo,
   execDashTabSearch, setDashTabSearch,
   fnSetTeam, fnSearch, fnViewRecord, fnDownloadExcel,
-  setRecStatusFilter, setDateLimitUI, applyAdminSettings,
+  setRecStatusFilter, setDateLimitUI, applyAdminSettings, scanRejectedFlagIssues, applyRejectedFlagFix,
   startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhotoRequired,
   setNpQ1, addNpAttendee, removeNpAttendee, updateNpAttendeeName, updateNpMemo, handleNpImage, removeNpImage, submitFormNP, downloadExcelNP,
   fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter, viewStoreHistoryNP, approveNpRecord, rejectNpRecord, searchDashNP,
