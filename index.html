@@ -4198,7 +4198,10 @@ function buildDashboard(root, records) {
       else if (r.glRejected) statusBadge = `<span class="badge-tl">📋 팀장 보완점검 대기</span>`;
       else                   statusBadge = `<span class="badge-ok">점검완료</span>`;
     } else {
-      const isClean = nItems===0 || (hasFollowupDone && followupNItems===0);
+      // isClean: 진짜 손 안 댄 신규 건만(N도 없고 보완점검 제출도 없음).
+      // 보완점검으로 N이 해소된 경우는 여기 포함하지 않고 getInspStatusBadge()에서
+      // "보완점검완료"로 있는 그대로 표시되도록 함.
+      const isClean = nItems===0 && !hasFollowupDone;
       if (r.finalConfirmed)   statusBadge = `<span class="badge-final">✅ 최종확인</span>`;
       else if (r.glRejected)  statusBadge = `<span class="badge-reject">🚫 그룹장 반려</span>`;
       else if (r.tlRejected)  statusBadge = `<span class="badge-reject">🚫 팀장 반려</span>`;
