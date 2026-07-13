@@ -3672,11 +3672,16 @@ async function buildFollowupNeeded() {
     }
   }
 
-  // 보완점검 필요 조건: N항목 있거나 반려된 건 + 보완점검 미실시 + 최종확인 미완료
-  const isPending = r =>
-    !r.finalConfirmed &&
-    !r.followupSvAnswers && !r.followupTlAnswers &&
-    (Object.values(r.answers||{}).some(a => a.value === "N") || r.tlRejected || r.glRejected);
+  // 보완점검 필요 조건: N항목 남아있거나(최초든 보완후든) 반려된 건 + 최종확인 미완료
+  // (보완점검을 했어도 여전히 N이면 여전히 대기 목록에 남아야 함 — 완전 해소된 건만 제외)
+  const isPending = r => {
+    if (r.finalConfirmed) return false;
+    const fu = r.followupSvAnswers || r.followupTlAnswers || null;
+    const fuN = fu ? Object.values(fu).filter(a => a.value === "N").length : 0;
+    if (fu && fuN === 0) return false; // 보완 완료(N 0개)만 목록에서 제외
+    const hasOriginalN = Object.values(r.answers||{}).some(a => a.value === "N");
+    return hasOriginalN || fuN > 0 || r.tlRejected || r.glRejected;
+  };
 
   let pending = records.filter(isPending);
 
@@ -3765,10 +3770,14 @@ async function fnViewRecord(docId) {
 async function fnDownloadExcel() {
   // 현재 필터 기준 Excel 다운로드
   let records = cacheGet("records") || [];
-  const isPending = r =>
-    !r.finalConfirmed &&
-    !r.followupSvAnswers && !r.followupTlAnswers &&
-    (Object.values(r.answers||{}).some(a => a.value === "N") || r.tlRejected || r.glRejected);
+  const isPending = r => {
+    if (r.finalConfirmed) return false;
+    const fu = r.followupSvAnswers || r.followupTlAnswers || null;
+    const fuN = fu ? Object.values(fu).filter(a => a.value === "N").length : 0;
+    if (fu && fuN === 0) return false;
+    const hasOriginalN = Object.values(r.answers||{}).some(a => a.value === "N");
+    return hasOriginalN || fuN > 0 || r.tlRejected || r.glRejected;
+  };
 
   let pending = records.filter(isPending);
   if (_authRole === "tl" && _authName) {
@@ -4193,10 +4202,15 @@ function buildDashboard(root, records) {
   const statsBase = (tab === "전체") ? filterByDate(records) : records;
 
   // ── Step 3: isPending 정의 ──
-  const isPending = r =>
-    !r.finalConfirmed &&
-    Object.values(r.answers||{}).some(a => a.value === "N") &&
-    !r.followupSvAnswers && !r.followupTlAnswers;
+  // N항목 남아있거나(최초든 보완후든) 반려된 건 + 최종확인 미완료. 완전 해소된 건만 제외.
+  const isPending = r => {
+    if (r.finalConfirmed) return false;
+    const fu = r.followupSvAnswers || r.followupTlAnswers || null;
+    const fuN = fu ? Object.values(fu).filter(a => a.value === "N").length : 0;
+    if (fu && fuN === 0) return false;
+    const hasOriginalN = Object.values(r.answers||{}).some(a => a.value === "N");
+    return hasOriginalN || fuN > 0 || r.tlRejected || r.glRejected;
+  };
 
   // ── Step 4 & 5: 통계 카드 + 탭 카운트 (모두 statsBase 기반으로 통일) ──
   // statsBase = 전체탭: 날짜필터 적용 / 나머지탭: 전체기간
