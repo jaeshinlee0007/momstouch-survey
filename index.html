@@ -13,7 +13,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, memoryLocalCache, terminate, collection, addDoc, getDocs, getDoc, query, where, orderBy, updateDoc, deleteDoc, setDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, memoryLocalCache, terminate, collection, addDoc, getDocs, getDoc, query, where, orderBy, updateDoc, deleteDoc, setDoc, doc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
@@ -1282,13 +1282,19 @@ async function loadPrevNItems(storeCode) {
     ]);
 
     // SV 세트 기준: 보완 미완료 최신 최초점검 문서
-    // SV 또는 TL이 보완점검 완료한 경우 모두 세트 종결로 판단
+    // "보완 미완료" = 보완점검 자체가 없거나, 보완점검을 했어도 아직 N(미개선)이 남아있는 경우.
+    // (보완했지만 여전히 N인 문서를 "종결"로 오판하면 다음 보완점검을 등록할 수 없게 되는 버그가 있었음)
+    const _isUnresolved = (data) => {
+      const fu = data.followupSvAnswers || data.followupTlAnswers || null;
+      if (!fu) return true; // 보완점검 자체가 없으면 당연히 미완료
+      const fuN = Object.values(fu).filter(a => a.value === "N").length;
+      return fuN > 0; // 보완했어도 N이 남아있으면 여전히 미완료
+    };
     let targetDoc = null;
     svSnap.forEach(d => {
       const data = d.data();
       const isFirst = data.inspType === "최초" || !data.inspType;
-      const hasFollowup = !!(data.followupSvAnswers || data.followupTlAnswers);
-      if (!targetDoc && isFirst && !hasFollowup) {
+      if (!targetDoc && isFirst && _isUnresolved(data)) {
         targetDoc = { id: d.id, ...data };
       }
     });
@@ -1306,16 +1312,17 @@ async function loadPrevNItems(storeCode) {
       tlSnap.forEach(d => {
         const data = d.data();
         const isFirst = data.inspType === "최초" || !data.inspType;
-        const hasFollowup = !!(data.followupSvAnswers || data.followupTlAnswers);
-        if (!targetDoc && isFirst && !hasFollowup) {
+        if (!targetDoc && isFirst && _isUnresolved(data)) {
           targetDoc = { id: d.id, ...data };
         }
       });
     }
 
     if (targetDoc) {
-      // SV N항목
-      const svAnswers = targetDoc.answers || {};
+      // N항목: 이전 보완점검 라운드가 있었다면(아직 N 남은 상태) 그 결과 기준으로,
+      // 없었다면 최초점검 답변 기준으로 "아직 안 고쳐진" 항목만 재점검 대상으로 잡음
+      const latestFollowupAnswers = targetDoc.followupSvAnswers || targetDoc.followupTlAnswers || null;
+      const svAnswers = latestFollowupAnswers || targetDoc.answers || {};
       const normalNItems = Object.entries(svAnswers)
         .filter(([,v]) => v.value === "N")
         .map(([k]) => Number(k));
@@ -1921,6 +1928,12 @@ async function submitForm() {
     }
     // SV 보완점검 → 최초점검 문서에 followup 저장
     else if (effectiveRole==="sv" && S.inspType==="보완") {
+      const _histEvent = {
+        event: "submit_sv",
+        writerName: S.writerName,
+        at: new Date(),
+        answers: S.answers,
+      };
       if (S.loadedDocId) {
         
         await updateDoc(doc(db,currentSurveyCollection(),S.loadedDocId), {
@@ -1931,6 +1944,7 @@ async function submitForm() {
           // 반려 이후 재보완점검 제출 시 반려 상태 해제 (반려 사유/이력 필드는 보존)
           tlRejected: false,
           glRejected: false,
+          followupHistory: arrayUnion(_histEvent),
         });
       } else {
         // loadedDocId 없으면 매장코드로 최초점검 문서 재탐색
@@ -1954,6 +1968,7 @@ async function submitForm() {
             followupSvUpdatedAt: new Date(),
             tlRejected: false,
             glRejected: false,
+            followupHistory: arrayUnion(_histEvent),
           });
           S.loadedDocId = targetId;
         } else {
@@ -2018,6 +2033,12 @@ async function submitForm() {
         if (S.inspType === "보완") {
           updatePayload.tlRejected = false;
           updatePayload.glRejected = false;
+          updatePayload.followupHistory = arrayUnion({
+            event: "submit_tl",
+            writerName: S.writerName,
+            at: new Date(),
+            answers: S.answers,
+          });
         }
         // SV 문서 기반 TL 보완점검: followupSvAnswers에도 저장 (세트 종결 호환)
         if (!isGLFollowup && S.inspType === "보완") {
@@ -2220,7 +2241,39 @@ function renderCompare(root) {
       </div>
     </div>`;
 
-  // ── GL 문서 전용 처리 ──
+  // ── 보완점검 이력 타임라인 (라운드별 제출/반려 기록 전체) ──
+  if (Array.isArray(d.followupHistory) && d.followupHistory.length > 0) {
+    const eventLabel = {
+      submit_sv: { icon:"📋", text:"SV 보완점검 제출", color:"#2B6CB0" },
+      submit_tl: { icon:"📋", text:"팀장 보완점검 제출", color:"#2B6CB0" },
+      reject_tl: { icon:"🚫", text:"팀장 반려", color:"#C53030" },
+      reject_gl: { icon:"🚫", text:"그룹장 반려", color:"#C53030" },
+    };
+    const sortedHistory = [...d.followupHistory].sort((a,b) => {
+      const at = a.at?.seconds ?? (a.at ? new Date(a.at).getTime()/1000 : 0);
+      const bt = b.at?.seconds ?? (b.at ? new Date(b.at).getTime()/1000 : 0);
+      return at - bt;
+    });
+    html += `
+    <div class="card-section" style="padding-top:0">
+      <div class="section-divider divider-follow">🕐 보완점검 이력 (${sortedHistory.length}건)</div>
+      <div class="history-timeline">
+        ${sortedHistory.map((h, i) => {
+          const info = eventLabel[h.event] || { icon:"•", text:h.event, color:"#718096" };
+          const nCount = h.answers ? Object.values(h.answers).filter(a=>a.value==="N").length : null;
+          return `
+          <div class="history-item" style="border-left:3px solid ${info.color}">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-weight:600;color:${info.color};font-size:13px">${info.icon} ${i+1}차 · ${info.text}</span>
+              <span style="font-size:11px;color:#A0AEC0">${fmtDate(h.at)}</span>
+            </div>
+            <div style="font-size:12px;color:#718096;margin-top:2px">${h.writerName||""}${nCount!==null ? ` · N ${nCount}건` : ""}</div>
+            ${h.reason ? `<div style="font-size:12px;color:#C53030;margin-top:4px">사유: ${h.reason}</div>` : ""}
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  }
   if (isGLDoc) {
     // Q10 N이력 표시
     if (d.glQ10IsN) {
@@ -3452,12 +3505,16 @@ async function rejectTL() {
       followupTlAnswers: null,
       followupSvWriterName: null,
       followupSvVisitDate: null,
+      followupHistory: arrayUnion({
+        event: "reject_tl",
+        writerName: tlName,
+        at: new Date(),
+        reason: reason,
+      }),
     });
     S.compareData.tlRejected = true;
     S.compareData.tlRejectedReason = reason;
     alert("🚫 반려 처리되었습니다.\nSV/팀장 보완점검 목록에 재노출됩니다.");
-    cacheInvalidate("dashboard");
-    cacheInvalidate("records");
     cacheInvalidate("dashboard");
     cacheInvalidate("records");
     window._dashTab = "전체";
@@ -3520,6 +3577,12 @@ async function rejectGL() {
       followupTlAnswers: null,
       followupSvWriterName: null,
       followupSvVisitDate: null,
+      followupHistory: arrayUnion({
+        event: "reject_gl",
+        writerName: _authName,
+        at: new Date(),
+        reason: reason,
+      }),
     });
     S.compareData.glRejected = true;
     S.compareData.glRejectedReason = reason;
@@ -5116,12 +5179,13 @@ async function downloadExcel() {
   const svH  = SV_QUESTIONS.map(q=>`[SV] Q${q.id} ${q.title}`);
   const tlH  = SV_QUESTIONS.map(q=>`[팀장] Q${q.id} ${q.title}`);
   const glH  = GL_QUESTIONS.map(q=>`[그룹장] Q${q.id} ${q.title}`);
-  const confirmH = ["팀장확인자","팀장확인일시","그룹장확인일시","최종확인여부","반려여부"];
+  const confirmH = ["팀장확인자","팀장확인일시","그룹장확인일시","최종확인여부","반려여부","보완횟수","반려횟수","보완이력요약"];
   const dateH    = ["최초점검일","보완점검일"];
 
   const rows = [["매장코드","매장명","팀","점검유형","역할","점검자","방문일시",...svH,...tlH,...glH,...confirmH,...dateH]];
 
   const roleLabelMap = { sv:"SV", tl:"팀장", gl:"그룹장" };
+  const historyEventLabelMap = { submit_sv:"제출(SV)", submit_tl:"제출(팀장)", reject_tl:"반려(팀장)", reject_gl:"반려(그룹장)" };
 
   records.forEach(r => {
     const addRow = (type, role, name, date, answers, tla, gla) => {
@@ -5130,12 +5194,23 @@ async function downloadExcel() {
       const svVals = SV_QUESTIONS.map(q=> answers?.[q.id]?.value||"");
       const tlVals = SV_QUESTIONS.map(q=> tla?.[q.id]?.value||"");
       const glVals = GL_QUESTIONS.map(q=> gla?.[q.id]?.value||"");
+      const history = Array.isArray(r.followupHistory) ? r.followupHistory : [];
+      const submitCount = history.filter(h => h.event==="submit_sv"||h.event==="submit_tl").length;
+      const rejectCount = history.filter(h => h.event==="reject_tl"||h.event==="reject_gl").length;
+      const historySummary = [...history].sort((a,b) => {
+        const at = a.at?.seconds ?? (a.at ? new Date(a.at).getTime()/1000 : 0);
+        const bt = b.at?.seconds ?? (b.at ? new Date(b.at).getTime()/1000 : 0);
+        return at - bt;
+      }).map(h => historyEventLabelMap[h.event] || h.event).join(" → ");
       const confirmVals = [
         r.tlConfirmerName||"",
         r.tlConfirmedAt ? fmtDateExcel(r.tlConfirmedAt) : "",
         r.finalConfirmedAt ? fmtDateExcel(r.finalConfirmedAt) : "",
         r.finalConfirmed ? "Y" : "N",
         (r.tlRejected || r.glRejected) ? "Y" : "N",
+        submitCount,
+        rejectCount,
+        historySummary,
       ];
       // 최초점검일: visitDate
       // 보완점검일: N값 있으면 followup 날짜, 없으면(해당없음) 빈칸
@@ -5190,7 +5265,7 @@ async function downloadExcel() {
     ...Array(SV_QUESTIONS.length).fill({wch:10}),
     ...Array(SV_QUESTIONS.length).fill({wch:10}),
     ...Array(GL_QUESTIONS.length).fill({wch:10}),
-    {wch:12},{wch:18},{wch:18},{wch:10},{wch:10},
+    {wch:12},{wch:18},{wch:18},{wch:10},{wch:10},{wch:9},{wch:9},{wch:40},
     {wch:14},{wch:14}]; // 최초점검일, 보완점검일
   ws["!cols"] = colW;
 
@@ -5344,6 +5419,8 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .progress-text{font-size:12px;color:var(--sub);white-space:nowrap}
 .cat-header{font-size:13px;font-weight:700;padding:8px 12px;margin:12px 0 8px;border-radius:6px;background:#F7F8FA}
 .section-divider{font-size:13px;font-weight:800;padding:10px 16px;margin:8px 0;letter-spacing:.3px}
+.history-timeline{display:flex;flex-direction:column;gap:8px;padding:0 16px}
+.history-item{background:white;border-radius:8px;padding:10px 12px;box-shadow:0 1px 2px rgba(0,0,0,0.06)}
 .divider-n{background:#FFF5F5;color:#C53030;border-left:4px solid #E53E3E}
 .divider-ok{background:#F0FFF4;color:#276749;border-left:4px solid #38A169}
 .divider-first{background:#EBF8FF;color:#2B6CB0;border-left:4px solid #3182CE}
