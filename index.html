@@ -2677,7 +2677,7 @@ function renderCompare(root) {
 
   const nItems2 = Object.values(d2?.answers||{}).filter(a=>a.value==="N").length;
   const followupN2 = Object.values(d2?.followupSvAnswers||{}).filter(a=>a.value==="N").length;
-  const isClean2 = nItems2===0 || (d2?.followupSvAnswers && followupN2===0);
+  const isClean2 = !d2?.tlRejected && (nItems2===0 ? !d2?.followupSvAnswers || followupN2===0 : (!!d2?.followupSvAnswers && followupN2===0));
 
   if (d2 && d2.finalConfirmed) {
     html += `
@@ -2725,25 +2725,27 @@ function renderCompare(root) {
         <button class="btn-ghost" onclick="goBack()">돌아가기</button>
       </div>`;
   } else {
-    // N있고 보완점검 미실시 → 보완점검 시작 버튼 (반려 상태면 반려 안내도 함께 표시)
+    // N있고 보완점검 미실시(또는 보완했지만 여전히 N) → 보완점검 시작 버튼
+    // (반려 상태면 반려 안내도 함께 표시)
     const nPending = d2 ? Object.values(d2.answers||{}).filter(a=>a.value==="N").length : 0;
+    const stillNAfterFollowup = followupN2 > 0; // 보완점검을 했지만 여전히 N인 경우
     const rejNotice2 = d2 && (d2.tlRejected || d2.glRejected) ? `
       <div class="reject-notice">
         🚫 ${d2.glRejected ? "그룹장" : "팀장"} 반려
         <div class="reject-reason">반려사유: ${d2.glRejected ? (d2.glRejectedReason||"") : (d2.tlRejectedReason||"")}</div>
       </div>` : "";
     const isClosedStore = d2 && (window._closedMap||new Map()).has(d2.storeCode);
-    if (nPending > 0 && S.prevNItems && S.prevNItems.length > 0) {
+    if (nPending > 0 || stillNAfterFollowup) {
       html += `
         <div class="card-section">
           ${rejNotice2}
-          <div class="notice-box" style="background:#FFFBEB;border-color:#F6AD55;color:#744210">
-            ⚠️ N항목 ${nPending}건 — 보완점검이 필요합니다
+          <div class="notice-box" style="background:#FFFBEB;border-color:#F6AD57;color:#744210">
+            ⚠️ N항목 ${stillNAfterFollowup ? followupN2 : nPending}건 — ${stillNAfterFollowup ? "보완점검 후에도 " : ""}보완점검이 필요합니다
           </div>
           ${isClosedStore
             ? `<div class="notice-box" style="background:#FFF5F5;border-color:#FEB2B2;color:#742A2A">🚫 폐점된 매장입니다 — 보완점검을 진행할 수 없습니다</div>
                <button class="btn-ghost" disabled style="opacity:.5;cursor:not-allowed" title="폐점된 매장은 보완점검을 시작할 수 없습니다">📋 보완점검 시작</button>`
-            : `<button class="btn-primary" onclick="go('info')">📋 보완점검 시작</button>`}
+            : `<button class="btn-primary" onclick="startSvFollowupFromRecord()">📋 보완점검 시작</button>`}
           <button class="btn-ghost" onclick="goBack()">돌아가기</button>
         </div>`;
     } else {
@@ -2751,6 +2753,32 @@ function renderCompare(root) {
     }
   }
   root.innerHTML = html;
+}
+
+// 점검 상세/비교 화면에서 바로 보완점검을 시작할 때, 진입 경로(매장검색 흐름 vs 기록 조회 흐름)와
+// 무관하게 필요한 상태값을 항상 로드된 레코드(compareData) 기준으로 정확히 채워준다.
+// (기존엔 S.prevNItems 등이 매장검색→보완점검 흐름에서만 채워져서, 점검내역조회로 바로 들어온
+//  경우 이 값들이 비어있어 보완점검 시작 버튼이 정상 동작하지 않는 문제가 있었음)
+function startSvFollowupFromRecord() {
+  const d2 = S.compareData;
+  if (!d2) { alert("점검 데이터를 불러올 수 없습니다."); return; }
+  S.category = "default";
+  S.role = ["sv","tl"].includes(_authRole) ? _authRole : "sv";
+  S.storeCode = d2.storeCode;
+  S.storeName = d2.storeName;
+  S.storeTeam = d2.storeTeam;
+  S.storeObj = window._activeStores?.find(s => s.code === d2.storeCode) || S.storeObj;
+  S.inspType = "보완";
+  S.writerName = _authName;
+  S.loadedDocId = d2.id;
+  S.answers = {};
+  // 재점검 대상: 가장 최근 보완점검 결과가 있으면 그 기준, 없으면 최초점검 기준으로 "아직 N인 항목"만
+  const latestAnswers = d2.followupSvAnswers || d2.followupTlAnswers || d2.answers || {};
+  S.prevNItems = Object.entries(latestAnswers)
+    .filter(([,v]) => v.value === "N")
+    .map(([k]) => Number(k));
+  S.glFollowupIds = (d2.svFollowupIds || []).filter(id => !S.prevNItems.includes(id));
+  go("info");
 }
 
 
@@ -5333,7 +5361,7 @@ function fmtDateExcel(v) {
 }
 
 Object.assign(window, {
-  go, goBack, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
+  go, goBack, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
   removeImage, submitForm, fetchRecords, viewRecord, viewRecordDash,
   confirmBack, openImageModal, downloadExcel, handleMemo,
