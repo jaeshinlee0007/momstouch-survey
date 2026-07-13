@@ -288,6 +288,8 @@ async function uploadStoreData(file) {
             beef:    String(r[5]||"").trim().toUpperCase() === "O",
             pizza:   String(r[6]||"").trim().toUpperCase() === "O",
             spacool: String(r[7]||"").trim().toUpperCase() === "O",
+            // 신제품(갓빠삭치킨) 판매/교육 대상 매장 여부 — 신제품 현장점검 관련 화면에서만 필터링에 사용
+            npEligible: String(r[8]||"").trim().toUpperCase() === "O",
           }));
 
         if (stores.length === 0) {
@@ -983,6 +985,8 @@ async function searchStores() {
       // GL/admin: 전체 매장
       matched = activeStores.slice();
     }
+    // 신제품 판매/교육 대상 매장만 노출 (STORE INFO의 "신제품-갓빠삭" 컬럼 기준)
+    matched = matched.filter(s => s.npEligible);
   } else if (S.role === "sv") {
     // SV: 본인 담당 점포만
     matched = activeStores.filter(s => s.sv === name);
@@ -4593,9 +4597,10 @@ async function renderDashboardNP(root) {
     const activeStores = await getActiveStoreData();
 
     // 열람 범위: TL은 담당팀(store_master.tl === 본인 이름)만, GL/관리자는 전체
-    let scopeStores = activeStores;
+    // + 신제품 판매/교육 대상 매장만 (STORE INFO "신제품-갓빠삭" 컬럼 기준)
+    let scopeStores = activeStores.filter(s => s.npEligible);
     if (_authRole === "tl") {
-      scopeStores = activeStores.filter(s => s.tl === _authName || s.sv === _authName);
+      scopeStores = scopeStores.filter(s => s.tl === _authName || s.sv === _authName);
     }
 
     window._dashNpRecords = records; // 엑셀 다운로드용
