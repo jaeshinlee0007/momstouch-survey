@@ -402,6 +402,18 @@ const LOGO_SVG = `<svg viewBox="0 0 299 35" xmlns="http://www.w3.org/2000/svg" s
 <path d="M295.765 5.03616C293.986 5.03616 292.531 6.49225 292.531 8.27191V16.426H280.337V8.27191C280.337 6.49225 278.881 5.03616 277.102 5.03616C275.323 5.03616 273.868 6.49225 273.868 8.27191V30.9869C273.868 32.7665 275.323 34.2226 277.102 34.2226C278.881 34.2226 280.337 32.7665 280.337 30.9869V22.8975H292.531V30.9869C292.531 32.7665 293.986 34.2226 295.765 34.2226C297.544 34.2226 299 32.7665 299 30.9869V8.27191C299 6.45989 297.544 5.03616 295.765 5.03616Z" fill="#FDC838"/>
 <path d="M105.381 14.614C105.834 14.8405 106.319 14.9699 106.804 14.9699C107.969 14.9699 109.036 14.3228 109.554 13.2873L114.05 4.51844C114.826 2.99764 114.244 1.1209 112.723 0.344322C111.203 -0.432257 109.327 0.150178 108.551 1.67098L104.055 10.4399C103.279 11.9607 103.861 13.8374 105.381 14.614Z" fill="#FDC838"/>
 </svg>`;
+// ── XSS 방지: 사용자 자유입력 텍스트(메모/작성자명/코멘트/참석자명 등)를
+// innerHTML에 꽂기 전 반드시 이 함수로 이스케이프. null/undefined는 빈 문자열로 처리.
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // 현재 진행 중인 점검(S.role)에 맞는 문항 세트를 반환 (신규플랫폼 전용, 신제품은 renderFormNP가 별도 처리)
 function currentQuestionSet() {
   return S.role === "gl" ? GL_QUESTIONS : SV_QUESTIONS;
@@ -868,7 +880,7 @@ function renderFormNP(root) {
             placeholder="점검 간 특이사항 (선택, 최대 ${NP_FORM.memoMaxLen}자)"
             maxlength="${NP_FORM.memoMaxLen}"
             oninput="updateNpMemo(this.value)"
-            value="${a.memo || ""}" />
+            value="${escapeHtml(a.memo || "")}" />
           <span class="memo-counter" id="npMemoCnt">${(a.memo||"").length}/${NP_FORM.memoMaxLen}</span>
         </div>
       </div>
@@ -884,7 +896,7 @@ function renderNpRoster() {
   const rows = S.npAnswers.attendees.map((name, i) => `
     <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
       <input type="text" class="input-field" style="flex:1;margin:0" placeholder="성명 입력"
-        value="${name}" oninput="updateNpAttendeeName(${i},this.value)" />
+        value="${escapeHtml(name)}" oninput="updateNpAttendeeName(${i},this.value)" />
       ${S.npAnswers.attendees.length > 1 ? `<button onclick="removeNpAttendee(${i})" style="flex-shrink:0;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:white;color:var(--red);cursor:pointer">✕</button>` : ""}
     </div>`).join("");
   return `${rows}<button class="btn-ghost" onclick="addNpAttendee()" style="margin-top:2px">+ 참석자 추가</button>`;
@@ -1041,7 +1053,7 @@ function renderFormSpacool(root) {
             placeholder="${q.key==='q1'?'Q1':'Q2'} 관련 메모 (선택, 최대 ${SPACOOL_FORM.memoMaxLen}자)"
             maxlength="${SPACOOL_FORM.memoMaxLen}"
             oninput="updateSpacoolQMemo('${memoKey}',this.value)"
-            value="${a[memoKey] || ""}" />
+            value="${escapeHtml(a[memoKey] || "")}" />
         </div>
       </div>`;
   }).join("");
@@ -1064,7 +1076,7 @@ function renderFormSpacool(root) {
             placeholder="점검 간 특이사항 (선택, 최대 ${SPACOOL_FORM.memoMaxLen}자)"
             maxlength="${SPACOOL_FORM.memoMaxLen}"
             oninput="updateSpacoolMemo(this.value)"
-            value="${a.memo || ""}" />
+            value="${escapeHtml(a.memo || "")}" />
           <span class="memo-counter" id="spacoolMemoCnt">${(a.memo||"").length}/${SPACOOL_FORM.memoMaxLen}</span>
         </div>
       </div>
@@ -4939,6 +4951,11 @@ async function renderDashboardNP(root) {
     go("hub");
     return;
   }
+  if (_authRole === "sv") {
+    alert("대시보드 접근 권한이 없습니다.");
+    go("homeNP");
+    return;
+  }
   window._dashNpStatusFilter = "";
   window._dashNpKeyword = "";
   root.innerHTML = `
@@ -5027,13 +5044,13 @@ function buildDashboardNP(root, records, scopeStores) {
     const memoShort = memo.length > 16 ? memo.slice(0,16) + "…" : (memo || "-");
     const clickAttr = rec ? ` onclick="viewStoreHistoryNP('${store.code}')" style="cursor:pointer"` : "";
     return `<tr${clickAttr}>
-      <td>${store.name}</td>
-      <td style="color:#718096;font-size:12px">${store.team||"-"}</td>
+      <td>${escapeHtml(store.name)}</td>
+      <td style="color:#718096;font-size:12px">${escapeHtml(store.team||"-")}</td>
       <td>${statusBadge(status)}</td>
-      <td style="font-size:13px">${rec?.writerName || "-"}</td>
+      <td style="font-size:13px">${escapeHtml(rec?.writerName || "-")}</td>
       <td style="text-align:center">${cnt}</td>
       <td style="color:#718096;font-size:12px">${dtStr}</td>
-      <td style="color:#718096;font-size:12px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${memo.replace(/"/g,'&quot;')}">${memoShort}</td>
+      <td style="color:#718096;font-size:12px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(memo)}">${escapeHtml(memoShort)}</td>
     </tr>`;
   }).join("");
 
@@ -5051,7 +5068,7 @@ function buildDashboardNP(root, records, scopeStores) {
       <div style="${cardStyle('none', '#A0AEC0')}" onclick="setDashNpFilter('none')"><div class="stat-num" style="color:#A0AEC0">${notYetCount}</div><div class="stat-label">미점검</div></div>
     </div>
     <div style="display:flex;gap:6px;padding:10px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0">
-      <input type="text" id="dashSearchNP" value="${(window._dashNpKeyword||"").replace(/"/g,'&quot;')}" placeholder="매장명/점검자명 검색" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px" onkeydown="if(event.key==='Enter')searchDashNP()">
+      <input type="text" id="dashSearchNP" value="${escapeHtml(window._dashNpKeyword||"")}" placeholder="매장명/점검자명 검색" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px" onkeydown="if(event.key==='Enter')searchDashNP()">
       <button onclick="searchDashNP()" style="flex-shrink:0;padding:8px 16px;background:var(--amber);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">검색</button>
     </div>
     <div style="padding:8px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0;font-size:12px;color:#718096;display:flex;justify-content:space-between;align-items:center">
@@ -5105,7 +5122,7 @@ function renderStoreHistoryNP(root) {
         <span class="si-store">${dt}</span>
         ${statusBadge}
       </div>
-      <div class="si-meta">${roleLabel}: ${r.writerName||"-"} · 참석 ${cnt}명</div>
+      <div class="si-meta">${roleLabel}: ${escapeHtml(r.writerName||"-")} · 참석 ${cnt}명</div>
     </div>`;
   }).join("");
 
@@ -5267,10 +5284,10 @@ async function fetchRecordsNP() {
       const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
       html += `<div class="search-item" onclick="viewRecordNP('${r.id}')">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <span class="si-store">${r.storeName}</span>
+          <span class="si-store">${escapeHtml(r.storeName)}</span>
           ${statusBadge}
         </div>
-        <div class="si-meta">${roleLabel}: ${r.writerName} · 참석 ${cnt}명 · ${dt}</div>
+        <div class="si-meta">${roleLabel}: ${escapeHtml(r.writerName)} · 참석 ${cnt}명 · ${dt}</div>
       </div>`;
     });
     recList.innerHTML = html + `</div>`;
@@ -5335,10 +5352,10 @@ async function renderApprovalNP(root) {
       const roleLabel = {sv:"AC"}[r.role] || r.role || "";
       return `<div class="search-item" onclick="viewRecordNP('${r.id}')">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <span class="si-store">${r.storeName}</span>
+          <span class="si-store">${escapeHtml(r.storeName)}</span>
           <span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">Y 승인대기</span>
         </div>
-        <div class="si-meta">${r.writerName||"-"}(${roleLabel}) · ${dt}</div>
+        <div class="si-meta">${escapeHtml(r.writerName||"-")}(${roleLabel}) · ${dt}</div>
       </div>`;
     }).join("") + `</div>`;
   } catch(e) {
@@ -5368,7 +5385,7 @@ function renderRecordDetailNP(root) {
   const status = npStatus(r);
   const statusText = { done:"✅ 완료", pending:"🟡 승인대기 (담당 팀장 승인 필요)", needs: r.tlRejected ? "❌ 재점검필요 (팀장 반려)" : "❌ 재점검필요", none:"-" }[status];
   const attendeesHtml = (r.npAnswers?.attendees||[]).length
-    ? (r.npAnswers.attendees||[]).map(name => `<div>${name}</div>`).join("")
+    ? (r.npAnswers.attendees||[]).map(name => `<div>${escapeHtml(name)}</div>`).join("")
     : "-";
   const photosHtml = NP_FORM.photoSlots.map(slot => {
     const p = r.npAnswers?.photos?.[slot.key];
@@ -5388,9 +5405,9 @@ function renderRecordDetailNP(root) {
     </div>
     <div class="card-section">
       <label class="field-label">매장</label>
-      <div class="info-box">${r.storeName} <span style="color:#718096;font-size:13px">${r.storeCode||""} · ${r.storeTeam||""}</span></div>
+      <div class="info-box">${escapeHtml(r.storeName)} <span style="color:#718096;font-size:13px">${escapeHtml(r.storeCode||"")} · ${escapeHtml(r.storeTeam||"")}</span></div>
       <label class="field-label">작성자</label>
-      <div class="info-box">${r.writerName||"-"} (${roleLabel})</div>
+      <div class="info-box">${escapeHtml(r.writerName||"-")} (${roleLabel})</div>
       <label class="field-label">점검일시</label>
       <div class="info-box">${dt}</div>
       <label class="field-label">NP.Q1 교육 완료 여부</label>
@@ -5399,8 +5416,8 @@ function renderRecordDetailNP(root) {
       <div class="info-box">${attendeesHtml}</div>
       <label class="field-label" style="margin-top:4px">사진</label>
       ${photosHtml}
-      ${r.npAnswers?.memo ? `<label class="field-label">메모</label><div class="info-box">${r.npAnswers.memo}</div>` : ""}
-      ${r.tlComment ? `<label class="field-label">팀장 코멘트</label><div class="info-box">${r.tlComment}</div>` : ""}
+      ${r.npAnswers?.memo ? `<label class="field-label">메모</label><div class="info-box">${escapeHtml(r.npAnswers.memo)}</div>` : ""}
+      ${r.tlComment ? `<label class="field-label">팀장 코멘트</label><div class="info-box">${escapeHtml(r.tlComment)}</div>` : ""}
       ${canDecide ? `
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
         <div style="text-align:center;font-size:12px;color:#B7791F;margin-bottom:10px">이 건은 담당 팀장 승인이 필요합니다</div>
@@ -5456,6 +5473,11 @@ async function renderDashboardSpacool(root) {
   if (!_spacoolEnabled) {
     alert("현재 스파쿨 홍보물 점검 기능이 비활성화되어 있습니다.");
     go("hub");
+    return;
+  }
+  if (_authRole === "sv") {
+    alert("대시보드 접근 권한이 없습니다.");
+    go("homeSpacool");
     return;
   }
   window._dashSpacoolStatusFilter = "";
@@ -5541,12 +5563,12 @@ function buildDashboardSpacool(root, records, scopeStores) {
     const memoShort = memo.length > 16 ? memo.slice(0,16) + "…" : (memo || "-");
     const clickAttr = rec ? ` onclick="viewStoreHistorySpacool('${store.code}')" style="cursor:pointer"` : "";
     return `<tr${clickAttr}>
-      <td>${store.name}</td>
-      <td style="color:#718096;font-size:12px">${store.team||"-"}</td>
+      <td>${escapeHtml(store.name)}</td>
+      <td style="color:#718096;font-size:12px">${escapeHtml(store.team||"-")}</td>
       <td>${statusBadge(status)}</td>
-      <td style="font-size:13px">${rec?.writerName || "-"}</td>
+      <td style="font-size:13px">${escapeHtml(rec?.writerName || "-")}</td>
       <td style="color:#718096;font-size:12px">${dtStr}</td>
-      <td style="color:#718096;font-size:12px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${memo.replace(/"/g,'&quot;')}">${memoShort}</td>
+      <td style="color:#718096;font-size:12px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(memo)}">${escapeHtml(memoShort)}</td>
     </tr>`;
   }).join("");
 
@@ -5589,7 +5611,7 @@ function buildDashboardSpacool(root, records, scopeStores) {
     </div>
     ${teamBreakdownHtml}
     <div style="display:flex;gap:6px;padding:10px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0">
-      <input type="text" id="dashSearchSpacool" value="${(window._dashSpacoolKeyword||"").replace(/"/g,'&quot;')}" placeholder="매장명/점검자명 검색" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px" onkeydown="if(event.key==='Enter')searchDashSpacool()">
+      <input type="text" id="dashSearchSpacool" value="${escapeHtml(window._dashSpacoolKeyword||"")}" placeholder="매장명/점검자명 검색" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px" onkeydown="if(event.key==='Enter')searchDashSpacool()">
       <button onclick="searchDashSpacool()" style="flex-shrink:0;padding:8px 16px;background:#3B6D11;color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">검색</button>
     </div>
     <div style="padding:8px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0;font-size:12px;color:#718096;display:flex;justify-content:space-between;align-items:center">
@@ -5641,7 +5663,7 @@ function renderStoreHistorySpacool(root) {
         <span class="si-store">${dt}</span>
         ${statusBadge}
       </div>
-      <div class="si-meta">${roleLabel}: ${r.writerName||"-"}</div>
+      <div class="si-meta">${roleLabel}: ${escapeHtml(r.writerName||"-")}</div>
     </div>`;
   }).join("");
 
@@ -5799,10 +5821,10 @@ async function fetchRecordsSpacool() {
       const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
       html += `<div class="search-item" onclick="viewRecordSpacool('${r.id}')">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <span class="si-store">${r.storeName}</span>
+          <span class="si-store">${escapeHtml(r.storeName)}</span>
           ${statusBadge}
         </div>
-        <div class="si-meta">${roleLabel}: ${r.writerName} · ${dt}</div>
+        <div class="si-meta">${roleLabel}: ${escapeHtml(r.writerName)} · ${dt}</div>
       </div>`;
     });
     recList.innerHTML = html + `</div>`;
@@ -5866,10 +5888,10 @@ async function renderApprovalSpacool(root) {
       const roleLabel = {sv:"AC"}[r.role] || r.role || "";
       return `<div class="search-item" onclick="viewRecordSpacool('${r.id}')">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <span class="si-store">${r.storeName}</span>
+          <span class="si-store">${escapeHtml(r.storeName)}</span>
           <span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">Y 승인대기</span>
         </div>
-        <div class="si-meta">${r.writerName||"-"}(${roleLabel}) · ${dt}</div>
+        <div class="si-meta">${escapeHtml(r.writerName||"-")}(${roleLabel}) · ${dt}</div>
       </div>`;
     }).join("") + `</div>`;
   } catch(e) {
@@ -5911,7 +5933,7 @@ function renderRecordDetailSpacool(root) {
       <div style="font-size:12px;color:var(--sub);margin-bottom:2px">${q.key==='q1'?'Q1':'Q2'}. ${q.label}</div>
       <div style="font-size:14px;font-weight:600;color:${val==='Y'?'#276749':val==='N'?'#C53030':'#A0AEC0'}">${val || "-"}</div>
       ${photosHtml}
-      ${memo ? `<div style="font-size:12px;color:#4A5568;margin-top:6px">메모: ${memo}</div>` : ""}
+      ${memo ? `<div style="font-size:12px;color:#4A5568;margin-top:6px">메모: ${escapeHtml(memo)}</div>` : ""}
     </div>`;
   }).join("");
 
@@ -5924,16 +5946,16 @@ function renderRecordDetailSpacool(root) {
     </div>
     <div class="card-section">
       <label class="field-label">매장</label>
-      <div class="info-box">${r.storeName} <span style="color:#718096;font-size:13px">${r.storeCode||""} · ${r.storeTeam||""}</span></div>
+      <div class="info-box">${escapeHtml(r.storeName)} <span style="color:#718096;font-size:13px">${escapeHtml(r.storeCode||"")} · ${escapeHtml(r.storeTeam||"")}</span></div>
       <label class="field-label">작성자</label>
-      <div class="info-box">${r.writerName||"-"} (${roleLabel})</div>
+      <div class="info-box">${escapeHtml(r.writerName||"-")} (${roleLabel})</div>
       <label class="field-label">점검일시</label>
       <div class="info-box">${dt}</div>
       <label class="field-label">상태</label>
       <div class="info-box">${statusText}</div>
       ${qHtml}
-      ${r.spacoolAnswers?.memo ? `<label class="field-label">전체 메모</label><div class="info-box">${r.spacoolAnswers.memo}</div>` : ""}
-      ${r.tlComment ? `<label class="field-label">팀장 코멘트</label><div class="info-box">${r.tlComment}</div>` : ""}
+      ${r.spacoolAnswers?.memo ? `<label class="field-label">전체 메모</label><div class="info-box">${escapeHtml(r.spacoolAnswers.memo)}</div>` : ""}
+      ${r.tlComment ? `<label class="field-label">팀장 코멘트</label><div class="info-box">${escapeHtml(r.tlComment)}</div>` : ""}
       ${canDecide ? `
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
         <div style="text-align:center;font-size:12px;color:#B7791F;margin-bottom:10px">이 건은 담당 팀장 승인이 필요합니다</div>
