@@ -5704,7 +5704,7 @@ async function renderRecordsSpacool(root) {
     go("hub");
     return;
   }
-  const autoDesc = _authRole==="sv" ? `${_authName} 담당팀`
+  const autoDesc = _authRole==="sv" ? `${_authName} 담당 점포`
                  : _authRole==="tl" ? `${_authName} 담당팀`
                  : "전체";
   root.innerHTML = `
@@ -5749,17 +5749,14 @@ async function fetchRecordsSpacool() {
     }
     window._recordsSpacoolAll = records;
 
-    // 역할별 자동 필터: SV/TL 모두 담당팀 전체 범위 (작업지시서 2항, 스파쿨은 TL 권한과 동일하게 적용)
-    if ((_authRole === "sv" || _authRole === "tl") && _authName) {
+    // 역할별 자동 필터: SV=담당점포만, TL=담당팀 전체 (신제품 점검내역조회와 동일 스코프 규칙)
+    if (_authRole === "sv" && _authName) {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
-      let teamCodes;
-      if (_authRole === "sv") {
-        const myStore = activeStores.find(s => s.sv === _authName);
-        const teamTl = myStore ? myStore.tl : null;
-        teamCodes = new Set(activeStores.filter(s => teamTl ? s.tl === teamTl : s.sv === _authName).map(s => s.code));
-      } else {
-        teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
-      }
+      const myCodes = new Set(activeStores.filter(s => s.sv === _authName).map(s => s.code));
+      records = records.filter(r => myCodes.has(r.storeCode));
+    } else if (_authRole === "tl" && _authName) {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
       records = records.filter(r => teamCodes.has(r.storeCode));
     }
     // GL/admin: 전체 표시 (필터 없음)
