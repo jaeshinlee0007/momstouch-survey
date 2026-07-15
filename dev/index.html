@@ -845,8 +845,8 @@ function renderFormNP(root) {
       <div class="question-card">
         <span class="q-title">NP.Q1. ${NP_FORM.q1Label}</span>
         <div class="answer-row" style="margin-top:10px">
-          <button class="ans-btn ${a.q1==='Y'?'selected':''}" id="ans-npq1-Y" onclick="setNpQ1('Y')">✅ Y</button>
-          <button class="ans-btn ${a.q1==='N'?'selected':''}" id="ans-npq1-N" onclick="setNpQ1('N')">❌ N</button>
+          <button class="ans-btn ans-yes ${a.q1==='Y'?'selected':''}" id="ans-npq1-Y" onclick="setNpQ1('Y')">✅ Y</button>
+          <button class="ans-btn ans-no ${a.q1==='N'?'selected':''}" id="ans-npq1-N" onclick="setNpQ1('N')">❌ N</button>
         </div>
         ${a.q1==='N' ? `<div class="notice-box" style="margin-top:10px">⚠️ 추가점검 필요로 표시됩니다. (제출 자체는 정상 진행)</div>` : ""}
       </div>
@@ -1024,8 +1024,8 @@ function renderFormSpacool(root) {
       <div class="question-card">
         <span class="q-title">${q.key==='q1'?'Q1':'Q2'}. ${q.label}</span>
         <div class="answer-row" style="margin-top:10px">
-          <button class="ans-btn ${val==='Y'?'selected':''}" onclick="setSpacoolAnswer('${q.key}','Y')">✅ Y</button>
-          <button class="ans-btn ${val==='N'?'selected':''}" onclick="setSpacoolAnswer('${q.key}','N')">❌ N</button>
+          <button class="ans-btn ans-yes ${val==='Y'?'selected':''}" onclick="setSpacoolAnswer('${q.key}','Y')">✅ Y</button>
+          <button class="ans-btn ans-no ${val==='N'?'selected':''}" onclick="setSpacoolAnswer('${q.key}','N')">❌ N</button>
         </div>
         ${val==='N' ? `<div class="notice-box" style="margin-top:10px">⚠️ 재점검필요로 표시됩니다. (제출 자체는 정상 진행)</div>` : ""}
         <div style="margin-top:12px">
@@ -1812,8 +1812,8 @@ function renderForm(root) {
         </div>
         <p class="q-desc">${q.desc}</p>
         <div class="answer-row">
-          <button class="ans-btn" id="ans-${q.id}-Y" onclick="setAnswer(${q.id},'Y')">✅ Y</button>
-          <button class="ans-btn" id="ans-${q.id}-N" onclick="setAnswer(${q.id},'N')">❌ N</button>
+          <button class="ans-btn ans-yes" id="ans-${q.id}-Y" onclick="setAnswer(${q.id},'Y')">✅ Y</button>
+          <button class="ans-btn ans-no" id="ans-${q.id}-N" onclick="setAnswer(${q.id},'N')">❌ N</button>
           ${!q.noNa ? `<button class="ans-btn ans-na" id="ans-${q.id}-미취급" onclick="setAnswer(${q.id},'미취급')">➖ 미취급</button>` : ""}
         </div>
         <div class="image-section" id="img-sec-${q.id}">
@@ -6402,6 +6402,9 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .answer-row{display:flex;gap:8px;margin-bottom:12px}
 .ans-btn{flex:1;padding:11px 6px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-weight:600;background:white;cursor:pointer}
 .ans-btn.selected{border-width:2px}
+.ans-btn.ans-yes.selected{background:#38A169;border-color:#38A169;color:white}
+.ans-btn.ans-no.selected{background:var(--red);border-color:var(--red);color:white}
+.ans-btn.ans-na.selected{background:#718096;border-color:#718096;color:white}
 [id$="-Y"].selected{border-color:#38A169;background:#F0FFF4;color:#276749}
 [id$="-N"].selected{border-color:var(--red);background:#FFF5F5;color:#C53030}
 [id$="-미취급"].selected{border-color:#718096;background:#EDF2F7;color:#4A5568}
