@@ -667,7 +667,7 @@ function renderHome(root) {
   root.innerHTML = `
     <div class="hero" style="padding-bottom:16px;position:relative">
       <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(255,255,255,0.18);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
-      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(255,255,255,0.18);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">⊞</button>
+      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(255,255,255,0.18);border:none;color:#fff;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
       <h1 class="hero-title">신규플랫폼<br>현장점검</h1>
       <p class="hero-sub">비프 · 피자 · 스파쿨</p>
@@ -708,7 +708,7 @@ function renderHomeNP(root) {
   root.innerHTML = `
     <div class="hero-np" style="padding-bottom:16px;position:relative">
       <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
-      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">⊞</button>
+      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
       <h1 class="hero-title">신제품<br>현장점검</h1>
       <p class="hero-sub">갓빠삭치킨 교육점검</p>
@@ -786,7 +786,7 @@ function renderHomeSpacool(root) {
   root.innerHTML = `
     <div class="hero-spacool" style="padding-bottom:16px;position:relative">
       <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#173404;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
-      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#173404;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">⊞</button>
+      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#173404;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
       <h1 class="hero-title">스파쿨<br>홍보물 점검</h1>
       <p class="hero-sub">외부 · 내부 홍보물 부착 점검</p>
@@ -1249,6 +1249,7 @@ function renderInspType(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>점검 유형 선택</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="role-grid">
       <button class="role-card" onclick="selectInspType('최초')">
@@ -1309,6 +1310,7 @@ function renderStoreSel(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>점검자 / 매장 선택</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
       <label class="field-label">점검자 이름</label>
@@ -1346,7 +1348,13 @@ async function searchStores() {
   S.writerName = name;
   // S.role에 Auth 역할 반영 (TL이 sv 역할 선택 시에도 tl 권한 유지)
   if (_currentUser && _authRole && !S.role) S.role = _authRole;
-  S.storeSearch = "";
+  // "매장 검색" 버튼을 다시 눌러도(예: 다른 매장 갱신 후 재조회) 이미 입력해둔 필터 키워드는
+  // 유지되도록 보존 — 예전엔 여기서 무조건 ""로 초기화해서, 사용자가 검색창에 "천안" 등을
+  // 입력해둔 채 이 버튼을 다시 누르면 필터가 통째로 사라지고 전체 매장목록으로 롤백되는
+  // 혼란스러운 버그가 있었음.
+  const keywordInput = document.getElementById("storeKeywordFixed");
+  const preservedKeyword = keywordInput ? keywordInput.value.trim() : (S.storeSearch || "");
+  S.storeSearch = preservedKeyword;
 
   document.getElementById("storeResult").innerHTML = `<p class="loading-text">매장 목록 불러오는 중...</p>`;
   const activeStores = await getActiveStoreData();
@@ -1367,7 +1375,7 @@ async function searchStores() {
     matched = await filterMatchedStoresForFollowup(matched);
     if (matched === null) return; // 이미 결과/에러 화면 렌더링 완료
   }
-  renderStoreList(matched);
+  renderStoreList(matched, preservedKeyword);
 }
 
 // 신제품 현장점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출, 신제품 대상 매장만
@@ -1791,6 +1799,7 @@ function renderInfo(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>기본 정보 확인</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -2642,6 +2651,7 @@ function renderCompare(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>점검 결과</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="compare-meta">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
@@ -5447,6 +5457,7 @@ async function renderRecordsNP(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>점검 내역 조회 (신제품)</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
       <div style="background:#FFFBEB;border:1px solid #F6AD55;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#744210;">
@@ -5996,6 +6007,7 @@ async function renderRecordsSpacool(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>점검 내역 조회 (스파쿨)</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
       <div style="background:#EAF3DE;border:1px solid #97C459;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#27500A;">
