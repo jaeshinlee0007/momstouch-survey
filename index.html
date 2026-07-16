@@ -1500,7 +1500,7 @@ function filterStoreList(keyword) {
   renderStoreListInner(window._currentStoreList || [], keyword);
 }
 
-function selectStore(code, name, team) {
+async function selectStore(code, name, team) {
   S.storeCode = code; S.storeName = name; S.storeTeam = team;
   // 매장 객체 저장 (beef/pizza/spacool 배지용)
   S.storeObj = (window._activeStores||[]).find(s => s.code === code) || null;
@@ -1532,9 +1532,48 @@ function selectStore(code, name, team) {
   // GL 최초점검: 바로 info로 (SV N값과 무관하게 독립 점검)
   if (S.inspType === "보완") {
     loadPrevNItems(code);
-  } else {
-    // SV/TL/GL 최초점검: 바로 info로
+  } else if (S.role === "gl") {
+    // GL 최초점검은 기존 정책대로 SV/TL 세트와 무관하게 항상 독립 진행
     go("info");
+  } else {
+    // SV/팀장 최초점검: 이 매장에 미해결 보완대상(잔존N/반려)이 이미 있으면
+    // 새 최초점검 제출이 그 세트를 덮어써 버릴 수 있으므로(최신 문서 기준 판정이라 구세트가
+    // 가려짐) 사전에 확인 — 휴먼에러 방지
+    const pending = await checkSvtlSetPending(code);
+    if (pending.blocked) {
+      const proceed = confirm(
+        `⚠️ 이 매장은 보완점검이 필요한 상태입니다 (잔존 N ${pending.nRemaining}건).\n` +
+        `최초점검을 다시 진행하면 기존 보완 대상이 끊어질 수 있습니다.\n\n` +
+        `보완점검을 먼저 진행하시겠습니까?`
+      );
+      if (proceed) {
+        S.inspType = "보완";
+        loadPrevNItems(code);
+      }
+      return; // 취소 시 매장목록에 그대로 머무름
+    }
+    go("info");
+  }
+}
+
+// 매장에 미해결 SV/TL 보완대상 세트(반려 또는 잔존N)가 있는지 확인
+// (최초점검 시작 직전, 세트가 끊기는 걸 막기 위한 안전장치 — getSvtlSetStatus 공용 판정 재사용)
+async function checkSvtlSetPending(storeCode) {
+  try {
+    const [svSnap, tlSnap] = await Promise.all([
+      getDocs(query(collection(db,"surveys"), where("storeCode","==",storeCode), where("role","==","sv"))),
+      getDocs(query(collection(db,"surveys"), where("storeCode","==",storeCode), where("role","==","tl"))),
+    ]);
+    const svDocs = []; svSnap.forEach(d => svDocs.push({ id:d.id, ...d.data() }));
+    const tlDocs = []; tlSnap.forEach(d => tlDocs.push({ id:d.id, ...d.data() }));
+    const st = getSvtlSetStatus(svDocs, tlDocs);
+    if (["반려","보완필요"].includes(st.status)) {
+      return { blocked:true, nRemaining: st.nRemaining };
+    }
+    return { blocked:false };
+  } catch(e) {
+    console.warn("보완대상 확인 실패:", e.message);
+    return { blocked:false }; // 조회 실패 시 과도한 차단 방지 위해 진행 허용
   }
 }
 
@@ -1905,6 +1944,12 @@ async function loadGLCompareAndShow(glDocId) {
 
 // GL N항목 보완점검 시작 (compare 화면 버튼 클릭 시)
 async function startGLFollowup() {
+  // 방어선: AC(SV)는 그룹장 지적건 보완점검을 수행할 수 없음 — 다른 진입경로로 여기까지
+  // 온 경우까지 대비해 소유권 체크보다 먼저 역할 체크
+  if (_authRole === "sv") {
+    alert("🔍 그룹장 반려 건은 팀장만 보완점검을 진행할 수 있습니다.");
+    return;
+  }
   // 권한 검증: TL은 본인 담당 팀 점포만, admin은 전체 허용 (다른 확인/반려 함수들과 동일한 방식)
   const d2 = S.compareData;
   const _ok = await _checkTLOwnership(d2?.storeCode);
@@ -4495,6 +4540,13 @@ async function viewRecord(docId) {
 
   if (needFollowup && _authRole !== "gl") {
     if (found.role === "gl") {
+      // AC(SV)는 그룹장 지적건의 보완점검을 수행할 수 없음(팀장 담당) — 명확히 안내하고
+      // 점검내역조회 화면에 그대로 머무름 (기존엔 "본인 담당 팀 점포만..." 이라는
+      // 소유권 관련 오해 소지 메시지만 진입 이후 버튼 클릭 시점에 떴었음)
+      if (_authRole === "sv") {
+        alert("🔍 그룹장 반려 점포입니다.\n팀장 보완점검이 필요한 건으로, AC가 처리할 수 없습니다.");
+        return;
+      }
       // GL건 N항목 → 기존 GL 전용 보완점검 진입 경로 그대로 사용
       loadGLCompareAndShow(docId);
       return;
