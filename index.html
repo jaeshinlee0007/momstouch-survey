@@ -1558,7 +1558,7 @@ function renderStoreListInner(list, keyword="") {
       ? `<span class="rej-badge">🚫 ${rejInfo.by} 반려</span>`
       : "";
     const rejReason = rejInfo
-      ? `<div class="rej-reason">반려사유: ${rejInfo.reason||"사유 없음"}</div>`
+      ? `<div class="rej-reason">반려사유: ${escapeHtml(rejInfo.reason||"사유 없음")}</div>`
       : "";
     html += `<div class="search-item ${rejInfo?'rejected-item':''}" onclick="selectStore('${s.code}','${s.name}','${s.team}')">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -1815,7 +1815,7 @@ function renderInfo(root) {
       ${S.inspType==='보완' && S.compareData?.tlRejected ? `
         <div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#C53030">
           🚫 팀장 반려로 인한 전체 재점검입니다. (전체 문항을 다시 응답해주세요)
-          ${S.compareData?.tlRejectedReason ? `<br><span style="font-size:12px">반려사유: ${S.compareData.tlRejectedReason}</span>` : ""}
+          ${S.compareData?.tlRejectedReason ? `<br><span style="font-size:12px">반려사유: ${escapeHtml(S.compareData.tlRejectedReason)}</span>` : ""}
         </div>` : S.inspType==='보완' && S.prevNItems.length>0 ? `
         <div class="notice-box">
           ⚠️ 재점검 대상: ${S.prevNItems.length}개 항목
@@ -2691,8 +2691,8 @@ function renderCompare(root) {
               <span style="font-weight:600;color:${info.color};font-size:13px">${info.icon} ${i+1}차 · ${info.text}</span>
               <span style="font-size:11px;color:#A0AEC0">${fmtDate(h.at)}</span>
             </div>
-            <div style="font-size:12px;color:#718096;margin-top:2px">${h.writerName||""}${nCount!==null ? ` · N ${nCount}건` : ""}</div>
-            ${h.reason ? `<div style="font-size:12px;color:#C53030;margin-top:4px">사유: ${h.reason}</div>` : ""}
+            <div style="font-size:12px;color:#718096;margin-top:2px">${escapeHtml(h.writerName||"")}${nCount!==null ? ` · N ${nCount}건` : ""}</div>
+            ${h.reason ? `<div style="font-size:12px;color:#C53030;margin-top:4px">사유: ${escapeHtml(h.reason)}</div>` : ""}
           </div>`;
         }).join("")}
       </div>
@@ -2755,13 +2755,13 @@ function renderCompare(root) {
                 <div class="cc-role">보완(POST/팀장)</div>
                 <div class="cc-val ${valClass(postV)}">${postV}</div>
                 ${postImg ? `<img src="${postImg}" class="cc-img" onclick="openImageModal('${postImg}')">` : ""}
-                ${postA?.memo ? `<div class="compare-memo">💬 ${postA.memo}</div>` : ""}
+                ${postA?.memo ? `<div class="compare-memo">💬 ${escapeHtml(postA.memo)}</div>` : ""}
               </div>
               <div class="cc-cell">
                 <div class="cc-role">최초(PRE/그룹장)</div>
                 <div class="cc-val ${valClass(preV)}">${preV}</div>
                 ${preImg ? `<img src="${preImg}" class="cc-img" onclick="openImageModal('${preImg}')">` : ""}
-                ${preA?.memo ? `<div class="compare-memo">💬 ${preA.memo}</div>` : ""}
+                ${preA?.memo ? `<div class="compare-memo">💬 ${escapeHtml(preA.memo)}</div>` : ""}
               </div>
             </div>
           </div>`;
@@ -2802,13 +2802,13 @@ function renderCompare(root) {
               <div class="cc-role">보완(POST)</div>
               <div class="cc-val ${valClass(postV)}">${postV}</div>
               ${postA?.image ? `<img src="${normalizeImageUrl(postA.image)}" class="cc-img" onclick="openImageModal('${normalizeImageUrl(postA.image)}')">` : ""}
-              ${postA?.memo ? `<div class="compare-memo">💬 ${postA.memo}</div>` : ""}
+              ${postA?.memo ? `<div class="compare-memo">💬 ${escapeHtml(postA.memo)}</div>` : ""}
             </div>
             <div class="cc-cell">
               <div class="cc-role">최초(PRE)</div>
               <div class="cc-val ${valClass(preV)}">${preV}</div>
               ${preA?.image ? `<img src="${normalizeImageUrl(preA.image)}" class="cc-img" onclick="openImageModal('${normalizeImageUrl(preA.image)}')">` : ""}
-              ${preA?.memo ? `<div class="compare-memo">💬 ${preA.memo}</div>` : ""}
+              ${preA?.memo ? `<div class="compare-memo">💬 ${escapeHtml(preA.memo)}</div>` : ""}
             </div>
           </div>
         </div>`;
@@ -2820,7 +2820,7 @@ function renderCompare(root) {
   if (!isGLDoc && hasFollowup && (nIds.size === 0 || d.tlRejected)) {
     html += `<div class="section-divider divider-follow">🔁 보완점검 결과 (전체)</div>`;
     html += d.tlRejected
-      ? `<div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#C53030">🚫 팀장 반려로 인한 전체 재점검 결과입니다.${d.tlRejectedReason ? `<br>반려사유: ${d.tlRejectedReason}` : ""}</div>`
+      ? `<div class="notice-box" style="background:#FFF5F5;border-color:#FC8181;color:#C53030">🚫 팀장 반려로 인한 전체 재점검 결과입니다.${d.tlRejectedReason ? `<br>반려사유: ${escapeHtml(d.tlRejectedReason)}` : ""}</div>`
       : `<div class="notice-box" style="background:#FFFBEB;border-color:#F6AD55;color:#744210">ℹ️ 최초점검엔 N항목이 없었지만(반려 등의 사유로) 보완점검이 제출된 건입니다.</div>`;
     html += `<div class="meta-row"><span>보완: ${d.followupSvWriterName||""}</span><span>${fmtDate(d.followupSvVisitDate)}</span></div>`;
 
@@ -2842,7 +2842,7 @@ function renderCompare(root) {
               <div class="cc-role">보완</div>
               <div class="cc-val ${valClass(postV)}">${postV}</div>
               ${postA?.image ? `<img src="${normalizeImageUrl(postA.image)}" class="cc-img" onclick="openImageModal('${normalizeImageUrl(postA.image)}')">` : ""}
-              ${postA?.memo ? `<div class="compare-memo">💬 ${postA.memo}</div>` : ""}
+              ${postA?.memo ? `<div class="compare-memo">💬 ${escapeHtml(postA.memo)}</div>` : ""}
             </div>
           </div>
         </div>`;
@@ -2869,7 +2869,7 @@ function renderCompare(root) {
               <div class="cc-role">보완 결과</div>
               <div class="cc-val ${valClass(postV)}">${postV}</div>
               ${postA?.image ? `<img src="${normalizeImageUrl(postA.image)}" class="cc-img" onclick="openImageModal('${normalizeImageUrl(postA.image)}')">` : ""}
-              ${postA?.memo ? `<div class="compare-memo">💬 ${postA.memo}</div>` : ""}
+              ${postA?.memo ? `<div class="compare-memo">💬 ${escapeHtml(postA.memo)}</div>` : ""}
             </div>
           </div>
         </div>`;
@@ -2906,7 +2906,7 @@ function renderCompare(root) {
             ${sv?.image ? `<img src="${sv.image}" class="cc-img" onclick="openImageModal('${sv.image}')">` : ""}
           </div>
         </div>
-        ${sv?.memo ? `<div class="compare-memo">💬 ${sv.memo}</div>` : ""}
+        ${sv?.memo ? `<div class="compare-memo">💬 ${escapeHtml(sv.memo)}</div>` : ""}
       </div>`;
   });
   } // end if(!isGLDoc)
@@ -2945,7 +2945,7 @@ function renderCompare(root) {
         html += '<div class="cc-role">그룹장</div>';
         html += '<div class="cc-val ' + valClass(glV) + '">' + glV + '</div>';
         if (glImg) html += '<img src="' + glImg + '" class="cc-img" onclick="openImageModal(\'' + glImg + '\')">'; 
-        if (glA?.memo) html += '<div class="compare-memo">💬 ' + glA.memo + '</div>';
+        if (glA?.memo) html += '<div class="compare-memo">💬 ' + escapeHtml(glA.memo) + '</div>';
         html += '</div></div></div>';
       });
     } else if (d2.glRejected && !d2.tlConfirmed) {
@@ -2955,7 +2955,7 @@ function renderCompare(root) {
         <div class="card-section">
           <div class="reject-notice">
             🔍 그룹장 최초점검 N항목 발생 — 보완점검 필요
-            ${d2.glRejectedReason ? `<div class="reject-reason">${d2.glRejectedReason}</div>` : ""}
+            ${d2.glRejectedReason ? `<div class="reject-reason">${escapeHtml(d2.glRejectedReason)}</div>` : ""}
           </div>
           ${isClosedStoreGL ? `
           <div class="notice-box" style="background:#FFF5F5;border-color:#FEB2B2;color:#742A2A">🚫 폐점된 매장입니다 — 보완점검을 진행할 수 없습니다</div>
@@ -3006,7 +3006,7 @@ function renderCompare(root) {
                 <div class="cc-role">그룹장</div>
                 <div class="cc-val ${valClass(glV)}">${glV}</div>
                 ${glImg ? `<img src="${glImg}" class="cc-img" onclick="openImageModal('${glImg}')">` : ""}
-                ${glA?.memo ? `<div class="compare-memo">💬 ${glA.memo}</div>` : ""}
+                ${glA?.memo ? `<div class="compare-memo">💬 ${escapeHtml(glA.memo)}</div>` : ""}
               </div>
             </div>
           </div>`;
@@ -3061,7 +3061,7 @@ function renderCompare(root) {
                 <div class="cc-role">그룹장</div>
                 <div class="cc-val ${valClass(glV)}">${glV}</div>
                 ${glImg ? `<img src="${glImg}" class="cc-img" onclick="openImageModal('${glImg}')">` : ""}
-                ${glA?.memo ? `<div class="compare-memo">💬 ${glA.memo}</div>` : ""}
+                ${glA?.memo ? `<div class="compare-memo">💬 ${escapeHtml(glA.memo)}</div>` : ""}
               </div>
             </div>
           </div>`;
@@ -3091,7 +3091,7 @@ function renderCompare(root) {
         html += '<div class="cc-role">그룹장</div>';
         html += '<div class="cc-val ' + valClass(glV) + '">' + glV + '</div>';
         if (glImg) html += '<img src="' + glImg + '" class="cc-img" onclick="openImageModal(\'' + glImg + '\')">'; 
-        if (glA?.memo) html += '<div class="compare-memo">💬 ' + glA.memo + '</div>';
+        if (glA?.memo) html += '<div class="compare-memo">💬 ' + escapeHtml(glA.memo) + '</div>';
         html += '</div></div></div>';
       });
     }
