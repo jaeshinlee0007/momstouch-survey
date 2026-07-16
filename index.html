@@ -441,10 +441,11 @@ function npStatus(rec) {
   return "none";
 }
 
-// 스파쿨 홍보물 점검 건의 상태 계산: "none"(미점검) | "needs"(재점검필요) | "pending"(승인대기) | "done"(완료)
+// 스파쿨 홍보물 점검 건의 상태 계산: "none"|"needs"|"pending_tl"|"pending_gl"|"done"
 // - Q1, Q2 둘 다 Y여야 승인 절차로 진행. 하나라도 N이면 즉시 재점검필요 (보완점검 없음).
-// - SV의 전부 Y 건은 담당 팀장 승인이 있어야 완료. TL/GL/관리자 본인 점검은 즉시 완료.
-// - 팀장(또는 GL/관리자)이 반려한 건은 재점검필요로 취급.
+// - AC(SV)의 전부 Y 건은 팀장 승인 → 그룹장 승인 순으로 완료.
+// - 팀장(TL) 본인점검은 자기승인 단계 없이 바로 그룹장 승인대기로 (자기 자신을 승인할 수 없으므로).
+// - GL/관리자 본인 점검만 승인 없이 즉시 완료.
 function spacoolStatus(rec) {
   if (!rec) return "none";
   if (rec.tlRejected) return "needs";
@@ -452,8 +453,14 @@ function spacoolStatus(rec) {
   if (!a || (a.q1 == null && a.q2 == null)) return "none";
   if (a.q1 === "N" || a.q2 === "N") return "needs";
   if (a.q1 === "Y" && a.q2 === "Y") {
-    if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
-    return "done";
+    if (rec.role === "sv") {
+      if (rec.tlApproved !== true) return "pending_tl";
+      return rec.glApproved === true ? "done" : "pending_gl";
+    }
+    if (rec.role === "tl") {
+      return rec.glApproved === true ? "done" : "pending_gl";
+    }
+    return "done"; // gl, admin 본인점검
   }
   return "none";
 }
@@ -660,6 +667,7 @@ function renderHome(root) {
   root.innerHTML = `
     <div class="hero" style="padding-bottom:16px;position:relative">
       <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(255,255,255,0.18);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
+      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(255,255,255,0.18);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">⊞</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
       <h1 class="hero-title">신규플랫폼<br>현장점검</h1>
       <p class="hero-sub">비프 · 피자 · 스파쿨</p>
@@ -700,6 +708,7 @@ function renderHomeNP(root) {
   root.innerHTML = `
     <div class="hero-np" style="padding-bottom:16px;position:relative">
       <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
+      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">⊞</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
       <h1 class="hero-title">신제품<br>현장점검</h1>
       <p class="hero-sub">갓빠삭치킨 교육점검</p>
@@ -754,6 +763,7 @@ function renderNpComingSoon(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>신제품 현장점검</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section" style="text-align:center;padding-top:40px">
       <div style="font-size:40px;margin-bottom:12px">🛠️</div>
@@ -776,6 +786,7 @@ function renderHomeSpacool(root) {
   root.innerHTML = `
     <div class="hero-spacool" style="padding-bottom:16px;position:relative">
       <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#173404;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
+      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#173404;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">⊞</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
       <h1 class="hero-title">스파쿨<br>홍보물 점검</h1>
       <p class="hero-sub">외부 · 내부 홍보물 부착 점검</p>
@@ -783,7 +794,7 @@ function renderHomeSpacool(root) {
     <div class="card-section">
       <button class="btn-primary-spacool" onclick="startSpacoolInspection()">📋 점검 시작하기</button>
       <button class="btn-ghost" onclick="go('recordsSpacool')">📂 점검 내역 조회</button>
-      ${canDash ? `<button class="btn-ghost" onclick="go('approvalSpacool')" style="color:#3B6D11;border-color:#C0DD97;background:#EAF3DE">✅ 승인대기</button>` : ""}
+      ${canDash ? `<button class="btn-ghost" id="spacoolApprovalBtn" onclick="go('approvalSpacool')" style="color:#3B6D11;border-color:#C0DD97;background:#EAF3DE">✅ 승인대기<span id="spacoolApprovalBadge"></span></button>` : ""}
       ${canDash ? `<button class="btn-ghost btn-admin-spacool" onclick="goAdminSpacool()">📊 관리자 대시보드 (스파쿨)</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
@@ -801,6 +812,44 @@ function renderHomeSpacool(root) {
         </div>
       </div>
     </div>`;
+  if (canDash) loadSpacoolApprovalBadge();
+}
+
+// 홈 화면 승인대기 버튼 옆 건수 배지: 역할별 본인 처리대상 단계만 카운트
+// (TL=팀장단계, GL=그룹장단계, admin=둘 다 합산). 실패해도 조용히 무시(배지는 부가정보).
+async function loadSpacoolApprovalBadge() {
+  const badgeEl = document.getElementById("spacoolApprovalBadge");
+  if (!badgeEl) return;
+  try {
+    let records = cacheGet("recordsSpacool");
+    if (!records) {
+      const snap = await getDocs(query(collection(db,"surveys_spacool"), orderBy("createdAt","desc")));
+      records = [];
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("recordsSpacool", records);
+    }
+    const latestByStore = new Map();
+    records.forEach(r => {
+      const ex = latestByStore.get(r.storeCode);
+      const t = r.createdAt?.seconds || 0;
+      const exT = ex?.createdAt?.seconds || 0;
+      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    });
+    let list = [...latestByStore.values()];
+    if (_authRole === "tl") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
+      list = list.filter(r => teamCodes.has(r.storeCode));
+    }
+    let count;
+    if (_authRole === "tl") count = list.filter(r => spacoolStatus(r) === "pending_tl").length;
+    else if (_authRole === "gl") count = list.filter(r => spacoolStatus(r) === "pending_gl").length;
+    else count = list.filter(r => ["pending_tl","pending_gl"].includes(spacoolStatus(r))).length; // admin: 팀장+그룹장 합산
+
+    if (count > 0) {
+      badgeEl.outerHTML = ` <span id="spacoolApprovalBadge" style="background:#E53E3E;color:white;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:4px">${count}</span>`;
+    }
+  } catch(e) { /* 배지 실패는 조용히 무시 */ }
 }
 
 function goAdminSpacool() {
@@ -1173,8 +1222,9 @@ async function submitFormSpacool() {
       needsFollowup: (a.q1 === "N" || a.q2 === "N"),
       createdAt: new Date(),
     };
-    // SV가 Q1,Q2 전부 Y로 제출한 건은 담당 팀장 승인이 있어야 최종 완료로 인정됨.
-    // TL/GL/관리자 본인 점검은 승인 절차 없이 즉시 완료 처리 (필드 자체를 넣지 않음).
+    // AC(SV)가 Q1,Q2 전부 Y로 제출한 건은 담당 팀장 승인 → 그룹장 승인 순으로 최종 완료.
+    // 팀장 본인점검은 자기승인 없이 바로 그룹장 승인대기(payload에 별도 필드 불필요 —
+    // spacoolStatus가 role==='tl'이면 glApproved 유무만으로 판단). GL/관리자 본인점검만 즉시 완료.
     if (S.role === "sv" && a.q1 === "Y" && a.q2 === "Y") {
       payload.tlApproved = false;
     }
@@ -1192,8 +1242,9 @@ async function submitFormSpacool() {
 }
 
 // ── INSP TYPE ──────────────────────────────────────
+// 이 화면은 startDefaultInspection()에서만 진입한다(신제품/스파쿨은 각자 시작함수에서
+// inspType을 직접 "최초"로 세팅하고 이 화면 자체를 건너뜀) — 따라서 신규플랫폼 카테고리 전용.
 function renderInspType(root) {
-  const isNp = S.category === "np";
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
@@ -1204,12 +1255,11 @@ function renderInspType(root) {
         <div class="role-icon">📋</div>
         <div><div class="role-label">최초점검</div><div class="role-desc">신규 현장점검 시작</div></div>
       </button>
-      ${_authRole !== "gl" && !isNp ? `
+      ${_authRole !== "gl" ? `
       <button class="role-card" onclick="selectInspType('보완')">
         <div class="role-icon">🔁</div>
         <div><div class="role-label">보완점검</div><div class="role-desc">최초점검 N항목 재점검<br>N항목 강조 표시</div></div>
       </button>` : ""}
-      ${isNp ? `<div style="font-size:12px;color:#B7791F;padding:10px 4px">※ 신제품 현장점검 보완점검 기능은 준비중입니다. (최초점검만 우선 지원)</div>` : ""}
     </div>`;
 }
 
@@ -1283,6 +1333,10 @@ function filterStoreListFixed(keyword) {
   renderStoreListInner(list, keyword);
 }
 
+// 매장 목록 검색 (신규플랫폼/신제품/스파쿨 3개 카테고리 공용) — 얇은 디스패처.
+// 카테고리별 매장범위 구성은 각각 별도 함수로 완전히 분리하고, "보완점검" 필터링(신규플랫폼
+// 전용 개념)은 S.category==="default"를 명시적으로 확인한 뒤에만 호출한다. (도메인 전용 로직을
+// 절대 이 함수 안에 직접 넣지 말 것 — selectStore와 동일한 이유)
 async function searchStores() {
   const inputEl = document.getElementById("writerInput");
   // Auth 로그인 시 이름 자동 적용
@@ -1297,46 +1351,34 @@ async function searchStores() {
   document.getElementById("storeResult").innerHTML = `<p class="loading-text">매장 목록 불러오는 중...</p>`;
   const activeStores = await getActiveStoreData();
 
-  let matched = [];
-  if (S.category === "np") {
-    // 신제품 현장점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출
-    if (S.role === "sv") {
-      // 본인 담당 매장에서 소속 TL을 역으로 찾아 그 TL 팀 전체로 확장
-      const myStore = activeStores.find(s => s.sv === name);
-      const teamTl = myStore ? myStore.tl : null;
-      matched = teamTl ? activeStores.filter(s => s.tl === teamTl) : activeStores.filter(s => s.sv === name);
-    } else if (S.role === "tl") {
-      const svStores = activeStores.filter(s => s.sv === name);
-      const tlStores = activeStores.filter(s => s.tl === name);
-      const codeSet  = new Set(svStores.map(s => s.code));
-      matched = [...svStores, ...tlStores.filter(s => !codeSet.has(s.code))];
-    } else {
-      // GL/admin: 전체 매장
-      matched = activeStores.slice();
-    }
-    // 신제품 판매/교육 대상 매장만 노출 (STORE INFO의 "신제품-갓빠삭" 컬럼 기준)
-    matched = matched.filter(s => s.npEligible);
-  } else if (S.category === "spacool") {
-    // 스파쿨 홍보물 점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출
-    if (S.role === "sv") {
-      const myStore = activeStores.find(s => s.sv === name);
-      const teamTl = myStore ? myStore.tl : null;
-      matched = teamTl ? activeStores.filter(s => s.tl === teamTl) : activeStores.filter(s => s.sv === name);
-    } else if (S.role === "tl") {
-      const svStores = activeStores.filter(s => s.sv === name);
-      const tlStores = activeStores.filter(s => s.tl === name);
-      const codeSet  = new Set(svStores.map(s => s.code));
-      matched = [...svStores, ...tlStores.filter(s => !codeSet.has(s.code))];
-    } else {
-      matched = activeStores.slice();
-    }
-    // 스파쿨 판매 대상 매장만 노출 (STORE INFO의 "스파쿨" 컬럼 기준)
-    matched = matched.filter(s => s.spacool);
-  } else if (S.role === "sv") {
-    // SV: 본인 담당 점포만
-    matched = activeStores.filter(s => s.sv === name);
+  let matched;
+  if (S.category === "np") matched = buildMatchedStoresNP(activeStores, name);
+  else if (S.category === "spacool") matched = buildMatchedStoresSpacool(activeStores, name);
+  else matched = buildMatchedStoresDefault(activeStores, name);
+
+  if (matched.length === 0) {
+    document.getElementById("storeResult").innerHTML =
+      `<p class="error-text">담당 매장이 없습니다. 이름을 확인해주세요.</p>`;
+    return;
+  }
+
+  // 보완점검 필터링: 신규플랫폼 카테고리에만 존재하는 개념(신제품/스파쿨은 최초점검만 있음)
+  if (S.category === "default" && S.inspType === "보완") {
+    matched = await filterMatchedStoresForFollowup(matched);
+    if (matched === null) return; // 이미 결과/에러 화면 렌더링 완료
+  }
+  renderStoreList(matched);
+}
+
+// 신제품 현장점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출, 신제품 대상 매장만
+function buildMatchedStoresNP(activeStores, name) {
+  let matched;
+  if (S.role === "sv") {
+    // 본인 담당 매장에서 소속 TL을 역으로 찾아 그 TL 팀 전체로 확장
+    const myStore = activeStores.find(s => s.sv === name);
+    const teamTl = myStore ? myStore.tl : null;
+    matched = teamTl ? activeStores.filter(s => s.tl === teamTl) : activeStores.filter(s => s.sv === name);
   } else if (S.role === "tl") {
-    // TL: 본인 담당 점포(sv컬럼) + 담당팀 전체(tl컬럼) → 중복 제거
     const svStores = activeStores.filter(s => s.sv === name);
     const tlStores = activeStores.filter(s => s.tl === name);
     const codeSet  = new Set(svStores.map(s => s.code));
@@ -1345,99 +1387,130 @@ async function searchStores() {
     // GL/admin: 전체 매장
     matched = activeStores.slice();
   }
+  // 신제품 판매/교육 대상 매장만 노출 (STORE INFO의 "신제품-갓빠삭" 컬럼 기준)
+  return matched.filter(s => s.npEligible);
+}
 
-  if (matched.length === 0) {
-    document.getElementById("storeResult").innerHTML =
-      `<p class="error-text">담당 매장이 없습니다. 이름을 확인해주세요.</p>`;
-    return;
+// 스파쿨 홍보물 점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출, 스파쿨 대상 매장만
+function buildMatchedStoresSpacool(activeStores, name) {
+  let matched;
+  if (S.role === "sv") {
+    const myStore = activeStores.find(s => s.sv === name);
+    const teamTl = myStore ? myStore.tl : null;
+    matched = teamTl ? activeStores.filter(s => s.tl === teamTl) : activeStores.filter(s => s.sv === name);
+  } else if (S.role === "tl") {
+    const svStores = activeStores.filter(s => s.sv === name);
+    const tlStores = activeStores.filter(s => s.tl === name);
+    const codeSet  = new Set(svStores.map(s => s.code));
+    matched = [...svStores, ...tlStores.filter(s => !codeSet.has(s.code))];
+  } else {
+    matched = activeStores.slice();
   }
+  // 스파쿨 판매 대상 매장만 노출 (STORE INFO의 "스파쿨" 컬럼 기준)
+  return matched.filter(s => s.spacool);
+}
 
-  // 보완점검: 지금 조치가 필요한(반려/보완필요) 담당 매장만 노출
-  // ※ 판정은 getStoreActionStatus() 공용함수 기준 — 보완점검 필요점/대시보드와 동일 기준
-  if (S.inspType === "보완") {
-    document.getElementById("storeResult").innerHTML = `<p class="loading-text">보완필요 매장 확인 중...</p>`;
-    try {
-      const followupCached = cacheGet("followup");
-      let svSnap, tlSnap, glSnap;
-      if (followupCached) {
-        [svSnap, tlSnap, glSnap] = followupCached;
-      } else {
-        // inspType 등호필터 제거: Firestore where절은 필드가 아예 없는 문서(구버전 legacy)를
-        // 매칭시키지 못해 누락시킴. inspType 판별은 클라이언트에서 (없으면 최초로 간주) 처리.
-        [svSnap, tlSnap, glSnap] = await Promise.all([
-          getDocs(query(collection(db,"surveys"), where("role","==","sv"))),
-          getDocs(query(collection(db,"surveys"), where("role","==","tl"))),
-          getDocs(query(collection(db,"surveys"), where("role","==","gl"))),
-        ]);
-        cacheSet("followup", [svSnap, tlSnap, glSnap]);
-      }
-      const allDocs = [];
-      svSnap.forEach(d => allDocs.push({ id:d.id, role:"sv", ...stripImages([{...d.data()}])[0] }));
-      tlSnap.forEach(d => allDocs.push({ id:d.id, role:"tl", ...stripImages([{...d.data()}])[0] }));
-      glSnap.forEach(d => allDocs.push({ id:d.id, role:"gl", ...stripImages([{...d.data()}])[0] }));
-      const byStore = groupDocsByStore(allDocs);
+// 신규플랫폼 현장점검: SV=본인담당, TL=본인담당+담당팀 전체, GL/admin=전체
+function buildMatchedStoresDefault(activeStores, name) {
+  if (S.role === "sv") {
+    return activeStores.filter(s => s.sv === name);
+  }
+  if (S.role === "tl") {
+    const svStores = activeStores.filter(s => s.sv === name);
+    const tlStores = activeStores.filter(s => s.tl === name);
+    const codeSet  = new Set(svStores.map(s => s.code));
+    return [...svStores, ...tlStores.filter(s => !codeSet.has(s.code))];
+  }
+  return activeStores.slice();
+}
 
-      const needsFollowup = new Set();
-      const alreadyDone = new Set();
-      const rejectedMap = new Map(); // storeCode → {reason, by, docId?, glDocId?, svFollowupIds?}
-
-      matched.forEach(s => {
-        const bucket = byStore.get(s.code) || {sv:[],tl:[],gl:[]};
-        const st = getStoreActionStatus(s.code, bucket.sv, bucket.tl, bucket.gl);
-        const svtlNeedsAction = ["반려","보완필요"].includes(st.svtl.status);
-        const glNeedsAction   = ["반려","보완필요"].includes(st.gl.status);
-        // 기존 정책 유지: SV는 SV/TL 세트건만, TL은 SV/TL + GL 지적건까지 모두 노출
-        const visibleToThisRole = S.role === "sv" ? svtlNeedsAction : (svtlNeedsAction || glNeedsAction);
-
-        if (st.svtl.status === "반려") {
-          const d = bucket.sv.concat(bucket.tl).find(x => x.id === st.svtl.docId);
-          rejectedMap.set(s.code, { reason: d ? (d.tlRejectedReason || d.glRejectedReason) : null, by: st.svtl.rejectedBy, docId: st.svtl.docId });
-        } else if (S.role !== "sv" && st.gl.status === "보완필요" && bucket.gl.some(d => d.glRejected)) {
-          // GL 반려 → 팀장 보완점검 대기 (기존 GL 전용 진입 경로 호환, TL만 노출)
-          const glDoc = bucket.gl.slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))[0];
-          if (glDoc) {
-            rejectedMap.set(s.code, {
-              reason: glDoc.glRejectedReason, by: "그룹장",
-              glDocId: glDoc.id, svFollowupIds: glDoc.svFollowupIds || [],
-            });
-          }
-        }
-
-        if (visibleToThisRole) {
-          needsFollowup.add(s.code);
-        } else if (svtlNeedsAction === false && ["완료","확인대기"].includes(st.svtl.status)) {
-          alreadyDone.add(s.code);
-        }
-      });
-      window._needsFollowup = needsFollowup;
-      window._alreadyDone = alreadyDone;
-      window._rejectedMap = rejectedMap;
-
-      // 담당 매장 중: 반려된 점포 + 지금 조치필요(반려/보완필요)인 점포
-      const needFollowup = matched.filter(s =>
-        rejectedMap.has(s.code) || needsFollowup.has(s.code)
-      );
-
-      if (needFollowup.length === 0) {
-        document.getElementById("storeResult").innerHTML =
-          `<p class="error-text">보완점검이 필요한 담당 매장이 없습니다.<br>
-          <span style="font-size:12px;color:#718096">(모두 점검완료 또는 추가점검 대상 없음)</span></p>`;
-        return;
-      }
-
-      // 정렬: 반려 최상단 → 보완필요 → 나머지
-      needFollowup.sort((a, b) => {
-        const aRej = rejectedMap.has(a.code) ? 0 : 1;
-        const bRej = rejectedMap.has(b.code) ? 0 : 1;
-        return aRej - bRej;
-      });
-      matched = needFollowup;
-
-    } catch(e) {
-      console.warn("보완필요 조회 실패:", e.message);
+// 신규플랫폼 전용: "보완점검" inspType일 때 지금 조치필요(반려/보완필요)한 매장만 필터링.
+// 반환값: 필터링된 배열 / 조회실패 시 원본 matched 그대로(기존 동작과 동일) /
+//         대상이 0건이면 에러 화면을 직접 렌더링하고 null 반환(호출부는 그대로 종료)
+async function filterMatchedStoresForFollowup(matched) {
+  document.getElementById("storeResult").innerHTML = `<p class="loading-text">보완필요 매장 확인 중...</p>`;
+  try {
+    const followupCached = cacheGet("followup");
+    let svSnap, tlSnap, glSnap;
+    if (followupCached) {
+      [svSnap, tlSnap, glSnap] = followupCached;
+    } else {
+      // inspType 등호필터 제거: Firestore where절은 필드가 아예 없는 문서(구버전 legacy)를
+      // 매칭시키지 못해 누락시킴. inspType 판별은 클라이언트에서 (없으면 최초로 간주) 처리.
+      [svSnap, tlSnap, glSnap] = await Promise.all([
+        getDocs(query(collection(db,"surveys"), where("role","==","sv"))),
+        getDocs(query(collection(db,"surveys"), where("role","==","tl"))),
+        getDocs(query(collection(db,"surveys"), where("role","==","gl"))),
+      ]);
+      cacheSet("followup", [svSnap, tlSnap, glSnap]);
     }
+    const allDocs = [];
+    svSnap.forEach(d => allDocs.push({ id:d.id, role:"sv", ...stripImages([{...d.data()}])[0] }));
+    tlSnap.forEach(d => allDocs.push({ id:d.id, role:"tl", ...stripImages([{...d.data()}])[0] }));
+    glSnap.forEach(d => allDocs.push({ id:d.id, role:"gl", ...stripImages([{...d.data()}])[0] }));
+    const byStore = groupDocsByStore(allDocs);
+
+    const needsFollowup = new Set();
+    const alreadyDone = new Set();
+    const rejectedMap = new Map(); // storeCode → {reason, by, docId?, glDocId?, svFollowupIds?}
+
+    matched.forEach(s => {
+      const bucket = byStore.get(s.code) || {sv:[],tl:[],gl:[]};
+      const st = getStoreActionStatus(s.code, bucket.sv, bucket.tl, bucket.gl);
+      const svtlNeedsAction = ["반려","보완필요"].includes(st.svtl.status);
+      const glNeedsAction   = ["반려","보완필요"].includes(st.gl.status);
+      // 기존 정책 유지: SV는 SV/TL 세트건만, TL은 SV/TL + GL 지적건까지 모두 노출
+      const visibleToThisRole = S.role === "sv" ? svtlNeedsAction : (svtlNeedsAction || glNeedsAction);
+
+      if (st.svtl.status === "반려") {
+        const d = bucket.sv.concat(bucket.tl).find(x => x.id === st.svtl.docId);
+        rejectedMap.set(s.code, { reason: d ? (d.tlRejectedReason || d.glRejectedReason) : null, by: st.svtl.rejectedBy, docId: st.svtl.docId });
+      } else if (S.role !== "sv" && st.gl.status === "보완필요") {
+        // GL 지적 미해결(반려 플래그가 정상 설정된 경우 + 플래그 없이 N만 남은 구버전
+        // legacy 데이터 모두 포함) → 팀장 보완점검 대기, GL 전용 진입 경로로 라우팅
+        const glDoc = bucket.gl.slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))[0];
+        if (glDoc) {
+          rejectedMap.set(s.code, {
+            reason: glDoc.glRejectedReason, by: "그룹장",
+            glDocId: glDoc.id, svFollowupIds: glDoc.svFollowupIds || [],
+          });
+        }
+      }
+
+      if (visibleToThisRole) {
+        needsFollowup.add(s.code);
+      } else if (svtlNeedsAction === false && ["완료","확인대기"].includes(st.svtl.status)) {
+        alreadyDone.add(s.code);
+      }
+    });
+    window._needsFollowup = needsFollowup;
+    window._alreadyDone = alreadyDone;
+    window._rejectedMap = rejectedMap;
+
+    // 담당 매장 중: 반려된 점포 + 지금 조치필요(반려/보완필요)인 점포
+    const needFollowup = matched.filter(s =>
+      rejectedMap.has(s.code) || needsFollowup.has(s.code)
+    );
+
+    if (needFollowup.length === 0) {
+      document.getElementById("storeResult").innerHTML =
+        `<p class="error-text">보완점검이 필요한 담당 매장이 없습니다.<br>
+        <span style="font-size:12px;color:#718096">(모두 점검완료 또는 추가점검 대상 없음)</span></p>`;
+      return null;
+    }
+
+    // 정렬: 반려 최상단 → 보완필요 → 나머지
+    needFollowup.sort((a, b) => {
+      const aRej = rejectedMap.has(a.code) ? 0 : 1;
+      const bRej = rejectedMap.has(b.code) ? 0 : 1;
+      return aRej - bRej;
+    });
+    return needFollowup;
+
+  } catch(e) {
+    console.warn("보완필요 조회 실패:", e.message);
+    return matched; // 조회 실패 시 필터링 없이 원본 목록 그대로 표시 (기존 동작과 동일)
   }
-  renderStoreList(matched);
 }
 
 function renderStoreList(list, keyword="") {
@@ -1500,11 +1573,25 @@ function filterStoreList(keyword) {
   renderStoreListInner(window._currentStoreList || [], keyword);
 }
 
+// 매장 선택 진입점 (신규플랫폼/신제품/스파쿨 3개 카테고리 공용) — 얇은 디스패처.
+// 카테고리 판별을 함수 맨 위에서 최우선으로 처리해, 신규플랫폼 전용 로직(보완대상 체크 등)이
+// 다른 카테고리로 새어나가는 걸 구조적으로 막는다. (과거 이 가드가 없어서 스파쿨/신제품
+// 최초점검 중에도 신규플랫폼(surveys) 컬렉션 기준 "보완점검 필요" 팝업이 잘못 뜬 적 있음 —
+// 도메인 전용 로직을 절대 이 함수 안에 직접 넣지 말고 반드시 selectStoreDefault() 쪽에 추가할 것)
 async function selectStore(code, name, team) {
   S.storeCode = code; S.storeName = name; S.storeTeam = team;
-  // 매장 객체 저장 (beef/pizza/spacool 배지용)
   S.storeObj = (window._activeStores||[]).find(s => s.code === code) || null;
 
+  if (S.category === "np" || S.category === "spacool") {
+    // 신제품/스파쿨: 보완점검 개념 자체가 없음(둘 다 최초점검만 존재) — 항상 바로 진행
+    go("info");
+    return;
+  }
+  await selectStoreDefault(code);
+}
+
+// 신규플랫폼 현장점검(surveys 컬렉션) 전용 매장 선택 로직
+async function selectStoreDefault(code) {
   // GL glRejected 보완점검: rejectedMap에서 GL 전용 정보 확인
   const rejInfo = (window._rejectedMap || new Map()).get(code);
   if (S.inspType === "보완" && rejInfo && rejInfo.glDocId && rejInfo.svFollowupIds) {
@@ -1539,20 +1626,31 @@ async function selectStore(code, name, team) {
     // SV/팀장 최초점검: 이 매장에 미해결 보완대상(잔존N/반려)이 이미 있으면
     // 새 최초점검 제출이 그 세트를 덮어써 버릴 수 있으므로(최신 문서 기준 판정이라 구세트가
     // 가려짐) 사전에 확인 — 휴먼에러 방지
-    const pending = await checkSvtlSetPending(code);
-    if (pending.blocked) {
-      const proceed = confirm(
-        `⚠️ 이 매장은 보완점검이 필요한 상태입니다 (잔존 N ${pending.nRemaining}건).\n` +
-        `최초점검을 다시 진행하면 기존 보완 대상이 끊어질 수 있습니다.\n\n` +
-        `보완점검을 먼저 진행하시겠습니까?`
-      );
-      if (proceed) {
-        S.inspType = "보완";
-        loadPrevNItems(code);
+    // 중복탭 방지: 조회가 끝나기 전까지 재진입 무시
+    if (window._selectStoreBusy) return;
+    window._selectStoreBusy = true;
+    const resultEl = document.getElementById("storeResult");
+    const prevHtml = resultEl ? resultEl.innerHTML : "";
+    if (resultEl) resultEl.innerHTML = `<p class="loading-text">확인 중...</p>`;
+    try {
+      const pending = await checkSvtlSetPending(code);
+      if (pending.blocked) {
+        if (resultEl) resultEl.innerHTML = prevHtml; // 팝업 뜨기 전 매장목록 원복
+        const proceed = confirm(
+          `⚠️ 이 매장은 보완점검이 필요한 상태입니다 (잔존 N ${pending.nRemaining}건).\n` +
+          `최초점검을 다시 진행하면 기존 보완 대상이 끊어질 수 있습니다.\n\n` +
+          `보완점검을 먼저 진행하시겠습니까?`
+        );
+        if (proceed) {
+          S.inspType = "보완";
+          loadPrevNItems(code);
+        }
+        return; // 취소 시 매장목록에 그대로 머무름
       }
-      return; // 취소 시 매장목록에 그대로 머무름
+      go("info");
+    } finally {
+      window._selectStoreBusy = false;
     }
-    go("info");
   }
 }
 
@@ -3132,6 +3230,17 @@ async function renderPhotoSetting(root) {
   _spacoolEnabledLoaded = false;
   await loadSpacoolEnabled();
 
+  // 마지막 저장 정보 로드
+  let lastSavedText = "저장 이력 없음";
+  try {
+    const metaSnap = await getDoc(doc(db, "settings", "adminMeta"));
+    if (metaSnap.exists()) {
+      const meta = metaSnap.data();
+      const dt = meta.lastSavedAt?.seconds ? new Date(meta.lastSavedAt.seconds*1000) : null;
+      lastSavedText = `${dt ? fmtDate(dt.toISOString()) : "-"} · ${meta.lastSavedBy || "-"}`;
+    }
+  } catch(e) { /* 로드 실패해도 화면은 계속 표시 */ }
+
   const svItems = [
     {id:1,  title:"KIOSK 비프 품절"},
     {id:2,  title:"KIOSK 피자 품절"},
@@ -3181,125 +3290,127 @@ async function renderPhotoSetting(root) {
     </div>`;
   };
 
+  // 아코디언 섹션 래퍼 (기본 열림/닫힘 지정 가능)
+  const section = (icon, title, contentHtml, openByDefault) => `
+    <details style="border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden" ${openByDefault ? "open" : ""}>
+      <summary style="padding:14px 16px;font-weight:600;font-size:14px;color:#2D3748;cursor:pointer;background:#F7FAFC;display:flex;align-items:center;gap:8px">
+        <span>${icon}</span><span>${title}</span>
+      </summary>
+      <div style="padding:16px">${contentHtml}</div>
+    </details>`;
+
+  const storeDataHtml = `
+    <div class="store-upload-section">
+      <div class="store-upload-header">
+        <div>
+          <div class="store-upload-title">📋 매장 데이터 관리</div>
+          <div id="storeDataStatus" class="store-upload-sub">불러오는 중...</div>
+        </div>
+        <label class="btn-upload" for="storeFileInput">
+          📤 Excel 업로드
+          <input type="file" id="storeFileInput" accept=".xlsx,.xls" style="display:none"
+            onchange="handleStoreUpload(this)">
+        </label>
+      </div>
+      <div id="uploadProgress" style="display:none" class="upload-progress">
+        <div class="upload-progress-bar"><div id="uploadProgressFill" class="upload-progress-fill"></div></div>
+        <span id="uploadProgressText">업로드 중...</span>
+      </div>
+    </div>`;
+
+  const defaultCategoryHtml = `
+    <div style="background:#EBF8FF;border:1px solid #90CDF4;border-radius:8px;padding:10px 12px;font-size:12px;color:#2C5282;margin-bottom:16px">
+      ON: 해당 항목 사진 첨부 필수<br>
+      OFF: 사진 첨부 선택사항
+    </div>
+    <div style="font-weight:600;font-size:13px;color:var(--sub);margin-bottom:4px">SV / 팀장 항목 (16개)</div>
+    ${svItems.map(q => makeToggle(`Q${q.id}`, `Q${q.id}. ${q.title}`)).join("")}
+    <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:16px;margin-bottom:4px">그룹장 항목 (11개)</div>
+    ${glItems.map(q => makeToggle(`GL_Q${q.id}`, `GL_Q${q.id}. ${q.title}`)).join("")}
+    <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:20px;margin-bottom:4px">⏰ 점검 작성일 제한 (SV/TL 적용, GL/admin 예외)</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      ${[
+        {v:"none", label:"제한해제"},
+        {v:"0",    label:"당일"},
+        {v:"1",    label:"1일"},
+        {v:"3",    label:"3일"},
+        {v:"7",    label:"7일"},
+      ].map(opt => `
+        <button id="dl_${opt.v}" onclick="setDateLimitUI('${opt.v}')"
+          style="padding:8px 16px;border-radius:20px;font-size:13px;cursor:pointer;
+                 border:1.5px solid ${_dateLimitSetting===opt.v ? "#E53E3E" : "var(--border)"};
+                 background:${_dateLimitSetting===opt.v ? "#E53E3E" : "white"};
+                 color:${_dateLimitSetting===opt.v ? "white" : "#4A5568"};font-weight:${_dateLimitSetting===opt.v?"600":"400"}">
+          ${opt.label}
+        </button>`).join("")}
+    </div>
+    <div style="font-size:12px;color:#718096;margin-bottom:20px">
+      예) 1일 선택 시 오늘이 6/20이면 6/19~6/20 작성건만 제출 가능
+    </div>
+
+    <div style="font-weight:600;font-size:13px;color:var(--sub);margin-bottom:4px">🛠️ 데이터 정리 도구</div>
+    <div style="font-size:12px;color:#718096;margin-bottom:10px">반려상태 불일치 건과 그룹장 Q10 자동확인 누락 건을 한 번에 검색·수정합니다.</div>
+    <div style="background:#FFFBEB;border:1px solid #F6AD55;border-radius:8px;padding:12px">
+      <button class="btn-ghost" onclick="scanDataCleanupIssues()" style="border-color:#F6AD57;color:#744210">🔍 정리 대상 검색</button>
+      <div id="dataCleanupResult" style="margin-top:10px"></div>
+    </div>`;
+
+  const npCategoryHtml = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">신제품 현장점검 사용</span>
+      <div id="toggle_wrap_npEnabled"
+        onclick="toggleNpEnabled()"
+        style="width:44px;height:24px;border-radius:12px;background:${_npEnabled?"#D69E0E":"#CBD5E0"};
+               position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+        <div id="toggle_thumb_npEnabled"
+          style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
+                 top:3px;left:${_npEnabled?"23px":"3px"};transition:left .2s"></div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#718096;margin:6px 0 16px">OFF 시 허브 화면의 신제품 현장점검 카드가 비활성 처리됩니다.</div>
+
+    <div style="font-weight:600;font-size:13px;color:var(--sub);margin-bottom:4px">신제품 사진 첨부 필수 (배터링/브래딩/완조리 3장)</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">사진 3장 첨부 필수</span>
+      <div id="toggle_wrap_npPhotoRequired"
+        onclick="toggleNpPhotoRequired()"
+        style="width:44px;height:24px;border-radius:12px;background:${_npPhotoRequired?"#D69E0E":"#CBD5E0"};
+               position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+        <div id="toggle_thumb_npPhotoRequired"
+          style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
+                 top:3px;left:${_npPhotoRequired?"23px":"3px"};transition:left .2s"></div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 3장 모두 선택 첨부로 전환됩니다. (문항별 개별 설정 없음)</div>`;
+
+  const spacoolCategoryHtml = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">스파쿨 홍보물 점검 사용</span>
+      <div id="toggle_wrap_spacoolEnabled"
+        onclick="toggleSpacoolEnabled()"
+        style="width:44px;height:24px;border-radius:12px;background:${_spacoolEnabled?"#3B6D11":"#CBD5E0"};
+               position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+        <div id="toggle_thumb_spacoolEnabled"
+          style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
+                 top:3px;left:${_spacoolEnabled?"23px":"3px"};transition:left .2s"></div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 스파쿨 홍보물 점검 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
+
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>⚙️ 관리자 설정</h2>
     </div>
     <div class="card-section">
-      <div style="background:#EBF8FF;border:1px solid #90CDF4;border-radius:8px;padding:10px 12px;font-size:12px;color:#2C5282;margin-bottom:16px">
-        ON: 해당 항목 사진 첨부 필수<br>
-        OFF: 사진 첨부 선택사항
-      </div>
-      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-bottom:4px">SV / 팀장 항목 (16개)</div>
-      ${svItems.map(q => makeToggle(`Q${q.id}`, `Q${q.id}. ${q.title}`)).join("")}
-      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:16px;margin-bottom:4px">그룹장 항목 (11개)</div>
-      ${glItems.map(q => makeToggle(`GL_Q${q.id}`, `GL_Q${q.id}. ${q.title}`)).join("")}
-      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:20px;margin-bottom:4px">⏰ 점검 작성일 제한 (SV/TL 적용, GL/admin 예외)</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-        ${[
-          {v:"none", label:"제한해제"},
-          {v:"0",    label:"당일"},
-          {v:"1",    label:"1일"},
-          {v:"3",    label:"3일"},
-          {v:"7",    label:"7일"},
-        ].map(opt => `
-          <button id="dl_${opt.v}" onclick="setDateLimitUI('${opt.v}')"
-            style="padding:8px 16px;border-radius:20px;font-size:13px;cursor:pointer;
-                   border:1.5px solid ${_dateLimitSetting===opt.v ? "#E53E3E" : "var(--border)"};
-                   background:${_dateLimitSetting===opt.v ? "#E53E3E" : "white"};
-                   color:${_dateLimitSetting===opt.v ? "white" : "#4A5568"};font-weight:${_dateLimitSetting===opt.v?"600":"400"}">
-            ${opt.label}
-          </button>`).join("")}
-      </div>
-      <div style="font-size:12px;color:#718096;margin-bottom:16px">
-        예) 1일 선택 시 오늘이 6/20이면 6/19~6/20 작성건만 제출 가능
-      </div>
+      <div style="font-size:11px;color:#A0AEC0;margin-bottom:14px">마지막 저장: ${lastSavedText}</div>
 
-      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:20px;margin-bottom:4px">📋 매장 데이터 관리</div>
-      <div class="store-upload-section">
-        <div class="store-upload-header">
-          <div>
-            <div class="store-upload-title">📋 매장 데이터 관리</div>
-            <div id="storeDataStatus" class="store-upload-sub">불러오는 중...</div>
-          </div>
-          <label class="btn-upload" for="storeFileInput">
-            📤 Excel 업로드
-            <input type="file" id="storeFileInput" accept=".xlsx,.xls" style="display:none"
-              onchange="handleStoreUpload(this)">
-          </label>
-        </div>
-        <div id="uploadProgress" style="display:none" class="upload-progress">
-          <div class="upload-progress-bar"><div id="uploadProgressFill" class="upload-progress-fill"></div></div>
-          <span id="uploadProgressText">업로드 중...</span>
-        </div>
-      </div>
+      ${section("📋", "매장 데이터 관리", storeDataHtml, true)}
+      ${section("🍔", "신규플랫폼 현장점검", defaultCategoryHtml, false)}
+      ${section("🆕", "신제품 현장점검", npCategoryHtml, false)}
+      ${section("🧊", "스파쿨 홍보물 점검", spacoolCategoryHtml, false)}
 
-      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:24px;margin-bottom:4px">🆕 신제품 현장점검</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:14px">신제품 현장점검 사용</span>
-        <div id="toggle_wrap_npEnabled"
-          onclick="toggleNpEnabled()"
-          style="width:44px;height:24px;border-radius:12px;background:${_npEnabled?"#D69E0E":"#CBD5E0"};
-                 position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
-          <div id="toggle_thumb_npEnabled"
-            style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
-                   top:3px;left:${_npEnabled?"23px":"3px"};transition:left .2s"></div>
-        </div>
-      </div>
-      <div style="font-size:12px;color:#718096;margin:6px 0 12px">OFF 시 허브 화면의 신제품 현장점검 카드가 비활성 처리됩니다.</div>
-
-      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:8px;margin-bottom:4px">신제품 사진 첨부 필수 (배터링/브래딩/완조리 3장)</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:14px">사진 3장 첨부 필수</span>
-        <div id="toggle_wrap_npPhotoRequired"
-          onclick="toggleNpPhotoRequired()"
-          style="width:44px;height:24px;border-radius:12px;background:${_npPhotoRequired?"#D69E0E":"#CBD5E0"};
-                 position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
-          <div id="toggle_thumb_npPhotoRequired"
-            style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
-                   top:3px;left:${_npPhotoRequired?"23px":"3px"};transition:left .2s"></div>
-        </div>
-      </div>
-      <div style="font-size:12px;color:#718096;margin:6px 0 12px">OFF 시 3장 모두 선택 첨부로 전환됩니다. (문항별 개별 설정 없음)</div>
-
-      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:24px;margin-bottom:4px">🧊 스파쿨 홍보물 점검</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:14px">스파쿨 홍보물 점검 사용</span>
-        <div id="toggle_wrap_spacoolEnabled"
-          onclick="toggleSpacoolEnabled()"
-          style="width:44px;height:24px;border-radius:12px;background:${_spacoolEnabled?"#3B6D11":"#CBD5E0"};
-                 position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
-          <div id="toggle_thumb_spacoolEnabled"
-            style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
-                   top:3px;left:${_spacoolEnabled?"23px":"3px"};transition:left .2s"></div>
-        </div>
-      </div>
-      <div style="font-size:12px;color:#718096;margin:6px 0 12px">OFF 시 허브 화면의 스파쿨 홍보물 점검 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>
-
-      <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:24px;margin-bottom:4px">🛠️ 데이터 정리 도구</div>
-      <div style="background:#FFFBEB;border:1px solid #F6AD55;border-radius:8px;padding:12px;margin-bottom:8px">
-        <div style="font-size:13px;font-weight:500;color:#744210;margin-bottom:4px">반려 상태 불일치 건 정리</div>
-        <div style="font-size:12px;color:#744210;line-height:1.5;margin-bottom:10px">
-          반려 이후 재보완점검을 이미 제출했는데도 "반려" 상태로 계속 표시되는 과거 데이터를 찾아서 고칩니다.
-          재보완점검 답변이 없는(아직 미해결인) 건은 건드리지 않습니다.
-        </div>
-        <button class="btn-ghost" onclick="scanRejectedFlagIssues()" style="border-color:#F6AD57;color:#744210">🔍 대상 건 검색</button>
-        <div id="rejCleanupResult" style="margin-top:10px"></div>
-      </div>
-
-      <div style="background:#FFFBEB;border:1px solid #F6AD55;border-radius:8px;padding:12px">
-        <div style="font-size:13px;font-weight:500;color:#744210;margin-bottom:4px">그룹장 Q10(품질) 단독 N 자동확인 보정</div>
-        <div style="font-size:12px;color:#744210;line-height:1.5;margin-bottom:10px">
-          그룹장 최초점검에서 Q10(품질) 외 항목은 전부 이상없음인데, 자동확인 로직 도입 이전 데이터라
-          최종확인 처리가 안 된 채 남아있는 건을 찾아 소급 보정합니다.<br>
-          Q10 외 N이 있는 건(정상적으로 보완점검이 필요한 건)은 건드리지 않습니다.
-        </div>
-        <button class="btn-ghost" onclick="scanLegacyGLQ10Issues()" style="border-color:#F6AD57;color:#744210">🔍 대상 건 검색</button>
-        <div id="glQ10CleanupResult" style="margin-top:10px"></div>
-      </div>
-
-      <button class="btn-primary" onclick="applyAdminSettings()" style="margin-top:20px">저장하기</button>
+      <button class="btn-primary" onclick="applyAdminSettings()" style="margin-top:8px">저장하기</button>
       <button class="btn-ghost" onclick="goBack()" style="margin-top:8px">취소</button>
     </div>`;
   updateStoreDataStatus();
@@ -3319,92 +3430,47 @@ function setDateLimitUI(val) {
   });
 }
 
-// ── 데이터 정리: 반려 후 재보완점검을 했는데도 tlRejected/glRejected가 안 풀린 건 찾기/수정 ──
-// 판별 기준: tlRejected(또는 glRejected)===true 인데 followupSvAnswers/followupTlAnswers에 실제 값이 있으면
-// "재보완점검은 했는데 플래그만 안 풀린 버그 건"으로 간주. 재보완점검이 아직 없는 건(진짜 미해결)은 건드리지 않음.
+// ── 데이터 정리 도구 (통합) ──────────────────────────
+// 이전엔 "반려 상태 불일치"와 "그룹장 Q10 자동확인 누락"을 별도 도구로 분리해뒀지만,
+// 둘 다 목적이 같음(자동판정 로직 도입 전후로 남은 데이터 불일치 소급 정리) — 하나로 통합.
+// 판별 기준(각각 그대로 유지):
+//  ① 반려 상태 불일치: tlRejected/glRejected===true인데 재보완 답변(followupSvAnswers/
+//     followupTlAnswers)이 이미 존재 → 재보완은 했는데 플래그만 안 풀린 버그 건
+//  ② 그룹장 Q10 자동확인 누락: finalConfirmed/glRejected/tlConfirmed 모두 아니면서
+//     Q10 제외 N이 0건인 GL 문서 → getGlSetStatus의 "legacy_미확인" 상태와 동일 기준
 function _hasContent(obj) {
   return !!obj && typeof obj === "object" && Object.keys(obj).length > 0;
 }
 
-async function scanRejectedFlagIssues() {
-  const resultEl = document.getElementById("rejCleanupResult");
+async function scanDataCleanupIssues() {
+  const resultEl = document.getElementById("dataCleanupResult");
   resultEl.innerHTML = `<div style="font-size:12px;color:#718096">검색 중...</div>`;
   try {
-    const [tlSnap, glSnap] = await Promise.all([
+    const targets = new Map(); // docId -> {storeName, storeCode, type, detail, updates}
+
+    // ① 반려 상태 불일치
+    const [tlSnap, glRejSnap] = await Promise.all([
       getDocs(query(collection(db,"surveys"), where("tlRejected","==",true))),
       getDocs(query(collection(db,"surveys"), where("glRejected","==",true))),
     ]);
-    const targets = new Map(); // docId -> {storeName, storeCode, updates}
     tlSnap.forEach(d => {
       const data = d.data();
       if (_hasContent(data.followupSvAnswers) || _hasContent(data.followupTlAnswers)) {
-        targets.set(d.id, { storeName: data.storeName, storeCode: data.storeCode, updates: { tlRejected: false } });
+        targets.set(d.id, { storeName: data.storeName, storeCode: data.storeCode, type:"반려상태 불일치", detail:"재보완 제출됨 · 반려 플래그 미해제", updates: { tlRejected: false } });
       }
     });
-    glSnap.forEach(d => {
+    glRejSnap.forEach(d => {
       const data = d.data();
       if (_hasContent(data.followupSvAnswers) || _hasContent(data.followupTlAnswers)) {
         const ex = targets.get(d.id);
         if (ex) ex.updates.glRejected = false;
-        else targets.set(d.id, { storeName: data.storeName, storeCode: data.storeCode, updates: { glRejected: false } });
+        else targets.set(d.id, { storeName: data.storeName, storeCode: data.storeCode, type:"반려상태 불일치", detail:"재보완 제출됨 · 반려 플래그 미해제", updates: { glRejected: false } });
       }
     });
 
-    window._rejCleanupTargets = targets;
-
-    if (targets.size === 0) {
-      resultEl.innerHTML = `<div style="font-size:12px;color:#276749">✅ 수정 대상이 없습니다.</div>`;
-      return;
-    }
-
-    const listHtml = [...targets.entries()].map(([id, t]) =>
-      `<div style="font-size:12px;color:#4A5568;padding:4px 0;border-bottom:1px solid #FEEBC8">${t.storeName||"(매장명없음)"} (${t.storeCode||"-"})</div>`
-    ).join("");
-
-    resultEl.innerHTML = `
-      <div style="font-size:13px;font-weight:600;color:#744210;margin-bottom:6px">${targets.size}건 발견</div>
-      <div style="max-height:160px;overflow-y:auto;background:white;border-radius:6px;padding:8px 10px;margin-bottom:10px">${listHtml}</div>
-      <button class="btn-primary" onclick="applyRejectedFlagFix()" style="background:#DD6B20">이 ${targets.size}건 일괄 수정하기</button>`;
-  } catch(e) {
-    resultEl.innerHTML = `<div style="font-size:12px;color:#C53030">오류: ${e.message}</div>`;
-  }
-}
-
-async function applyRejectedFlagFix() {
-  const targets = window._rejCleanupTargets;
-  if (!targets || targets.size === 0) return;
-  if (!confirm(`${targets.size}건을 실제로 수정하시겠습니까? 되돌릴 수 없습니다.`)) return;
-
-  const resultEl = document.getElementById("rejCleanupResult");
-  resultEl.innerHTML = `<div style="font-size:12px;color:#718096">수정 중... (0/${targets.size})</div>`;
-  let done = 0;
-  const failed = [];
-  for (const [id, t] of targets) {
-    try {
-      await updateDoc(doc(db,"surveys",id), t.updates);
-      done++;
-      resultEl.innerHTML = `<div style="font-size:12px;color:#718096">수정 중... (${done}/${targets.size})</div>`;
-    } catch(e) {
-      failed.push(t.storeName || id);
-    }
-  }
-  invalidateSurveyCaches();
-  window._rejCleanupTargets = null;
-  resultEl.innerHTML = `<div style="font-size:12px;color:#276749">✅ ${done}건 수정 완료.${failed.length ? ` (실패: ${failed.join(", ")})` : ""}</div>`;
-}
-
-
-// ── 데이터 정리: 그룹장 Q10(품질) 단독 N 자동확인 로직 도입 이전 legacy 데이터 보정 ──
-// 대상 판별 기준(getGlSetStatus의 "legacy_미확인" 상태와 동일): finalConfirmed가 아니고,
-// glRejected도 아니고, tlConfirmed도 아닌데, Q10 제외 N이 0건인 GL 문서.
-// 정상 플로우라면 이 조합은 있을 수 없음 — submitForm의 자동확인 로직(2452행) 도입 이전 데이터만 해당.
-async function scanLegacyGLQ10Issues() {
-  const resultEl = document.getElementById("glQ10CleanupResult");
-  resultEl.innerHTML = `<div style="font-size:12px;color:#718096">검색 중...</div>`;
-  try {
-    const glSnap = await getDocs(query(collection(db,"surveys"), where("role","==","gl")));
-    const targets = new Map(); // docId -> {storeName, storeCode, q10IsN, updates}
-    glSnap.forEach(d => {
+    // ② 그룹장 Q10 단독 N 자동확인 누락 (legacy)
+    const glAllSnap = await getDocs(query(collection(db,"surveys"), where("role","==","gl")));
+    glAllSnap.forEach(d => {
       const data = d.data();
       if (data.finalConfirmed === true) return; // 이미 완료된 건은 건드리지 않음
       if (data.glRejected === true) return;      // 정상적으로 보완점검 대기 중인 건은 건드리지 않음
@@ -3414,7 +3480,8 @@ async function scanLegacyGLQ10Issues() {
       if (nExcl10 > 0) return; // Q10 외 N 있는 정상 보완필요 건 — 건드리지 않음
       const q10IsN = Object.entries(glA).some(([k,v]) => Number(k) === 10 && v && v.value === "N");
       targets.set(d.id, {
-        storeName: data.storeName, storeCode: data.storeCode, q10IsN,
+        storeName: data.storeName, storeCode: data.storeCode, type:"GL Q10 자동확인 누락",
+        detail: q10IsN ? "Q10 N이력 포함" : "",
         updates: {
           finalConfirmed: true,
           finalConfirmedAt: new Date().toISOString(),
@@ -3428,32 +3495,35 @@ async function scanLegacyGLQ10Issues() {
       });
     });
 
-    window._glQ10CleanupTargets = targets;
+    window._dataCleanupTargets = targets;
 
     if (targets.size === 0) {
-      resultEl.innerHTML = `<div style="font-size:12px;color:#276749">✅ 보정 대상이 없습니다.</div>`;
+      resultEl.innerHTML = `<div style="font-size:12px;color:#276749">✅ 정리할 항목이 없습니다.</div>`;
       return;
     }
 
     const listHtml = [...targets.entries()].map(([id, t]) =>
-      `<div style="font-size:12px;color:#4A5568;padding:4px 0;border-bottom:1px solid #FEEBC8">${t.storeName||"(매장명없음)"} (${t.storeCode||"-"})${t.q10IsN?' <span style="color:#C53030">· Q10 N이력 포함</span>':''}</div>`
+      `<div style="font-size:12px;color:#4A5568;padding:5px 0;border-bottom:1px solid #FEEBC8">
+        <span style="display:inline-block;background:#FEF0C7;color:#B7791F;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;margin-right:6px;white-space:nowrap">${t.type}</span>
+        ${t.storeName||"(매장명없음)"} (${t.storeCode||"-"})${t.detail?` · ${t.detail}`:""}
+      </div>`
     ).join("");
 
     resultEl.innerHTML = `
       <div style="font-size:13px;font-weight:600;color:#744210;margin-bottom:6px">${targets.size}건 발견</div>
-      <div style="max-height:160px;overflow-y:auto;background:white;border-radius:6px;padding:8px 10px;margin-bottom:10px">${listHtml}</div>
-      <button class="btn-primary" onclick="applyLegacyGLQ10Fix()" style="background:#DD6B20">이 ${targets.size}건 일괄 최종확인 처리하기</button>`;
+      <div style="max-height:220px;overflow-y:auto;background:white;border-radius:6px;padding:8px 10px;margin-bottom:10px">${listHtml}</div>
+      <button class="btn-primary" onclick="applyDataCleanupFix()" style="background:#DD6B20">이 ${targets.size}건 일괄 수정하기</button>`;
   } catch(e) {
     resultEl.innerHTML = `<div style="font-size:12px;color:#C53030">오류: ${e.message}</div>`;
   }
 }
 
-async function applyLegacyGLQ10Fix() {
-  const targets = window._glQ10CleanupTargets;
+async function applyDataCleanupFix() {
+  const targets = window._dataCleanupTargets;
   if (!targets || targets.size === 0) return;
-  if (!confirm(`${targets.size}건을 실제로 최종확인 처리하시겠습니까? 되돌릴 수 없습니다.`)) return;
+  if (!confirm(`${targets.size}건을 실제로 수정하시겠습니까? 되돌릴 수 없습니다.`)) return;
 
-  const resultEl = document.getElementById("glQ10CleanupResult");
+  const resultEl = document.getElementById("dataCleanupResult");
   resultEl.innerHTML = `<div style="font-size:12px;color:#718096">수정 중... (0/${targets.size})</div>`;
   let done = 0;
   const failed = [];
@@ -3467,8 +3537,8 @@ async function applyLegacyGLQ10Fix() {
     }
   }
   invalidateSurveyCaches();
-  window._glQ10CleanupTargets = null;
-  resultEl.innerHTML = `<div style="font-size:12px;color:#276749">✅ ${done}건 최종확인 처리 완료.${failed.length ? ` (실패: ${failed.join(", ")})` : ""}</div>`;
+  window._dataCleanupTargets = null;
+  resultEl.innerHTML = `<div style="font-size:12px;color:#276749">✅ ${done}건 수정 완료.${failed.length ? ` (실패: ${failed.join(", ")})` : ""}</div>`;
 }
 
 
@@ -3485,6 +3555,7 @@ async function applyAdminSettings() {
     await setDoc(doc(db, "settings", "npEnabled"), { value: _npEnabled });
     await setDoc(doc(db, "settings", "npPhotoRequired"), { value: _npPhotoRequired });
     await setDoc(doc(db, "settings", "spacoolEnabled"), { value: _spacoolEnabled });
+    await setDoc(doc(db, "settings", "adminMeta"), { lastSavedAt: new Date(), lastSavedBy: _authName || "" });
     _dateLimitSetting = _dateLimitUIValue;
     alert("✅ 설정이 저장되었습니다.");
     goBack();
@@ -3936,7 +4007,7 @@ function getGlSetStatus(glDocs) {
   if (nExcl10 > 0) return { status:"보완필요", nRemaining:nExcl10, docId:d.id, waitFor:"팀장", legacyFlag:true };
   return { status:"legacy_미확인", nRemaining:0, docId:d.id, legacyFlag:true };
 }
-const _statusRank = { "반려":3, "보완필요":2, "확인대기":1, "완료":0, "legacy_미확인":0, "해당없음":-1 };
+const _statusRank = { "반려":3, "보완필요":2, "확인대기":1, "legacy_미확인":0.5, "완료":0, "해당없음":-1 };
 function getStoreActionStatus(storeCode, svDocs, tlDocs, glDocs) {
   const svtl = getSvtlSetStatus(svDocs, tlDocs);
   const gl   = getGlSetStatus(glDocs);
@@ -4163,6 +4234,7 @@ async function renderRecords(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>점검 내역 조회</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
       ${_currentUser ? `
@@ -4196,7 +4268,7 @@ let _followupFilter = { team: "", keyword: "" };
 
 async function renderFollowupNeeded(root) {
   if (!["tl","gl","admin"].includes(_authRole)) { go("home"); return; }
-  root.innerHTML = `<div class="page-header"><button class="btn-back" onclick="goBack()">←</button><h2>보완점검 필요점</h2><span id="fnBadge" style="margin-left:auto;font-size:12px;background:#FFFBEB;color:#744210;border:0.5px solid #F6AD55;padding:3px 10px;border-radius:20px">로딩중...</span></div><div class="card-section" id="fnBody"><div style="text-align:center;padding:40px;color:#718096">데이터 로딩 중...</div></div>`;
+  root.innerHTML = `<div class="page-header"><button class="btn-back" onclick="goBack()">←</button><h2>보완점검 필요점</h2><button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button><span id="fnBadge" style="margin-left:8px;font-size:12px;background:#FFFBEB;color:#744210;border:0.5px solid #F6AD55;padding:3px 10px;border-radius:20px">로딩중...</span></div><div class="card-section" id="fnBody"><div style="text-align:center;padding:40px;color:#718096">데이터 로딩 중...</div></div>`;
   await buildFollowupNeeded();
 }
 
@@ -4244,7 +4316,7 @@ async function buildFollowupNeeded() {
       storeTeam: primaryDoc.storeTeam || "",
       writerName: primaryDoc.writerName || "",
       dt: primaryDoc.visitDate ? new Date(primaryDoc.visitDate) : (primaryDoc.createdAt ? new Date(primaryDoc.createdAt.seconds*1000) : null),
-      isRejected: st.svtl.status === "반려" || (!svtlActs && bucket.gl.some(d => d.glRejected)),
+      isRejected: st.svtl.status === "반려" || (!svtlActs && st.gl.status === "보완필요"),
       rejectedBy: st.svtl.status === "반려" ? st.svtl.rejectedBy : "그룹장",
       nRemaining: st.nRemaining,
       docId: primaryDocId,
@@ -5311,6 +5383,7 @@ function renderStoreHistoryNP(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>${h.storeName} 점검 이력</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
       <div class="store-count" style="padding:0 2px 8px">${h.records.length}건 · 최신순</div>
@@ -5495,6 +5568,7 @@ async function renderApprovalNP(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>승인대기 (신제품)</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div style="padding:8px 16px 0;font-size:12px;color:#718096">${scopeDesc} 기준</div>
     <div id="approvalListNP" style="padding:12px 16px">불러오는 중...</div>`;
@@ -5583,6 +5657,7 @@ function renderRecordDetailNP(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>점검 상세 (신제품)</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
       <label class="field-label">매장</label>
@@ -5708,10 +5783,11 @@ function buildDashboardSpacool(root, records, scopeStores) {
     return { store: s, rec, status: spacoolStatus(rec) };
   });
 
-  const doneCount    = rowsDataAll.filter(r => r.status === "done").length;
-  const pendingCount = rowsDataAll.filter(r => r.status === "pending").length;
-  const needCount    = rowsDataAll.filter(r => r.status === "needs").length;
-  const notYetCount  = rowsDataAll.filter(r => r.status === "none").length;
+  const doneCount      = rowsDataAll.filter(r => r.status === "done").length;
+  const pendingTlCount = rowsDataAll.filter(r => r.status === "pending_tl").length;
+  const pendingGlCount = rowsDataAll.filter(r => r.status === "pending_gl").length;
+  const needCount      = rowsDataAll.filter(r => r.status === "needs").length;
+  const notYetCount    = rowsDataAll.filter(r => r.status === "none").length;
 
   const statFilter = window._dashSpacoolStatusFilter || "";
   let rowsData = !statFilter ? rowsDataAll : rowsDataAll.filter(r => r.status === statFilter);
@@ -5731,10 +5807,11 @@ function buildDashboardSpacool(root, records, scopeStores) {
   };
 
   const statusBadge = (status) => ({
-    done:    `<span style="color:#276749;font-weight:700">완료</span>`,
-    pending: `<span style="color:#B7791F;font-weight:700">승인대기</span>`,
-    needs:   `<span style="color:#C53030;font-weight:700">재점검필요</span>`,
-    none:    `<span style="color:#A0AEC0">미점검</span>`,
+    done:       `<span style="color:#276749;font-weight:700">완료</span>`,
+    pending_tl: `<span style="color:#B7791F;font-weight:700">팀장승인대기</span>`,
+    pending_gl: `<span style="color:#B7791F;font-weight:700">그룹장승인대기</span>`,
+    needs:      `<span style="color:#C53030;font-weight:700">재점검필요</span>`,
+    none:       `<span style="color:#A0AEC0">미점검</span>`,
   }[status]);
 
   const rows = rowsData.map(({store, rec, status}) => {
@@ -5786,7 +5863,8 @@ function buildDashboardSpacool(root, records, scopeStores) {
     <div class="dash-stats">
       <div style="${cardStyle('', '#4A5568')}" onclick="setDashSpacoolFilter('')"><div class="stat-num">${scopeStores.length}</div><div class="stat-label">대상 매장</div></div>
       <div style="${cardStyle('done', '#276749')}" onclick="setDashSpacoolFilter('done')"><div class="stat-num" style="color:#276749">${doneCount}</div><div class="stat-label">완료</div></div>
-      <div style="${cardStyle('pending', '#B7791F')}" onclick="setDashSpacoolFilter('pending')"><div class="stat-num" style="color:#B7791F">${pendingCount}</div><div class="stat-label">승인대기</div></div>
+      <div style="${cardStyle('pending_tl', '#B7791F')}" onclick="setDashSpacoolFilter('pending_tl')"><div class="stat-num" style="color:#B7791F">${pendingTlCount}</div><div class="stat-label">팀장승인대기</div></div>
+      <div style="${cardStyle('pending_gl', '#B7791F')}" onclick="setDashSpacoolFilter('pending_gl')"><div class="stat-num" style="color:#B7791F">${pendingGlCount}</div><div class="stat-label">그룹장승인대기</div></div>
       <div style="${cardStyle('needs', '#C53030')}" onclick="setDashSpacoolFilter('needs')"><div class="stat-num" style="color:#C53030">${needCount}</div><div class="stat-label">재점검필요</div></div>
       <div style="${cardStyle('none', '#A0AEC0')}" onclick="setDashSpacoolFilter('none')"><div class="stat-num" style="color:#A0AEC0">${notYetCount}</div><div class="stat-label">미점검</div></div>
     </div>
@@ -5835,7 +5913,8 @@ function renderStoreHistorySpacool(root) {
     const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
     const status = spacoolStatus(r);
     const statusBadge = status === "done" ? `<span class="insp-badge badge-first badge-sm">완료</span>`
-      : status === "pending" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">승인대기</span>`
+      : status === "pending_tl" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">팀장승인대기</span>`
+      : status === "pending_gl" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">그룹장승인대기</span>`
       : status === "needs" ? `<span class="insp-badge badge-follow badge-sm">재점검필요</span>`
       : `<span class="insp-badge badge-sm">-</span>`;
     const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
@@ -5852,6 +5931,7 @@ function renderStoreHistorySpacool(root) {
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>${h.storeName} 점검 이력</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
       <div class="store-count" style="padding:0 2px 8px">${h.records.length}건 · 최신순</div>
@@ -5876,8 +5956,8 @@ async function downloadExcelSpacool() {
     if (!ex || t > exT) latestByStore.set(r.storeCode, r);
   });
 
-  const rows = [["매장코드","매장명","팀","상태","Q1","Q2","작성자","역할","점검일시","메모"]];
-  const statusLabel = { done:"완료", pending:"승인대기", needs:"재점검필요", none:"미점검" };
+  const rows = [["매장코드","매장명","팀","상태","Q1","Q2","작성자","역할","점검일시","팀장승인","그룹장승인","메모"]];
+  const statusLabel = { done:"완료", pending_tl:"팀장승인대기", pending_gl:"그룹장승인대기", needs:"재점검필요", none:"미점검" };
   scopeStores.forEach(s => {
     const rec = latestByStore.get(s.code);
     const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"};
@@ -5890,6 +5970,8 @@ async function downloadExcelSpacool() {
       rec?.writerName || "",
       roleLabel[rec?.role] || rec?.role || "",
       dt ? dt.toLocaleString("ko-KR") : "",
+      rec?.tlApproved ? "Y" : "",
+      rec?.glApproved ? "Y" : "",
       rec?.spacoolAnswers?.memo || "",
     ]);
   });
@@ -5926,7 +6008,8 @@ async function renderRecordsSpacool(root) {
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px">
         <button id="rsf_all" onclick="setRecSpacoolFilter('')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #3B6D11;background:#3B6D11;color:white;cursor:pointer;font-weight:600">전체</button>
         <button id="rsf_done" onclick="setRecSpacoolFilter('done')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #9AE6B4;background:white;color:#276749;cursor:pointer">완료</button>
-        <button id="rsf_pending" onclick="setRecSpacoolFilter('pending')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #F6D384;background:white;color:#B7791F;cursor:pointer">승인대기</button>
+        <button id="rsf_pending_tl" onclick="setRecSpacoolFilter('pending_tl')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #F6D384;background:white;color:#B7791F;cursor:pointer">팀장승인대기</button>
+        <button id="rsf_pending_gl" onclick="setRecSpacoolFilter('pending_gl')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #F6D384;background:white;color:#B7791F;cursor:pointer">그룹장승인대기</button>
         <button id="rsf_needs" onclick="setRecSpacoolFilter('needs')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FEB2B2;background:white;color:#C53030;cursor:pointer">재점검필요</button>
       </div>
       <div id="recListSpacool"></div>
@@ -5978,12 +6061,12 @@ async function fetchRecordsSpacool() {
     const filter = window._recSpacoolFilter || "";
     if (filter) records = records.filter(r => spacoolStatus(r) === filter);
 
-    const activeStyle = { all:"#3B6D11", done:"#9AE6B4", pending:"#F6D384", needs:"#FEB2B2" };
-    const activeText  = { all:"white", done:"#276749", pending:"#B7791F", needs:"#C53030" };
-    ["all","done","pending","needs"].forEach(k => {
+    const activeStyle = { all:"#3B6D11", done:"#9AE6B4", pending_tl:"#F6D384", pending_gl:"#F6D384", needs:"#FEB2B2" };
+    const activeText  = { all:"white", done:"#276749", pending_tl:"#B7791F", pending_gl:"#B7791F", needs:"#C53030" };
+    ["all","done","pending_tl","pending_gl","needs"].forEach(k => {
       const btn = document.getElementById("rsf_"+k);
       if (!btn) return;
-      const map = {all:"", done:"done", pending:"pending", needs:"needs"};
+      const map = {all:"", done:"done", pending_tl:"pending_tl", pending_gl:"pending_gl", needs:"needs"};
       const isActive = map[k] === filter;
       btn.style.background = isActive ? activeStyle[k] : "white";
       btn.style.color = isActive ? activeText[k] : (k==="all"?"#4A5568":activeText[k]);
@@ -5996,7 +6079,8 @@ async function fetchRecordsSpacool() {
       const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
       const status = spacoolStatus(r);
       const statusBadge = status === "done" ? `<span class="insp-badge badge-first badge-sm">완료</span>`
-        : status === "pending" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">승인대기</span>`
+        : status === "pending_tl" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">팀장승인대기</span>`
+        : status === "pending_gl" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">그룹장승인대기</span>`
         : status === "needs" ? `<span class="insp-badge badge-follow badge-sm">재점검필요</span>`
         : `<span class="insp-badge badge-sm">-</span>`;
       const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
@@ -6019,7 +6103,7 @@ function setRecSpacoolFilter(val) {
   fetchRecordsSpacool();
 }
 
-// ── 승인대기 (스파쿨, SV의 Q1·Q2 전부 Y 건 중 담당 팀장 승인 전) ──
+// ── 승인대기 (스파쿨, AC의 Q1·Q2 전부 Y 건 — 팀장승인→그룹장승인 2단계) ──
 async function renderApprovalSpacool(root) {
   if (!_spacoolEnabled) {
     alert("현재 스파쿨 홍보물 점검 기능이 비활성화되어 있습니다.");
@@ -6027,13 +6111,21 @@ async function renderApprovalSpacool(root) {
     return;
   }
   if (!["tl","gl","admin"].includes(_authRole)) { go("homeSpacool"); return; }
-  const scopeDesc = _authRole === "tl" ? `${_authName} 담당팀` : "전체";
+  // TL: 팀장단계 고정(본인 큐만). GL/admin: 탭으로 팀장단계/그룹장단계 조회 전환 가능
+  // (GL이 팀장단계를 봐도 승인/반려 버튼은 canDecideTl 권한 체크로 그대로 숨겨짐 — 조회만 가능)
+  window._spacoolApprovalStage = _authRole === "tl" ? "tl" : (window._spacoolApprovalStage || "gl");
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>승인대기 (스파쿨)</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
-    <div style="padding:8px 16px 0;font-size:12px;color:#718096">${scopeDesc} 기준</div>
+    ${["gl","admin"].includes(_authRole) ? `
+    <div style="display:flex;gap:6px;padding:10px 16px 0">
+      <button onclick="setSpacoolApprovalStage('tl')" style="flex:1;padding:8px;border-radius:8px;font-size:13px;cursor:pointer;border:1.5px solid ${window._spacoolApprovalStage==='tl'?'#3B6D11':'var(--border)'};background:${window._spacoolApprovalStage==='tl'?'#3B6D11':'white'};color:${window._spacoolApprovalStage==='tl'?'white':'#4A5568'};font-weight:${window._spacoolApprovalStage==='tl'?'600':'400'}">팀장승인 단계</button>
+      <button onclick="setSpacoolApprovalStage('gl')" style="flex:1;padding:8px;border-radius:8px;font-size:13px;cursor:pointer;border:1.5px solid ${window._spacoolApprovalStage==='gl'?'#3B6D11':'var(--border)'};background:${window._spacoolApprovalStage==='gl'?'#3B6D11':'white'};color:${window._spacoolApprovalStage==='gl'?'white':'#4A5568'};font-weight:${window._spacoolApprovalStage==='gl'?'600':'400'}">그룹장승인 단계</button>
+    </div>` : ""}
+    <div style="padding:8px 16px 0;font-size:12px;color:#718096">${_authRole === "tl" ? `${_authName} 담당팀` : "전체"} 기준 · ${window._spacoolApprovalStage==='tl'?'팀장':'그룹장'} 승인대기</div>
     <div id="approvalListSpacool" style="padding:12px 16px">불러오는 중...</div>`;
   try {
     let records = cacheGet("recordsSpacool");
@@ -6050,7 +6142,8 @@ async function renderApprovalSpacool(root) {
       const exT = ex?.createdAt?.seconds || 0;
       if (!ex || t > exT) latestByStore.set(r.storeCode, r);
     });
-    let pending = [...latestByStore.values()].filter(r => spacoolStatus(r) === "pending");
+    const targetStatus = window._spacoolApprovalStage === "tl" ? "pending_tl" : "pending_gl";
+    let pending = [...latestByStore.values()].filter(r => spacoolStatus(r) === targetStatus);
 
     if (_authRole === "tl") {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
@@ -6064,13 +6157,20 @@ async function renderApprovalSpacool(root) {
     if (!listEl) return;
     if (pending.length === 0) { listEl.innerHTML = `<p class="error-text">승인 대기 중인 건이 없습니다.</p>`; return; }
 
+    const badgeLabel = window._spacoolApprovalStage === "tl" ? "팀장승인대기" : "그룹장승인대기";
+    const now = Date.now();
     listEl.innerHTML = `<div class="store-count" style="padding:0 2px 8px">${pending.length}건</div><div class="search-list">` + pending.map(r => {
       const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
       const roleLabel = {sv:"AC"}[r.role] || r.role || "";
-      return `<div class="search-item" onclick="viewRecordSpacool('${r.id}')">
+      // 지연 표시: 팀장단계는 제출일 기준, 그룹장단계는 팀장승인일(없으면 제출일 - TL 본인제출건) 기준 3일 이상
+      const waitSinceSec = window._spacoolApprovalStage === "gl" ? (r.tlApprovedAt?.seconds || r.createdAt?.seconds) : r.createdAt?.seconds;
+      const daysWaiting = waitSinceSec ? Math.floor((now - waitSinceSec*1000) / 86400000) : 0;
+      const isDelayed = daysWaiting >= 3;
+      const delayBadge = isDelayed ? `<span style="background:#FED7D7;color:#C53030;border:0.5px solid #FEB2B2;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:700;margin-right:4px">⏰ ${daysWaiting}일째</span>` : "";
+      return `<div class="search-item" onclick="viewRecordSpacool('${r.id}')"${isDelayed ? ' style="border-color:#FEB2B2;background:#FFF5F5"' : ''}>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <span class="si-store">${escapeHtml(r.storeName)}</span>
-          <span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">Y 승인대기</span>
+          <div>${delayBadge}<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">${badgeLabel}</span></div>
         </div>
         <div class="si-meta">${escapeHtml(r.writerName||"-")}(${roleLabel}) · ${dt}</div>
       </div>`;
@@ -6079,6 +6179,10 @@ async function renderApprovalSpacool(root) {
     const listEl = document.getElementById("approvalListSpacool");
     if (listEl) listEl.innerHTML = `<p class="error-text">오류: ${e.message}</p>`;
   }
+}
+function setSpacoolApprovalStage(stage) {
+  window._spacoolApprovalStage = stage;
+  renderApprovalSpacool(document.getElementById("app"));
 }
 
 async function viewRecordSpacool(docId) {
@@ -6100,7 +6204,13 @@ function renderRecordDetailSpacool(root) {
   const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
   const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
   const status = spacoolStatus(r);
-  const statusText = { done:"✅ 완료", pending:"🟡 승인대기 (담당 팀장 승인 필요)", needs: r.tlRejected ? "❌ 재점검필요 (팀장 반려)" : "❌ 재점검필요", none:"-" }[status];
+  const statusText = {
+    done:"✅ 완료",
+    pending_tl:"🟡 팀장 승인대기",
+    pending_gl:"🟠 그룹장 승인대기",
+    needs: r.tlRejected ? `❌ 재점검필요 (${r.rejectedByRole === "gl" ? "그룹장" : "팀장"} 반려)` : "❌ 재점검필요",
+    none:"-",
+  }[status];
 
   const qHtml = SPACOOL_FORM.questions.map(q => {
     const a = r.spacoolAnswers || {};
@@ -6118,12 +6228,16 @@ function renderRecordDetailSpacool(root) {
     </div>`;
   }).join("");
 
-  const canDecide = status === "pending" && ["tl","gl","admin"].includes(_authRole);
+  const canDecideTl = status === "pending_tl" && ["tl","admin"].includes(_authRole);
+  const canDecideGl = status === "pending_gl" && ["gl","admin"].includes(_authRole);
+  const canDecide = canDecideTl || canDecideGl;
+  const stageLabel = canDecideTl ? "팀장" : "그룹장";
 
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
       <h2>점검 상세 (스파쿨)</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
       <label class="field-label">매장</label>
@@ -6137,10 +6251,11 @@ function renderRecordDetailSpacool(root) {
       ${qHtml}
       ${r.spacoolAnswers?.memo ? `<label class="field-label">전체 메모</label><div class="info-box">${escapeHtml(r.spacoolAnswers.memo)}</div>` : ""}
       ${r.tlComment ? `<label class="field-label">팀장 코멘트</label><div class="info-box">${escapeHtml(r.tlComment)}</div>` : ""}
+      ${r.glComment ? `<label class="field-label">그룹장 코멘트</label><div class="info-box">${escapeHtml(r.glComment)}</div>` : ""}
       ${canDecide ? `
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-        <div style="text-align:center;font-size:12px;color:#B7791F;margin-bottom:10px">이 건은 담당 팀장 승인이 필요합니다</div>
-        <label class="field-label">팀장 코멘트 (선택)</label>
+        <div style="text-align:center;font-size:12px;color:#B7791F;margin-bottom:10px">이 건은 담당 ${stageLabel} 승인이 필요합니다</div>
+        <label class="field-label">${stageLabel} 코멘트 (선택)</label>
         <textarea id="tlCommentInputSpacool" class="memo-input" style="width:100%;min-height:64px;margin-bottom:10px" placeholder="승인/반려 시 함께 저장됩니다"></textarea>
         <div style="display:flex;gap:8px">
           <button class="btn-ghost" style="color:#C53030;border-color:#FEB2B2;flex:1" onclick="rejectSpacoolRecord('${r.id}')">반려</button>
@@ -6152,16 +6267,24 @@ function renderRecordDetailSpacool(root) {
 
 async function approveSpacoolRecord(docId) {
   const comment = (document.getElementById("tlCommentInputSpacool")?.value || "").trim();
-  if (!confirm("이 점검을 승인하시겠습니까?")) return;
+  // 현재 문서 상태로 어느 단계(팀장/그룹장) 승인인지 판별
+  const r = window._recordDetailSpacool;
+  const stage = (r && r.id === docId && spacoolStatus(r) === "pending_gl") ? "gl" : "tl";
+  const stageLabel = stage === "gl" ? "그룹장" : "팀장";
+  if (!confirm(`이 점검을 ${stageLabel} 단계에서 승인하시겠습니까?`)) return;
   try {
-    const payload = { tlApproved: true, tlApprovedBy: _authName, tlApprovedAt: new Date() };
-    if (comment) payload.tlComment = comment;
+    const payload = stage === "gl"
+      ? { glApproved: true, glApprovedBy: _authName, glApprovedAt: new Date() }
+      : { tlApproved: true, tlApprovedBy: _authName, tlApprovedAt: new Date() };
+    if (comment) payload[stage === "gl" ? "glComment" : "tlComment"] = comment;
     await updateDoc(doc(db, "surveys_spacool", docId), payload);
     cacheInvalidate("dashboardSpacool");
     cacheInvalidate("recordsSpacool");
-    const r = window._recordDetailSpacool;
-    if (r && r.id === docId) { r.tlApproved = true; if (comment) r.tlComment = comment; }
-    alert("✅ 승인 처리되었습니다.");
+    if (r && r.id === docId) {
+      if (stage === "gl") { r.glApproved = true; if (comment) r.glComment = comment; }
+      else { r.tlApproved = true; if (comment) r.tlComment = comment; }
+    }
+    alert(stage === "gl" ? "✅ 그룹장 승인 처리되었습니다. (최종 완료)" : "✅ 팀장 승인 처리되었습니다. (그룹장 승인대기로 이동)");
     goBack();
   } catch(e) {
     alert("승인 처리 중 오류가 발생했습니다: " + e.message);
@@ -6170,15 +6293,20 @@ async function approveSpacoolRecord(docId) {
 
 async function rejectSpacoolRecord(docId) {
   const comment = (document.getElementById("tlCommentInputSpacool")?.value || "").trim();
-  if (!confirm("이 점검을 반려하시겠습니까?\n반려 시 해당 매장은 재점검필요 상태로 표시됩니다.")) return;
+  const r = window._recordDetailSpacool;
+  const stage = (r && r.id === docId && spacoolStatus(r) === "pending_gl") ? "gl" : "tl";
+  const stageLabel = stage === "gl" ? "그룹장" : "팀장";
+  if (!confirm(`이 점검을 ${stageLabel} 단계에서 반려하시겠습니까?\n반려 시 해당 매장은 재점검필요 상태로 표시됩니다.`)) return;
   try {
-    const payload = { tlRejected: true, tlRejectedBy: _authName, tlRejectedAt: new Date() };
-    if (comment) payload.tlComment = comment;
+    const payload = { tlRejected: true, tlRejectedBy: _authName, tlRejectedAt: new Date(), rejectedByRole: stage };
+    if (comment) payload[stage === "gl" ? "glComment" : "tlComment"] = comment;
     await updateDoc(doc(db, "surveys_spacool", docId), payload);
     cacheInvalidate("dashboardSpacool");
     cacheInvalidate("recordsSpacool");
-    const r = window._recordDetailSpacool;
-    if (r && r.id === docId) { r.tlRejected = true; if (comment) r.tlComment = comment; }
+    if (r && r.id === docId) {
+      r.tlRejected = true; r.rejectedByRole = stage;
+      if (comment) r[stage === "gl" ? "glComment" : "tlComment"] = comment;
+    }
     alert("🚫 반려 처리되었습니다.");
     goBack();
   } catch(e) {
@@ -6455,7 +6583,13 @@ function goBack() {
   if (prev) { S.screen = prev; render(); }
   else go("home");
 }
-function confirmBack() { if(confirm("작성 중인 내용이 사라집니다. 돌아가시겠습니까?")) { S.history = []; go(S.category === "np" ? "homeNP" : S.category === "spacool" ? "homeSpacool" : "home"); } }
+// 현재 카테고리(신규플랫폼/신제품/스파쿨)에 맞는 홈 화면으로 이동하는 공용 헬퍼.
+// 각 화면에서 개별적으로 "S.category==='np'?...":..." 분기를 반복하면 한 곳만 놓쳐도
+// 엉뚱한 홈으로 보내는 실수가 나오기 쉬우므로 반드시 이 함수 하나만 쓸 것.
+function goCategoryHome() {
+  go(S.category === "np" ? "homeNP" : S.category === "spacool" ? "homeSpacool" : "home");
+}
+function confirmBack() { if(confirm("작성 중인 내용이 사라집니다. 돌아가시겠습니까?")) { S.history = []; goCategoryHome(); } }
 function nowDTL() {
   const now=new Date(), pad=n=>String(n).padStart(2,"0");
   return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -6475,20 +6609,19 @@ function fmtDateExcel(v) {
 }
 
 Object.assign(window, {
-  go, goBack, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
+  go, goBack, goCategoryHome, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
   removeImage, submitForm, fetchRecords, viewRecord, viewRecordDash,
   confirmBack, openImageModal, downloadExcel, handleMemo,
   execDashTabSearch, setDashTabSearch,
   fnSetTeam, fnSearch, fnViewRecord, fnDownloadExcel,
-  setRecStatusFilter, setDateLimitUI, applyAdminSettings, scanRejectedFlagIssues, applyRejectedFlagFix,
-  scanLegacyGLQ10Issues, applyLegacyGLQ10Fix,
+  setRecStatusFilter, setDateLimitUI, applyAdminSettings, scanDataCleanupIssues, applyDataCleanupFix,
   startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhotoRequired,
   setNpQ1, addNpAttendee, removeNpAttendee, updateNpAttendeeName, updateNpMemo, handleNpImage, removeNpImage, submitFormNP, downloadExcelNP,
   fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter, viewStoreHistoryNP, approveNpRecord, rejectNpRecord, searchDashNP,
   startSpacoolInspection, goAdminSpacool, toggleSpacoolEnabled,
   setSpacoolAnswer, updateSpacoolQMemo, updateSpacoolMemo, handleSpacoolImage, removeSpacoolImage, submitFormSpacool, downloadExcelSpacool,
-  fetchRecordsSpacool, setRecSpacoolFilter, viewRecordSpacool, setDashSpacoolFilter, viewStoreHistorySpacool, approveSpacoolRecord, rejectSpacoolRecord, searchDashSpacool,
+  fetchRecordsSpacool, setRecSpacoolFilter, viewRecordSpacool, setDashSpacoolFilter, viewStoreHistorySpacool, approveSpacoolRecord, rejectSpacoolRecord, searchDashSpacool, setSpacoolApprovalStage,
 });
 // 앱 시작 시 세션 복원
 (async () => {
