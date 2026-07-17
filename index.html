@@ -441,16 +441,28 @@ function npStatus(rec) {
   return "none";
 }
 
-// 스파쿨 홍보물 점검 건의 상태 계산: "none"|"needs"|"pending_tl"|"pending_gl"|"done"
+// 스파쿨 홍보물 점검 건의 상태 계산: "none"|"not_delivered"|"needs"|"pending_tl"|"pending_gl"|"done"
+// - Q0(홍보물 입고 여부)에서 N이면 Q1/Q2 진행 자체를 안 하고 "not_delivered"로 즉시 종결
+//   (승인체계 없음). 이후 재점검이 들어오면(최신 문서 기준 판정이라) 자동으로 대체됨.
 // - Q1, Q2 둘 다 Y여야 승인 절차로 진행. 하나라도 N이면 즉시 재점검필요 (보완점검 없음).
 // - AC(SV)의 전부 Y 건은 팀장 승인 → 그룹장 승인 순으로 완료.
 // - 팀장(TL) 본인점검은 자기승인 단계 없이 바로 그룹장 승인대기로 (자기 자신을 승인할 수 없으므로).
 // - GL/관리자 본인 점검만 승인 없이 즉시 완료.
+// Q0(홍보물 입고 여부) 도입 이전 레거시 데이터의 화면표시용 실효값 계산.
+// spacoolStatus() 자체는 q0 필드 부재를 "N 체크만 건너뛰고 기존 로직 진행"으로 이미 올바르게
+// 처리하므로(사실상 Y와 동일 취급) 판정 로직엔 손댈 필요 없음 — 이 헬퍼는 순수 표시용.
+function getEffectiveQ0(a) {
+  if (!a) return null;
+  if (a.q0 === "Y" || a.q0 === "N") return a.q0;
+  return (a.q1 != null || a.q2 != null) ? "Y" : null; // 레거시: q1/q2 응답 있으면 입고(Y)로 간주
+}
+
 function spacoolStatus(rec) {
   if (!rec) return "none";
   if (rec.tlRejected) return "needs";
   const a = rec.spacoolAnswers;
-  if (!a || (a.q1 == null && a.q2 == null)) return "none";
+  if (!a || (a.q0 == null && a.q1 == null && a.q2 == null)) return "none";
+  if (a.q0 === "N") return "not_delivered";
   if (a.q1 === "N" || a.q2 === "N") return "needs";
   if (a.q1 === "Y" && a.q2 === "Y") {
     if (rec.role === "sv") {
@@ -869,7 +881,7 @@ function startSpacoolInspection() {
   }
   S.category = "spacool";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.spacoolAnswers = { q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"" };
+  S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
   go("storeSel");
 }
 
@@ -1071,6 +1083,24 @@ function renderFormSpacool(root) {
   const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
   const a = S.spacoolAnswers;
 
+  const q0Block = `
+    <div class="question-card" style="border:1.5px solid #3B6D11;background:#F7FCF2">
+      <span class="q-title">Q0. 홍보물 입고 여부</span>
+      <div style="font-size:13px;color:var(--sub);margin-top:4px">홍보물이 정상적으로 입고되었습니까?</div>
+      <div class="answer-row" style="margin-top:10px">
+        <button class="ans-btn ans-yes ${a.q0==='Y'?'selected':''}" onclick="setSpacoolAnswer('q0','Y')">✅ Y</button>
+        <button class="ans-btn ans-no ${a.q0==='N'?'selected':''}" onclick="setSpacoolAnswer('q0','N')">❌ N</button>
+      </div>
+      ${a.q0==='N' ? `<div class="notice-box" style="margin-top:10px">⚠️ 홍보물 미입고 점포로 접수됩니다. (Q1, Q2는 진행하지 않고 바로 제출)</div>` : ""}
+      <div class="memo-wrap" style="margin-top:12px">
+        <input type="text" class="memo-input"
+          placeholder="Q0 관련 메모 (선택, 최대 ${SPACOOL_FORM.memoMaxLen}자)"
+          maxlength="${SPACOOL_FORM.memoMaxLen}"
+          oninput="updateSpacoolQMemo('memoQ0',this.value)"
+          value="${escapeHtml(a.memoQ0 || "")}" />
+      </div>
+    </div>`;
+
   const qBlocks = SPACOOL_FORM.questions.map((q, qi) => {
     const val = a[q.key];
     const photos = a.photos[q.key] || [];
@@ -1116,8 +1146,10 @@ function renderFormSpacool(root) {
       </div>
     </div>
     <div class="form-body">
-      ${qBlocks}
+      ${q0Block}
+      ${a.q0==='Y' ? qBlocks : ""}
 
+      ${a.q0 ? `
       <div class="question-card">
         <span class="q-title">전체 메모 (선택)</span>
         <div class="memo-wrap" style="margin-top:10px">
@@ -1133,7 +1165,8 @@ function renderFormSpacool(root) {
       <div class="submit-section">
         <div id="submitWarning" class="submit-warning" style="display:none">⚠️ 필수 항목을 확인해주세요.</div>
         <button class="btn-submit" onclick="submitFormSpacool()">점검 제출하기</button>
-      </div>
+      </div>` : `
+      <div style="text-align:center;padding:20px;color:var(--sub);font-size:13px">Q0을 먼저 선택해주세요.</div>`}
     </div>`;
 }
 
@@ -1196,11 +1229,16 @@ async function submitFormSpacool() {
     alert("⚠️ " + msg + "\n제출되지 않았습니다.");
   };
 
-  for (const q of SPACOOL_FORM.questions) {
-    if (a[q.key] !== "Y" && a[q.key] !== "N") { showWarn(`${q.key==='q1'?'Q1':'Q2'} (${q.label})를 선택해주세요.`); return; }
-    if (a[q.key] === "Y" && (a.photos[q.key]||[]).length === 0) {
-      showWarn(`${q.key==='q1'?'Q1':'Q2'}에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.`);
-      return;
+  if (a.q0 !== "Y" && a.q0 !== "N") { showWarn("Q0 (홍보물 입고 여부)를 선택해주세요."); return; }
+
+  // Q0=N(미입고)이면 Q1/Q2는 진행하지 않고 바로 제출 — 승인체계 없이 미입고 상태로 종결
+  if (a.q0 === "Y") {
+    for (const q of SPACOOL_FORM.questions) {
+      if (a[q.key] !== "Y" && a[q.key] !== "N") { showWarn(`${q.key==='q1'?'Q1':'Q2'} (${q.label})를 선택해주세요.`); return; }
+      if (a[q.key] === "Y" && (a.photos[q.key]||[]).length === 0) {
+        showWarn(`${q.key==='q1'?'Q1':'Q2'}에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.`);
+        return;
+      }
     }
   }
 
@@ -1213,19 +1251,21 @@ async function submitFormSpacool() {
       inspType: "최초", // 스파쿨 홍보물 점검은 최초/보완 구분 없음 (작업지시서 기준)
       visitDate: S.visitDate,
       spacoolAnswers: {
-        q1: a.q1, q2: a.q2,
-        photos: a.photos,
+        q0: a.q0, q1: a.q0 === "Y" ? a.q1 : null, q2: a.q0 === "Y" ? a.q2 : null,
+        photos: a.q0 === "Y" ? a.photos : {q1:[],q2:[]},
+        memoQ0: (a.memoQ0 || "").slice(0, SPACOOL_FORM.memoMaxLen),
         memoQ1: (a.memoQ1 || "").slice(0, SPACOOL_FORM.memoMaxLen),
         memoQ2: (a.memoQ2 || "").slice(0, SPACOOL_FORM.memoMaxLen),
         memo: (a.memo || "").slice(0, SPACOOL_FORM.memoMaxLen),
       },
-      needsFollowup: (a.q1 === "N" || a.q2 === "N"),
+      needsFollowup: a.q0 === "Y" && (a.q1 === "N" || a.q2 === "N"),
       createdAt: new Date(),
     };
     // AC(SV)가 Q1,Q2 전부 Y로 제출한 건은 담당 팀장 승인 → 그룹장 승인 순으로 최종 완료.
     // 팀장 본인점검은 자기승인 없이 바로 그룹장 승인대기(payload에 별도 필드 불필요 —
     // spacoolStatus가 role==='tl'이면 glApproved 유무만으로 판단). GL/관리자 본인점검만 즉시 완료.
-    if (S.role === "sv" && a.q1 === "Y" && a.q2 === "Y") {
+    // Q0=N(미입고)은 승인체계 자체가 없음 — tlApproved 필드를 세팅하지 않음.
+    if (a.q0 === "Y" && S.role === "sv" && a.q1 === "Y" && a.q2 === "Y") {
       payload.tlApproved = false;
     }
     await addDoc(collection(db, "surveys_spacool"), payload);
@@ -1831,7 +1871,7 @@ function startForm() {
   if (S.category === "np") {
     S.npAnswers = { q1:null, attendees:[""], photos:{battering:null,breading:null,final:null}, memo:"" };
   } else if (S.category === "spacool") {
-    S.spacoolAnswers = { q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"" };
+    S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
   } else {
     S.answers = {};
   }
@@ -5927,11 +5967,12 @@ function buildDashboardSpacool(root, records, scopeStores) {
     return { store: s, rec, status: spacoolStatus(rec) };
   });
 
-  const doneCount      = rowsDataAll.filter(r => r.status === "done").length;
-  const pendingTlCount = rowsDataAll.filter(r => r.status === "pending_tl").length;
-  const pendingGlCount = rowsDataAll.filter(r => r.status === "pending_gl").length;
-  const needCount      = rowsDataAll.filter(r => r.status === "needs").length;
-  const notYetCount    = rowsDataAll.filter(r => r.status === "none").length;
+  const doneCount        = rowsDataAll.filter(r => r.status === "done").length;
+  const pendingTlCount   = rowsDataAll.filter(r => r.status === "pending_tl").length;
+  const pendingGlCount   = rowsDataAll.filter(r => r.status === "pending_gl").length;
+  const needCount        = rowsDataAll.filter(r => r.status === "needs").length;
+  const notDeliveredCount = rowsDataAll.filter(r => r.status === "not_delivered").length;
+  const notYetCount      = rowsDataAll.filter(r => r.status === "none").length;
 
   const statFilter = window._dashSpacoolStatusFilter || "";
   let rowsData = !statFilter ? rowsDataAll : rowsDataAll.filter(r => r.status === statFilter);
@@ -5951,11 +5992,12 @@ function buildDashboardSpacool(root, records, scopeStores) {
   };
 
   const statusBadge = (status) => ({
-    done:       `<span style="color:#276749;font-weight:700">완료</span>`,
-    pending_tl: `<span style="color:#B7791F;font-weight:700">팀장승인대기</span>`,
-    pending_gl: `<span style="color:#B7791F;font-weight:700">그룹장승인대기</span>`,
-    needs:      `<span style="color:#C53030;font-weight:700">재점검필요</span>`,
-    none:       `<span style="color:#A0AEC0">미점검</span>`,
+    done:          `<span style="color:#276749;font-weight:700">완료</span>`,
+    pending_tl:    `<span style="color:#B7791F;font-weight:700">팀장승인대기</span>`,
+    pending_gl:    `<span style="color:#B7791F;font-weight:700">그룹장승인대기</span>`,
+    needs:         `<span style="color:#C53030;font-weight:700">재점검필요</span>`,
+    not_delivered: `<span style="color:#805AD5;font-weight:700">홍보물 미입고</span>`,
+    none:          `<span style="color:#A0AEC0">미점검</span>`,
   }[status]);
 
   const rows = rowsData.map(({store, rec, status}) => {
@@ -6010,6 +6052,7 @@ function buildDashboardSpacool(root, records, scopeStores) {
       <div style="${cardStyle('pending_tl', '#B7791F')}" onclick="setDashSpacoolFilter('pending_tl')"><div class="stat-num" style="color:#B7791F">${pendingTlCount}</div><div class="stat-label">팀장승인대기</div></div>
       <div style="${cardStyle('pending_gl', '#B7791F')}" onclick="setDashSpacoolFilter('pending_gl')"><div class="stat-num" style="color:#B7791F">${pendingGlCount}</div><div class="stat-label">그룹장승인대기</div></div>
       <div style="${cardStyle('needs', '#C53030')}" onclick="setDashSpacoolFilter('needs')"><div class="stat-num" style="color:#C53030">${needCount}</div><div class="stat-label">재점검필요</div></div>
+      <div style="${cardStyle('not_delivered', '#805AD5')}" onclick="setDashSpacoolFilter('not_delivered')"><div class="stat-num" style="color:#805AD5">${notDeliveredCount}</div><div class="stat-label">홍보물 미입고</div></div>
       <div style="${cardStyle('none', '#A0AEC0')}" onclick="setDashSpacoolFilter('none')"><div class="stat-num" style="color:#A0AEC0">${notYetCount}</div><div class="stat-label">미점검</div></div>
     </div>
     ${teamBreakdownHtml}
@@ -6060,6 +6103,7 @@ function renderStoreHistorySpacool(root) {
       : status === "pending_tl" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">팀장승인대기</span>`
       : status === "pending_gl" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">그룹장승인대기</span>`
       : status === "needs" ? `<span class="insp-badge badge-follow badge-sm">재점검필요</span>`
+      : status === "not_delivered" ? `<span class="insp-badge badge-sm" style="background:#FAF5FF;color:#805AD5;border-color:#D6BCFA">홍보물 미입고</span>`
       : `<span class="insp-badge badge-sm">-</span>`;
     const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
     return `<div class="search-item" onclick="viewRecordSpacool('${r.id}')">
@@ -6100,8 +6144,8 @@ async function downloadExcelSpacool() {
     if (!ex || t > exT) latestByStore.set(r.storeCode, r);
   });
 
-  const rows = [["매장코드","매장명","팀","상태","Q1","Q2","작성자","역할","점검일시","팀장승인","그룹장승인","메모"]];
-  const statusLabel = { done:"완료", pending_tl:"팀장승인대기", pending_gl:"그룹장승인대기", needs:"재점검필요", none:"미점검" };
+  const rows = [["매장코드","매장명","팀","상태","Q0(입고여부)","Q1","Q2","작성자","역할","점검일시","팀장승인","그룹장승인","메모"]];
+  const statusLabel = { done:"완료", pending_tl:"팀장승인대기", pending_gl:"그룹장승인대기", needs:"재점검필요", not_delivered:"홍보물 미입고", none:"미점검" };
   scopeStores.forEach(s => {
     const rec = latestByStore.get(s.code);
     const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"};
@@ -6109,6 +6153,7 @@ async function downloadExcelSpacool() {
     rows.push([
       s.code, s.name, s.team||"",
       statusLabel[spacoolStatus(rec)],
+      getEffectiveQ0(rec?.spacoolAnswers) || "",
       rec?.spacoolAnswers?.q1 || "",
       rec?.spacoolAnswers?.q2 || "",
       rec?.writerName || "",
@@ -6156,6 +6201,7 @@ async function renderRecordsSpacool(root) {
         <button id="rsf_pending_tl" onclick="setRecSpacoolFilter('pending_tl')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #F6D384;background:white;color:#B7791F;cursor:pointer">팀장승인대기</button>
         <button id="rsf_pending_gl" onclick="setRecSpacoolFilter('pending_gl')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #F6D384;background:white;color:#B7791F;cursor:pointer">그룹장승인대기</button>
         <button id="rsf_needs" onclick="setRecSpacoolFilter('needs')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FEB2B2;background:white;color:#C53030;cursor:pointer">재점검필요</button>
+        <button id="rsf_not_delivered" onclick="setRecSpacoolFilter('not_delivered')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #D6BCFA;background:white;color:#805AD5;cursor:pointer">홍보물미입고</button>
       </div>
       <div id="recListSpacool"></div>
     </div>`;
@@ -6206,12 +6252,12 @@ async function fetchRecordsSpacool() {
     const filter = window._recSpacoolFilter || "";
     if (filter) records = records.filter(r => spacoolStatus(r) === filter);
 
-    const activeStyle = { all:"#3B6D11", done:"#9AE6B4", pending_tl:"#F6D384", pending_gl:"#F6D384", needs:"#FEB2B2" };
-    const activeText  = { all:"white", done:"#276749", pending_tl:"#B7791F", pending_gl:"#B7791F", needs:"#C53030" };
-    ["all","done","pending_tl","pending_gl","needs"].forEach(k => {
+    const activeStyle = { all:"#3B6D11", done:"#9AE6B4", pending_tl:"#F6D384", pending_gl:"#F6D384", needs:"#FEB2B2", not_delivered:"#D6BCFA" };
+    const activeText  = { all:"white", done:"#276749", pending_tl:"#B7791F", pending_gl:"#B7791F", needs:"#C53030", not_delivered:"#805AD5" };
+    ["all","done","pending_tl","pending_gl","needs","not_delivered"].forEach(k => {
       const btn = document.getElementById("rsf_"+k);
       if (!btn) return;
-      const map = {all:"", done:"done", pending_tl:"pending_tl", pending_gl:"pending_gl", needs:"needs"};
+      const map = {all:"", done:"done", pending_tl:"pending_tl", pending_gl:"pending_gl", needs:"needs", not_delivered:"not_delivered"};
       const isActive = map[k] === filter;
       btn.style.background = isActive ? activeStyle[k] : "white";
       btn.style.color = isActive ? activeText[k] : (k==="all"?"#4A5568":activeText[k]);
@@ -6227,6 +6273,7 @@ async function fetchRecordsSpacool() {
         : status === "pending_tl" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">팀장승인대기</span>`
         : status === "pending_gl" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">그룹장승인대기</span>`
         : status === "needs" ? `<span class="insp-badge badge-follow badge-sm">재점검필요</span>`
+        : status === "not_delivered" ? `<span class="insp-badge badge-sm" style="background:#FAF5FF;color:#805AD5;border-color:#D6BCFA">홍보물 미입고</span>`
         : `<span class="insp-badge badge-sm">-</span>`;
       const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
       html += `<div class="search-item" onclick="viewRecordSpacool('${r.id}')">
@@ -6354,10 +6401,19 @@ function renderRecordDetailSpacool(root) {
     pending_tl:"🟡 팀장 승인대기",
     pending_gl:"🟠 그룹장 승인대기",
     needs: r.tlRejected ? `❌ 재점검필요 (${r.rejectedByRole === "gl" ? "그룹장" : "팀장"} 반려)` : "❌ 재점검필요",
+    not_delivered:"🟣 홍보물 미입고",
     none:"-",
   }[status];
 
-  const qHtml = SPACOOL_FORM.questions.map(q => {
+  const q0A = r.spacoolAnswers || {};
+  const effQ0 = getEffectiveQ0(q0A);
+  const q0Html = `<div style="margin-bottom:14px">
+    <div style="font-size:12px;color:var(--sub);margin-bottom:2px">Q0. 홍보물 입고 여부</div>
+    <div style="font-size:14px;font-weight:600;color:${effQ0==='Y'?'#276749':effQ0==='N'?'#805AD5':'#A0AEC0'}">${effQ0 || "-"}${q0A.q0==null && effQ0==='Y' ? ' <span style="font-size:11px;color:#A0AEC0;font-weight:400">(레거시 자동판정)</span>' : ''}</div>
+    ${q0A.memoQ0 ? `<div style="font-size:12px;color:#4A5568;margin-top:6px">메모: ${escapeHtml(q0A.memoQ0)}</div>` : ""}
+  </div>`;
+
+  const qHtml = q0Html + (status === "not_delivered" ? "" : SPACOOL_FORM.questions.map(q => {
     const a = r.spacoolAnswers || {};
     const val = a[q.key];
     const photos = a.photos?.[q.key] || [];
@@ -6371,7 +6427,7 @@ function renderRecordDetailSpacool(root) {
       ${photosHtml}
       ${memo ? `<div style="font-size:12px;color:#4A5568;margin-top:6px">메모: ${escapeHtml(memo)}</div>` : ""}
     </div>`;
-  }).join("");
+  }).join(""));
 
   const canDecideTl = status === "pending_tl" && ["tl","admin"].includes(_authRole);
   const canDecideGl = status === "pending_gl" && ["gl","admin"].includes(_authRole);
