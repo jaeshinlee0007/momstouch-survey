@@ -630,21 +630,21 @@ function renderHub(root) {
       <div style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.5px">현장점검</div>
     </div>
     <div class="card-section">
-      <button class="hub-card" onclick="go('home')">
+      <button class="hub-card" onclick="S.category='default'; go('home')">
         <span class="hub-card-icon" style="background:#FFF5F5;color:#C53030">N</span>
         <span>
           <span class="hub-card-title">신규플랫폼 현장점검</span>
           <span class="hub-card-sub" style="display:block">비프 · 피자 · 스파쿨</span>
         </span>
       </button>
-      <button class="hub-card np${_npEnabled ? "" : " disabled"}" ${_npEnabled ? `onclick="go('homeNP')"` : `onclick="alert('현재 관리자 설정에서 비활성화되어 있습니다.')"`}>
+      <button class="hub-card np${_npEnabled ? "" : " disabled"}" ${_npEnabled ? `onclick="S.category='np'; go('homeNP')"` : `onclick="alert('현재 관리자 설정에서 비활성화되어 있습니다.')"`}>
         <span class="hub-card-icon" style="background:#FFFBEB;color:#B7791F">P</span>
         <span>
           <span class="hub-card-title">신제품 현장점검</span>
           <span class="hub-card-sub" style="display:block">${_npEnabled ? "문항 확인하고 점검 시작" : "준비중"}</span>
         </span>
       </button>
-      <button class="hub-card spacool${_spacoolEnabled ? "" : " disabled"}" ${_spacoolEnabled ? `onclick="go('homeSpacool')"` : `onclick="alert('현재 관리자 설정에서 비활성화되어 있습니다.')"`}>
+      <button class="hub-card spacool${_spacoolEnabled ? "" : " disabled"}" ${_spacoolEnabled ? `onclick="S.category='spacool'; go('homeSpacool')"` : `onclick="alert('현재 관리자 설정에서 비활성화되어 있습니다.')"`}>
         <span class="hub-card-icon" style="background:#EAF3DE;color:#3B6D11">S</span>
         <span>
           <span class="hub-card-title">스파쿨 홍보물 점검</span>
@@ -6782,7 +6782,7 @@ function goBack() {
   if (!S.history) S.history = [];
   const prev = S.history.pop();
   if (prev) { S.screen = prev; render(); }
-  else go("home");
+  else goCategoryHome();
 }
 // 현재 카테고리(신규플랫폼/신제품/스파쿨)에 맞는 홈 화면으로 이동하는 공용 헬퍼.
 // 각 화면에서 개별적으로 "S.category==='np'?...":..." 분기를 반복하면 한 곳만 놓쳐도
