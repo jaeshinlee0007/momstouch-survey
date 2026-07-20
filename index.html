@@ -5095,7 +5095,11 @@ function buildDashboard(root, records) {
     const rNItems      = Object.values(r.answers||{}).filter(a=>a.value==="N").length;
     const rHasFollowup = !!r.followupSvAnswers;
     const rFollowupN   = Object.values(r.followupSvAnswers||{}).filter(a=>a.value==="N").length;
-    return ((rNItems===0) || (rHasFollowup && rFollowupN===0)) && !r.tlConfirmed && !r.finalConfirmed;
+    // 보완이력이 있으면 반드시 "보완의 잔존N"으로만 판단(원본 N수는 무시) — 원본이 깨끗했던
+    // 경우(rNItems===0)라도 보완점검에서 새로 N이 나왔다면 아직 준비된 게 아님.
+    // 보완이력이 없으면 기존대로 원본 N수로 판단.
+    const resolved = rHasFollowup ? (rFollowupN === 0) : (rNItems === 0);
+    return resolved && !r.tlConfirmed && !r.finalConfirmed;
   };
   const isReadyForGL = r => r.tlConfirmed && !r.finalConfirmed;
 
