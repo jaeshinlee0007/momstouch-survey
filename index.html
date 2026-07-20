@@ -728,7 +728,7 @@ function renderHomeNP(root) {
     <div class="card-section">
       <button class="btn-primary-np" onclick="startNpInspection()">📋 점검 시작하기</button>
       <button class="btn-ghost" onclick="go('recordsNP')">📂 점검 내역 조회</button>
-      ${canDash ? `<button class="btn-ghost" onclick="go('approvalNP')" style="color:#B7791F;border-color:#F6D384;background:#FFFBEB">✅ 승인대기</button>` : ""}
+      ${canDash ? `<button class="btn-ghost" id="npApprovalBtn" onclick="go('approvalNP')" style="color:#B7791F;border-color:#F6D384;background:#FFFBEB">✅ 승인대기<span id="npApprovalBadge"></span></button>` : ""}
       ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminNP()">📊 관리자 대시보드 (신제품)</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
@@ -746,6 +746,42 @@ function renderHomeNP(root) {
         </div>
       </div>
     </div>`;
+  if (canDash) loadNpApprovalBadge();
+}
+
+// 홈 화면 승인대기 버튼 옆 건수 배지 (신제품 — 팀장확인 1단계만 존재, 그룹장확인 없음).
+// TL=본인담당팀 범위의 pending 건수, GL/admin=전체 범위 pending 건수(renderApprovalNP와 동일 스코프).
+// 실패해도 조용히 무시(배지는 부가정보).
+async function loadNpApprovalBadge() {
+  const badgeEl = document.getElementById("npApprovalBadge");
+  if (!badgeEl) return;
+  try {
+    let records = cacheGet("recordsNP");
+    if (!records) {
+      const snap = await getDocs(query(collection(db,"surveys_np"), orderBy("createdAt","desc")));
+      records = [];
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("recordsNP", records);
+    }
+    const latestByStore = new Map();
+    records.forEach(r => {
+      const ex = latestByStore.get(r.storeCode);
+      const t = r.createdAt?.seconds || 0;
+      const exT = ex?.createdAt?.seconds || 0;
+      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    });
+    let list = [...latestByStore.values()];
+    if (_authRole === "tl") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
+      list = list.filter(r => teamCodes.has(r.storeCode));
+    }
+    const count = list.filter(r => npStatus(r) === "pending").length;
+
+    if (count > 0) {
+      badgeEl.outerHTML = ` <span id="npApprovalBadge" style="background:#E53E3E;color:white;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:4px">${count}</span>`;
+    }
+  } catch(e) { /* 배지 실패는 조용히 무시 */ }
 }
 
 function goAdminNP() {
@@ -6803,18 +6839,27 @@ function nowDTL() {
   const now=new Date(), pad=n=>String(n).padStart(2,"0");
   return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
-function fmtDate(v) { if(!v) return "-"; try { return new Date(v).toLocaleString("ko-KR"); } catch { return v; } }
+function fmtDate(v) {
+  if (!v) return "-";
+  try {
+    // Firestore Timestamp 객체(.seconds 필드 보유)는 new Date()가 직접 못 읽어서 "Invalid Date"가 남 —
+    // followupHistory처럼 배열 안에 중첩 저장된 시각값은 읽어올 때 Timestamp 객체 형태로 돌아옴
+    const d = (v && typeof v === "object" && typeof v.seconds === "number") ? new Date(v.seconds * 1000) : new Date(v);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleString("ko-KR");
+  } catch { return "-"; }
+}
 // 엑셀 export 전용: 자릿수가 항상 고정된 형식(YYYY-MM-DD HH:mm)으로 저장해
 // 분석 도구에서 .slice(0,10) 등으로 날짜만 잘라써도 항상 정확히 잘리도록 함.
 // (fmtDate는 화면 표시용이라 한국어 로케일 형식을 그대로 유지하고, 여긴 별도 함수로 분리)
 function fmtDateExcel(v) {
   if (!v) return "-";
   try {
-    const d = new Date(v);
-    if (isNaN(d.getTime())) return String(v);
+    const d = (v && typeof v === "object" && typeof v.seconds === "number") ? new Date(v.seconds * 1000) : new Date(v);
+    if (isNaN(d.getTime())) return "-";
     const pad = n => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  } catch { return String(v); }
+  } catch { return "-"; }
 }
 
 Object.assign(window, {
