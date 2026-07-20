@@ -934,6 +934,7 @@ function renderFormNP(root) {
         <label class="img-upload-btn" for="npimg-${slot.key}">📷 사진 첨부
           <input type="file" id="npimg-${slot.key}" accept="image/*" style="display:none" onchange="handleNpImage('${slot.key}',this)">
         </label>
+        <span id="npimg-status-${slot.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>
         <div id="npimg-preview-${slot.key}">${photo?.image ? `
           <div class="preview-container">
             <img src="${photo.image}" class="preview-img" onclick="openImageModal('${photo.image}')">
@@ -1036,11 +1037,24 @@ async function handleNpImage(slotKey, input) {
     input.value = "";
     return;
   }
-  const compressed = await compressImage(file, 400, 0.35);
+  const statusEl = document.getElementById(`npimg-status-${slotKey}`);
+  if (statusEl) statusEl.textContent = "⏳ 처리 중...";
+  let compressed;
+  try {
+    compressed = await compressImage(file, 400, 0.35);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = "";
+    alert("⚠️ 사진 처리에 실패했습니다: " + e.message + "\n다른 사진으로 다시 시도해주세요.");
+    input.value = "";
+    return;
+  }
+  if (statusEl) statusEl.textContent = "⏳ 업로드 중...";
   const path = `inspections_np/${S.storeCode}/${Date.now()}_${slotKey}.jpg`;
   const { ok, url } = await uploadImageToStorage(compressed, path);
   S.npAnswers.photos[slotKey] = { image: ok ? url : compressed };
   sessionSave();
+  input.value = "";
+  if (statusEl) statusEl.textContent = "";
   const preview = document.getElementById(`npimg-preview-${slotKey}`);
   if (preview) preview.innerHTML = `
     <div class="preview-container">
@@ -1077,6 +1091,14 @@ async function submitFormNP() {
   if (_npPhotoRequired) {
     const missing = NP_FORM.photoSlots.filter(s => !a.photos[s.key]?.image);
     if (missing.length > 0) { showWarn(`사진 첨부가 필요합니다: ${missing.map(s=>s.label).join(", ")}`); return; }
+  }
+
+  // 전체 이미지 용량 체크 (Firestore 1MB 문서 한도 고려) — Storage 업로드 실패 시 base64로
+  // 폴백되는데, 여러 장이 동시에 폴백되면 문서가 커질 수 있어 신규플랫폼과 동일하게 방어
+  const npTotalSize = Object.values(a.photos||{}).reduce((sum,p) => sum + (p?.image ? Math.round(p.image.length*0.75) : 0), 0);
+  if (npTotalSize > 900 * 1024) {
+    showWarn(`첨부 이미지 총 용량이 너무 큽니다. (현재 ${Math.round(npTotalSize/1024)}KB / 한도 900KB) 일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
+    return;
   }
 
   if (warnEl) warnEl.style.display = "none";
@@ -1161,7 +1183,8 @@ function renderFormSpacool(root) {
           ${canAddMore ? `
           <label class="img-upload-btn" for="spacoolimg-${q.key}">📷 사진 첨부
             <input type="file" id="spacoolimg-${q.key}" accept="image/*" style="display:none" onchange="handleSpacoolImage('${q.key}',this)">
-          </label>` : ""}
+          </label>
+          <span id="spacoolimg-status-${q.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>` : ""}
         </div>
         <div class="memo-wrap" style="margin-top:12px">
           <input type="text" class="memo-input"
@@ -1236,12 +1259,24 @@ async function handleSpacoolImage(qKey, input) {
     input.value = "";
     return;
   }
-  const compressed = await compressImage(file, 400, 0.35);
+  const statusEl = document.getElementById(`spacoolimg-status-${qKey}`);
+  if (statusEl) statusEl.textContent = "⏳ 처리 중...";
+  let compressed;
+  try {
+    compressed = await compressImage(file, 400, 0.35);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = "";
+    alert("⚠️ 사진 처리에 실패했습니다: " + e.message + "\n다른 사진으로 다시 시도해주세요.");
+    input.value = "";
+    return;
+  }
+  if (statusEl) statusEl.textContent = "⏳ 업로드 중...";
   const path = `inspections_spacool/${S.storeCode}/${Date.now()}_${qKey}_${existing.length}.jpg`;
   const { ok, url } = await uploadImageToStorage(compressed, path);
   existing.push({ image: ok ? url : compressed });
   S.spacoolAnswers.photos[qKey] = existing;
   sessionSave();
+  input.value = "";
   renderFormSpacool(document.getElementById("app"));
 }
 
@@ -1276,6 +1311,15 @@ async function submitFormSpacool() {
         return;
       }
     }
+  }
+
+  // 전체 이미지 용량 체크 (Firestore 1MB 문서 한도 고려) — Storage 업로드 실패 시 base64로
+  // 폴백되는데, 문항당 최대 3장까지 동시에 폴백될 수 있어 신규플랫폼과 동일하게 방어
+  const spacoolTotalSize = Object.values(a.photos||{}).reduce((sum, arr) =>
+    sum + (arr||[]).reduce((s2,p) => s2 + (p?.image ? Math.round(p.image.length*0.75) : 0), 0), 0);
+  if (spacoolTotalSize > 900 * 1024) {
+    showWarn(`첨부 이미지 총 용량이 너무 큽니다. (현재 ${Math.round(spacoolTotalSize/1024)}KB / 한도 900KB) 일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
+    return;
   }
 
   if (warnEl) warnEl.style.display = "none";
@@ -1984,6 +2028,7 @@ function renderForm(root) {
           <label class="img-upload-btn" for="img-${q.id}">📷 사진 첨부
             <input type="file" id="img-${q.id}" accept="image/*" style="display:none" onchange="handleImage(${q.id},this)">
           </label>
+          <span id="img-status-${q.id}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>
           <div id="img-preview-${q.id}"></div>
         </div>
         <div class="memo-section" id="memo-sec-${q.id}" style="display:${S.answers[q.id]?.value ? 'block' : 'none'}">
@@ -2198,13 +2243,24 @@ async function handleImage(qId, input) {
     input.value = "";
     return;
   }
-  const compressed = await compressImage(file, 400, 0.35);
+  const statusEl = document.getElementById(`img-status-${qId}`);
+  if (statusEl) statusEl.textContent = "⏳ 처리 중...";
+  let compressed;
+  try {
+    compressed = await compressImage(file, 400, 0.35);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = "";
+    alert("⚠️ 사진 처리에 실패했습니다: " + e.message + "\n다른 사진으로 다시 시도해주세요.");
+    input.value = ""; // 재시도 시 같은 파일 다시 선택해도 인식되도록 초기화
+    return;
+  }
   if (!S.answers[qId]) S.answers[qId] = {value:null,image:null};
 
   // ── Storage 전환 준비 ──────────────────────────────
   // USE_STORAGE = true 로 바꾸면 Storage URL 방식으로 자동 전환
   const USE_STORAGE = true;
   if (USE_STORAGE && _currentUser) {
+    if (statusEl) statusEl.textContent = "⏳ 업로드 중...";
     const storagePrefix = S.category === "np" ? "inspections_np" : "inspections";
     const path = `${storagePrefix}/${S.storeCode}/${Date.now()}_Q${qId}.jpg`;
     const { ok, url } = await uploadImageToStorage(compressed, path);
@@ -2217,6 +2273,8 @@ async function handleImage(qId, input) {
     S.answers[qId].image = compressed;     // 현재: base64 저장
   }
   sessionSave(); // 이미지 변경 시 자동 저장
+  input.value = ""; // 같은 사진을 다시 첨부하려는 경우도 정상 인식되도록
+  if (statusEl) statusEl.textContent = "";
   const preview = document.getElementById(`img-preview-${qId}`);
   if (preview) preview.innerHTML = `
     <div class="preview-container">
@@ -2232,10 +2290,16 @@ function removeImage(qId) {
 }
 
 function compressImage(file, maxWidth, quality) {
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
+    // 안전장치: 아래 이벤트 중 어느 것도 안 걸리는 예외 상황 대비 타임아웃
+    const timer = setTimeout(() => reject(new Error("이미지 처리 시간이 초과되었습니다.")), 15000);
+    const finish = (fn, arg) => { clearTimeout(timer); fn(arg); };
+
     const reader = new FileReader();
+    reader.onerror = () => finish(reject, new Error("사진 파일을 읽을 수 없습니다."));
     reader.onload = e => {
       const img = new Image();
+      img.onerror = () => finish(reject, new Error("사진 형식을 처리할 수 없습니다. (지원 형식: JPG, PNG 등)"));
       img.onload = () => {
         const canvas = document.createElement("canvas");
         let w = img.width, h = img.height;
@@ -2245,7 +2309,7 @@ function compressImage(file, maxWidth, quality) {
         ctx.drawImage(img,0,0,w,h);
         // ── 워터마크 추가 ──
         addWatermark(ctx, w, h);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        finish(resolve, canvas.toDataURL("image/jpeg", quality));
       };
       img.src = e.target.result;
     };
@@ -2419,11 +2483,16 @@ async function submitForm() {
     return;
   }
   // 전체 이미지 용량 체크 (Firestore 1MB 문서 한도 고려)
-  const totalSize = Object.values(S.answers).reduce((sum, a) => {
-    return sum + (a.image ? Math.round(a.image.length * 0.75) : 0);
-  }, 0);
+  // 보완점검이면 "이번 라운드"만 볼 게 아니라 같은 문서에 이미 저장돼있는 최초점검 이미지까지
+  // 합산해야 실제 문서 총 용량과 일치함(followupSvAnswers/followupTlAnswers는 매 라운드마다
+  // 통째로 덮어써지므로 누적되진 않지만, 최초 answers는 항상 그대로 남아있음).
+  const estimateImgBytes = obj => Object.values(obj||{}).reduce((sum,a) => sum + (a?.image ? Math.round(a.image.length*0.75) : 0), 0);
+  let totalSize = estimateImgBytes(S.answers);
+  if (S.inspType === "보완" && S.compareData?.answers) {
+    totalSize += estimateImgBytes(S.compareData.answers);
+  }
   if (totalSize > 900 * 1024) {
-    alert(`첨부 이미지 총 용량이 너무 큽니다.\n현재: ${Math.round(totalSize/1024)}KB / 한도: 900KB\n일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
+    alert(`첨부 이미지 총 용량이 너무 큽니다.\n현재(기존 저장분 포함): ${Math.round(totalSize/1024)}KB / 한도: 900KB\n일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
     return;
   }
   const btn = document.querySelector(".btn-submit");
@@ -4018,7 +4087,12 @@ async function uploadImageToStorage(base64, path) {
     const res  = await fetch(base64);
     const blob = await res.blob();
     const ref  = storageRef(storage, path);
-    await uploadBytes(ref, blob);
+    // 네트워크가 나쁘면(현장 매장 등) Firebase SDK 자체 타임아웃까지 무기한 대기할 수 있어
+    // 명시적 타임아웃을 걸어둠 — 타임아웃되면 base64 폴백으로 자연스럽게 전환됨
+    await Promise.race([
+      uploadBytes(ref, blob),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("업로드 시간 초과")), 20000)),
+    ]);
     const url  = await getDownloadURL(ref);
     return { ok: true, url };
   } catch(e) {
