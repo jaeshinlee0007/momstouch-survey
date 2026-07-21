@@ -627,7 +627,8 @@ function renderHub(root) {
   root.innerHTML = `
     <div class="hero-hub">
       <span class="logo-chip">${LOGO_SVG}</span>
-      <div style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.5px">현장점검</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.5px">SCV</div>
+      <div style="font-size:12px;color:var(--sub);letter-spacing:0.5px;margin-top:4px">Store Condition Verification</div>
     </div>
     <div class="card-section">
       <button class="hub-card" onclick="enterCategory('default','home')">
@@ -4929,10 +4930,10 @@ async function viewRecord(docId) {
 // ── Firebase Auth 로그인 화면 (앱 시작 화면) ──────
 function renderLogin(root) {
   root.innerHTML = `
-    <div class="hero">
-      <div class="logo-wrap">${LOGO_SVG}</div>
-      <h1 class="hero-title">현장점검</h1>
-      <p class="hero-sub">신규플랫폼 · 갓빠삭치킨</p>
+    <div class="hero-hub">
+      <span class="logo-chip">${LOGO_SVG}</span>
+      <div style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.5px">SCV</div>
+      <div style="font-size:12px;color:var(--sub);letter-spacing:0.5px;margin-top:4px">Store Condition Verification</div>
     </div>
     <div class="card-section">
       <label class="field-label">아이디 (이메일)</label>
