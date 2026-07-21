@@ -289,7 +289,7 @@ async function uploadStoreData(file) {
             beef:    String(r[5]||"").trim().toUpperCase() === "O",
             pizza:   String(r[6]||"").trim().toUpperCase() === "O",
             spacool: String(r[7]||"").trim().toUpperCase() === "O",
-            // 신제품(갓빠삭치킨) 판매/교육 대상 매장 여부 — 신제품 현장점검 관련 화면에서만 필터링에 사용
+            // 신제품(갓빠삭치킨) 판매/교육 대상 매장 여부 — 갓빠삭치킨 출시 교육점검 관련 화면에서만 필터링에 사용
             npEligible: String(r[8]||"").trim().toUpperCase() === "O",
           }));
 
@@ -363,7 +363,7 @@ const CAT_COLORS = {
   "신제품":"#D69E0E"
 };
 
-// ── 신제품 현장점검(갓빠삭치킨 교육점검) 문항 구성 확정본 ──────────
+// ── 갓빠삭치킨 출시 교육점검(갓빠삭치킨 교육점검) 문항 구성 확정본 ──────────
 // SV/TL/GL 공통 폼(역할 구분 없음). 일반 문항형(SV_QUESTIONS)과 구조가 달라
 // 전용 렌더러(renderFormNP)에서 사용함.
 const NP_FORM = {
@@ -377,7 +377,7 @@ const NP_FORM = {
   memoMaxLen: 100,
 };
 
-// ── 스파쿨 홍보물 점검 문항 구성 확정본 ──────────
+// ── 스파쿨 프로모션 현장점검 문항 구성 확정본 ──────────
 // SV/TL/GL 공통 폼. Q1/Q2 각각 Y/N + 사진(최대 3장, Y 선택 시 최소 1장 필수) + 문항별 메모.
 // 전용 렌더러(renderFormSpacool)에서 사용함.
 const SPACOOL_FORM = {
@@ -425,7 +425,7 @@ function currentSurveyCollection() {
   return "surveys";
 }
 
-// 신제품 현장점검 건의 상태 계산: "none"(미점검) | "needs"(재점검필요) | "pending"(승인대기) | "done"(완료)
+// 갓빠삭치킨 출시 교육점검 건의 상태 계산: "none"(미점검) | "needs"(재점검필요) | "pending"(승인대기) | "done"(완료)
 // - SV의 Q1=Y는 담당 팀장 승인(tlApproved===true)이 있어야 완료. 필드가 없는 과거 데이터도 승인대기로 취급.
 // - TL/GL/관리자 본인 점검의 Y는 승인 절차 없이 즉시 완료.
 // - 팀장(또는 GL/관리자)이 반려한 건은 재점검필요로 취급 (기존 N항목과 동일 버킷).
@@ -441,7 +441,7 @@ function npStatus(rec) {
   return "none";
 }
 
-// 스파쿨 홍보물 점검 건의 상태 계산: "none"|"not_delivered"|"needs"|"pending_tl"|"pending_gl"|"done"
+// 스파쿨 프로모션 현장점검 건의 상태 계산: "none"|"not_delivered"|"needs"|"pending_tl"|"pending_gl"|"done"
 // - Q0(홍보물 입고 여부)에서 N이면 Q1/Q2 진행 자체를 안 하고 "not_delivered"로 즉시 종결
 //   (승인체계 없음). 이후 재점검이 들어오면(최신 문서 기준 판정이라) 자동으로 대체됨.
 // - Q1, Q2 둘 다 Y여야 승인 절차로 진행. 하나라도 N이면 즉시 재점검필요 (보완점검 없음).
@@ -480,7 +480,7 @@ function spacoolStatus(rec) {
 // ── STATE ──────────────────────────────────────────
 let S = {
   screen:"home", role:null, inspType:null, // inspType: "최초"|"보완"
-  category:"default", // "default"=신규플랫폼 현장점검, "np"=신제품 현장점검, "spacool"=스파쿨 홍보물 점검 (저장 컬렉션/문항 분기용)
+  category:"default", // "default"=신규플랫폼 현장점검, "np"=갓빠삭치킨 출시 교육점검, "spacool"=스파쿨 프로모션 현장점검 (저장 컬렉션/문항 분기용)
   writerName:"", storeCode:"", storeName:"", storeTeam:"",
   visitDate:"", answers:{},
   loadedDocId:null, loadedRecord:null, compareData:null,
@@ -489,8 +489,8 @@ let S = {
   history:[], // 화면 히스토리 스택
   glFollowupIds:[], compareData:null,
   storeObj:null, // 매장 객체 (beef/pizza/spacool 배지용)
-  npAnswers:null, // 신제품 현장점검 전용 답변: {q1, attendees:["이름", ...], photos:{battering,breading,final}, memo}
-  spacoolAnswers:null, // 스파쿨 홍보물 점검 전용 답변: {q1,q2, photos:{q1:[...],q2:[...]}, memoQ1, memoQ2}
+  npAnswers:null, // 갓빠삭치킨 출시 교육점검 전용 답변: {q1, attendees:["이름", ...], photos:{battering,breading,final}, memo}
+  spacoolAnswers:null, // 스파쿨 프로모션 현장점검 전용 답변: {q1,q2, photos:{q1:[...],q2:[...]}, memoQ1, memoQ2}
 };
 
 // ── 전역 설정 ─────────────────────────────────────
@@ -499,7 +499,7 @@ let S = {
 let _photoSettings = {}; // 로드 전까지 빈 객체 (기본값: 모두 필수)
 let _photoSettingsLoaded = false;
 
-// 신제품 현장점검 설정 (settings/npEnabled, settings/npPhotoRequired)
+// 갓빠삭치킨 출시 교육점검 설정 (settings/npEnabled, settings/npPhotoRequired)
 let _npEnabled = false;
 let _npEnabledLoaded = false;
 let _npPhotoRequired = true; // 사진 3장(배터링/브래딩/완조리) 일괄 필수 여부
@@ -527,7 +527,7 @@ async function loadNpPhotoRequired() {
   _npPhotoRequiredLoaded = true;
 }
 
-// 스파쿨 홍보물 점검 설정 (settings/spacoolEnabled)
+// 스파쿨 프로모션 현장점검 설정 (settings/spacoolEnabled)
 let _spacoolEnabled = false;
 let _spacoolEnabledLoaded = false;
 
@@ -627,7 +627,8 @@ function renderHub(root) {
   root.innerHTML = `
     <div class="hero-hub">
       <span class="logo-chip">${LOGO_SVG}</span>
-      <div style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.5px">현장점검</div>
+      <div style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.5px">SCV</div>
+      <div style="font-size:12px;color:var(--sub);letter-spacing:0.5px;margin-top:4px">Store Condition Verification</div>
     </div>
     <div class="card-section">
       <button class="hub-card" onclick="enterCategory('default','home')">
@@ -640,14 +641,14 @@ function renderHub(root) {
       <button class="hub-card np${_npEnabled ? "" : " disabled"}" ${_npEnabled ? `onclick="enterCategory('np','homeNP')"` : `onclick="alert('현재 관리자 설정에서 비활성화되어 있습니다.')"`}>
         <span class="hub-card-icon" style="background:#FFFBEB;color:#B7791F">P</span>
         <span>
-          <span class="hub-card-title">신제품 현장점검</span>
+          <span class="hub-card-title">갓빠삭치킨 출시 교육점검</span>
           <span class="hub-card-sub" style="display:block">${_npEnabled ? "문항 확인하고 점검 시작" : "준비중"}</span>
         </span>
       </button>
       <button class="hub-card spacool${_spacoolEnabled ? "" : " disabled"}" ${_spacoolEnabled ? `onclick="enterCategory('spacool','homeSpacool')"` : `onclick="alert('현재 관리자 설정에서 비활성화되어 있습니다.')"`}>
         <span class="hub-card-icon" style="background:#EAF3DE;color:#3B6D11">S</span>
         <span>
-          <span class="hub-card-title">스파쿨 홍보물 점검</span>
+          <span class="hub-card-title">스파쿨 프로모션 현장점검</span>
           <span class="hub-card-sub" style="display:block">${_spacoolEnabled ? "문항 확인하고 점검 시작" : "준비중"}</span>
         </span>
       </button>
@@ -707,10 +708,10 @@ function renderHome(root) {
     </div>`;
 }
 
-// ── HOME (신제품 현장점검) ──────────────────────────
+// ── HOME (갓빠삭치킨 출시 교육점검) ──────────────────────────
 function renderHomeNP(root) {
   if (!_npEnabled) {
-    alert("현재 신제품 현장점검 기능이 비활성화되어 있습니다.");
+    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -722,14 +723,14 @@ function renderHomeNP(root) {
       <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
       <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
-      <h1 class="hero-title">신제품<br>현장점검</h1>
+      <h1 class="hero-title">갓빠삭치킨<br>출시 교육점검</h1>
       <p class="hero-sub">갓빠삭치킨 교육점검</p>
     </div>
     <div class="card-section">
       <button class="btn-primary-np" onclick="startNpInspection()">📋 점검 시작하기</button>
       <button class="btn-ghost" onclick="go('recordsNP')">📂 점검 내역 조회</button>
       ${canDash ? `<button class="btn-ghost" id="npApprovalBtn" onclick="go('approvalNP')" style="color:#B7791F;border-color:#F6D384;background:#FFFBEB">✅ 승인대기<span id="npApprovalBadge"></span></button>` : ""}
-      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminNP()">📊 관리자 대시보드 (신제품)</button>` : ""}
+      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminNP()">📊 관리자 대시보드 (갓빠삭치킨)</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
@@ -792,10 +793,10 @@ function goAdminNP() {
   go("dashboardNP");
 }
 
-// 신제품 현장점검 시작: 최초/보완 구분 없음 → inspType 화면 건너뛰고 바로 매장선택으로 이동
+// 갓빠삭치킨 출시 교육점검 시작: 최초/보완 구분 없음 → inspType 화면 건너뛰고 바로 매장선택으로 이동
 function startNpInspection() {
   if (!_npEnabled) {
-    alert("현재 신제품 현장점검 기능이 비활성화되어 있습니다.");
+    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -810,7 +811,7 @@ function renderNpComingSoon(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>신제품 현장점검</h2>
+      <h2>갓빠삭치킨 출시 교육점검</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section" style="text-align:center;padding-top:40px">
@@ -821,10 +822,10 @@ function renderNpComingSoon(root) {
     </div>`;
 }
 
-// ── HOME (스파쿨 홍보물 점검) ──────────────────────────
+// ── HOME (스파쿨 프로모션 현장점검) ──────────────────────────
 function renderHomeSpacool(root) {
   if (!_spacoolEnabled) {
-    alert("현재 스파쿨 홍보물 점검 기능이 비활성화되어 있습니다.");
+    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -836,14 +837,14 @@ function renderHomeSpacool(root) {
       <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#173404;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
       <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#173404;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
-      <h1 class="hero-title">스파쿨<br>홍보물 점검</h1>
+      <h1 class="hero-title">스파쿨<br>프로모션 현장점검</h1>
       <p class="hero-sub">외부 · 내부 홍보물 부착 점검</p>
     </div>
     <div class="card-section">
       <button class="btn-primary-spacool" onclick="startSpacoolInspection()">📋 점검 시작하기</button>
       <button class="btn-ghost" onclick="go('recordsSpacool')">📂 점검 내역 조회</button>
       ${canDash ? `<button class="btn-ghost" id="spacoolApprovalBtn" onclick="go('approvalSpacool')" style="color:#3B6D11;border-color:#C0DD97;background:#EAF3DE">✅ 승인대기<span id="spacoolApprovalBadge"></span></button>` : ""}
-      ${canDash ? `<button class="btn-ghost btn-admin-spacool" onclick="goAdminSpacool()">📊 관리자 대시보드 (스파쿨)</button>` : ""}
+      ${canDash ? `<button class="btn-ghost btn-admin-spacool" onclick="goAdminSpacool()">📊 관리자 대시보드 (스파쿨 프로모션)</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
@@ -908,10 +909,10 @@ function goAdminSpacool() {
   go("dashboardSpacool");
 }
 
-// 스파쿨 홍보물 점검 시작: 최초/보완 구분 없음 → inspType 화면 건너뛰고 바로 매장선택으로 이동
+// 스파쿨 프로모션 현장점검 시작: 최초/보완 구분 없음 → inspType 화면 건너뛰고 바로 매장선택으로 이동
 function startSpacoolInspection() {
   if (!_spacoolEnabled) {
-    alert("현재 스파쿨 홍보물 점검 기능이 비활성화되어 있습니다.");
+    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -921,7 +922,7 @@ function startSpacoolInspection() {
   go("storeSel");
 }
 
-// ── FORM (신제품 현장점검 · 갓빠삭치킨 교육점검 전용) ──────────
+// ── FORM (갓빠삭치킨 출시 교육점검 · 갓빠삭치킨 교육점검 전용) ──────────
 function renderFormNP(root) {
   const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
   const a = S.npAnswers;
@@ -948,7 +949,7 @@ function renderFormNP(root) {
       <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
       <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
         <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
-        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">신제품 현장점검 · ${roleLabel}</span>
+        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">갓빠삭치킨 출시 교육점검 · ${roleLabel}</span>
       </div>
     </div>
     <div class="form-body">
@@ -1071,7 +1072,7 @@ function removeNpImage(slotKey) {
 
 async function submitFormNP() {
   if (!_npEnabled) {
-    alert("현재 신제품 현장점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
+    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
   }
   const a = S.npAnswers;
@@ -1107,7 +1108,7 @@ async function submitFormNP() {
     const payload = {
       storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
       writerName: S.writerName, role: S.role,
-      inspType: "최초", // 신제품 현장점검은 최초/보완 구분 없음 (작업지시서 기준)
+      inspType: "최초", // 갓빠삭치킨 출시 교육점검은 최초/보완 구분 없음 (작업지시서 기준)
       visitDate: S.visitDate,
       npAnswers: {
         q1: a.q1,
@@ -1136,7 +1137,7 @@ async function submitFormNP() {
   }
 }
 
-// ── FORM (스파쿨 홍보물 점검 전용) ──────────
+// ── FORM (스파쿨 프로모션 현장점검 전용) ──────────
 function renderFormSpacool(root) {
   const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
   const a = S.spacoolAnswers;
@@ -1201,7 +1202,7 @@ function renderFormSpacool(root) {
       <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
       <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
         <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
-        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">스파쿨 홍보물 점검 · ${roleLabel}</span>
+        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">스파쿨 프로모션 현장점검 · ${roleLabel}</span>
       </div>
     </div>
     <div class="form-body">
@@ -1290,7 +1291,7 @@ function removeSpacoolImage(qKey, idx) {
 
 async function submitFormSpacool() {
   if (!_spacoolEnabled) {
-    alert("현재 스파쿨 홍보물 점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
+    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
   }
   const a = S.spacoolAnswers;
@@ -1328,7 +1329,7 @@ async function submitFormSpacool() {
     const payload = {
       storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
       writerName: S.writerName, role: S.role,
-      inspType: "최초", // 스파쿨 홍보물 점검은 최초/보완 구분 없음 (작업지시서 기준)
+      inspType: "최초", // 스파쿨 프로모션 현장점검은 최초/보완 구분 없음 (작업지시서 기준)
       visitDate: S.visitDate,
       spacoolAnswers: {
         q0: a.q0, q1: a.q0 === "Y" ? a.q1 : null, q2: a.q0 === "Y" ? a.q2 : null,
@@ -1498,7 +1499,7 @@ async function searchStores() {
   renderStoreList(matched, preservedKeyword);
 }
 
-// 신제품 현장점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출, 신제품 대상 매장만
+// 갓빠삭치킨 출시 교육점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출, 신제품 대상 매장만
 function buildMatchedStoresNP(activeStores, name) {
   let matched;
   if (S.role === "sv") {
@@ -1519,7 +1520,7 @@ function buildMatchedStoresNP(activeStores, name) {
   return matched.filter(s => s.npEligible);
 }
 
-// 스파쿨 홍보물 점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출, 스파쿨 대상 매장만
+// 스파쿨 프로모션 현장점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출, 스파쿨 대상 매장만
 function buildMatchedStoresSpacool(activeStores, name) {
   let matched;
   if (S.role === "sv") {
@@ -3620,7 +3621,7 @@ async function renderPhotoSetting(root) {
 
   const npCategoryHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:14px">신제품 현장점검 사용</span>
+      <span style="font-size:14px">갓빠삭치킨 출시 교육점검 사용</span>
       <div id="toggle_wrap_npEnabled"
         onclick="toggleNpEnabled()"
         style="width:44px;height:24px;border-radius:12px;background:${_npEnabled?"#D69E0E":"#CBD5E0"};
@@ -3630,7 +3631,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_npEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
-    <div style="font-size:12px;color:#718096;margin:6px 0 16px">OFF 시 허브 화면의 신제품 현장점검 카드가 비활성 처리됩니다.</div>
+    <div style="font-size:12px;color:#718096;margin:6px 0 16px">OFF 시 허브 화면의 갓빠삭치킨 출시 교육점검 카드가 비활성 처리됩니다.</div>
 
     <div style="font-weight:600;font-size:13px;color:var(--sub);margin-bottom:4px">신제품 사진 첨부 필수 (배터링/브래딩/완조리 3장)</div>
     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
@@ -3648,7 +3649,7 @@ async function renderPhotoSetting(root) {
 
   const spacoolCategoryHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:14px">스파쿨 홍보물 점검 사용</span>
+      <span style="font-size:14px">스파쿨 프로모션 현장점검 사용</span>
       <div id="toggle_wrap_spacoolEnabled"
         onclick="toggleSpacoolEnabled()"
         style="width:44px;height:24px;border-radius:12px;background:${_spacoolEnabled?"#3B6D11":"#CBD5E0"};
@@ -3658,7 +3659,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_spacoolEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
-    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 스파쿨 홍보물 점검 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
+    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 스파쿨 프로모션 현장점검 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   root.innerHTML = `
     <div class="page-header">
@@ -3670,8 +3671,8 @@ async function renderPhotoSetting(root) {
 
       ${section("📋", "매장 데이터 관리", storeDataHtml, true)}
       ${section("🍔", "신규플랫폼 현장점검", defaultCategoryHtml, false)}
-      ${section("🆕", "신제품 현장점검", npCategoryHtml, false)}
-      ${section("🧊", "스파쿨 홍보물 점검", spacoolCategoryHtml, false)}
+      ${section("🆕", "갓빠삭치킨 출시 교육점검", npCategoryHtml, false)}
+      ${section("🧊", "스파쿨 프로모션 현장점검", spacoolCategoryHtml, false)}
 
       <button class="btn-primary" onclick="applyAdminSettings()" style="margin-top:8px">저장하기</button>
       <button class="btn-ghost" onclick="goBack()" style="margin-top:8px">취소</button>
@@ -4178,9 +4179,9 @@ const _cache = {
   dashboard: { data: null, ts: 0, ttl: 600 }, // 10분
   records:   { data: null, ts: 0, ttl: 480 }, // 8분
   followup:  { data: null, ts: 0, ttl: 900 }, // 15분
-  dashboardNP: { data: null, ts: 0, ttl: 600 }, // 10분 (신제품 현장점검, surveys_np 별도 컬렉션)
+  dashboardNP: { data: null, ts: 0, ttl: 600 }, // 10분 (갓빠삭치킨 출시 교육점검, surveys_np 별도 컬렉션)
   recordsNP:   { data: null, ts: 0, ttl: 480 }, // 8분
-  dashboardSpacool: { data: null, ts: 0, ttl: 600 }, // 10분 (스파쿨 홍보물 점검, surveys_spacool 별도 컬렉션)
+  dashboardSpacool: { data: null, ts: 0, ttl: 600 }, // 10분 (스파쿨 프로모션 현장점검, surveys_spacool 별도 컬렉션)
   recordsSpacool:   { data: null, ts: 0, ttl: 480 }, // 8분
 };
 // 방법3: 점검결과 문서 ID 기반 캐시 (세션 내 중복 읽기 방지)
@@ -4929,10 +4930,10 @@ async function viewRecord(docId) {
 // ── Firebase Auth 로그인 화면 (앱 시작 화면) ──────
 function renderLogin(root) {
   root.innerHTML = `
-    <div class="hero">
-      <div class="logo-wrap">${LOGO_SVG}</div>
-      <h1 class="hero-title">현장점검</h1>
-      <p class="hero-sub">신규플랫폼 · 신제품</p>
+    <div class="hero-hub">
+      <span class="logo-chip">${LOGO_SVG}</span>
+      <div style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.5px">SCV</div>
+      <div style="font-size:12px;color:var(--sub);letter-spacing:0.5px;margin-top:4px">Store Condition Verification</div>
     </div>
     <div class="card-section">
       <label class="field-label">아이디 (이메일)</label>
@@ -5492,12 +5493,12 @@ async function handleStoreUpload(input) {
   input.value = "";
 }
 
-// ── DASHBOARD (신제품 현장점검 · 갓빠삭치킨 교육점검, surveys_np 전용) ──
+// ── DASHBOARD (갓빠삭치킨 출시 교육점검 · 갓빠삭치킨 교육점검, surveys_np 전용) ──
 // 작업지시서 7항: TL=담당팀 매장만, GL/관리자=전체 매장, 매장별 교육완료여부(Y/N)+교육인원 표시.
 // 승인/반려 없음 (작업지시서 명시) — 읽기 전용 집계 화면.
 async function renderDashboardNP(root) {
   if (!_npEnabled) {
-    alert("현재 신제품 현장점검 기능이 비활성화되어 있습니다.");
+    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -5511,7 +5512,7 @@ async function renderDashboardNP(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>관리자 대시보드 (신제품)</h2>
+      <h2>관리자 대시보드 (갓빠삭치킨)</h2>
       <button class="btn-home-dash" onclick="go('homeNP')" style="margin-left:auto">🏠 Home</button>
     </div>
     <div style="padding:20px;text-align:center;color:#718096">데이터 불러오는 중...</div>`;
@@ -5604,10 +5605,34 @@ function buildDashboardNP(root, records, scopeStores) {
     </tr>`;
   }).join("");
 
+  // GL/관리자 전용: 팀별 진행률 (TL은 이미 단일 팀만 보이므로 불필요)
+  let teamBreakdownHtml = "";
+  if (_authRole !== "tl") {
+    const teamMap = new Map();
+    rowsDataAll.forEach(({store, status}) => {
+      const t = store.team || "미지정";
+      if (!teamMap.has(t)) teamMap.set(t, {total:0, done:0});
+      const e = teamMap.get(t);
+      e.total++; if (status === "done") e.done++;
+    });
+    const teamRows = [...teamMap.entries()].sort((a,b) => a[0].localeCompare(b[0])).map(([team, e]) => {
+      const pct = e.total ? Math.round(e.done/e.total*100) : 0;
+      return `<div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>${team}</span><span style="color:#718096">${e.done}/${e.total}</span></div>
+        <div style="height:6px;background:#EDF2F7;border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--amber)"></div></div>
+      </div>`;
+    }).join("");
+    teamBreakdownHtml = `
+    <div style="padding:12px 16px;border-bottom:1px solid #E2E8F0">
+      <div style="font-size:12px;color:#718096;margin-bottom:8px">팀별 진행률</div>
+      ${teamRows}
+    </div>`;
+  }
+
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>관리자 대시보드 (신제품)</h2>
+      <h2>관리자 대시보드 (갓빠삭치킨)</h2>
       <button class="btn-home-dash" onclick="go('homeNP')" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="dash-stats">
@@ -5617,6 +5642,7 @@ function buildDashboardNP(root, records, scopeStores) {
       <div style="${cardStyle('needs', '#C53030')}" onclick="setDashNpFilter('needs')"><div class="stat-num" style="color:#C53030">${needCount}</div><div class="stat-label">재점검필요</div></div>
       <div style="${cardStyle('none', '#A0AEC0')}" onclick="setDashNpFilter('none')"><div class="stat-num" style="color:#A0AEC0">${notYetCount}</div><div class="stat-label">미점검</div></div>
     </div>
+    ${teamBreakdownHtml}
     <div style="display:flex;gap:6px;padding:10px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0">
       <input type="text" id="dashSearchNP" value="${escapeHtml(window._dashNpKeyword||"")}" placeholder="매장명/점검자명 검색" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px" onkeydown="if(event.key==='Enter')searchDashNP()">
       <button onclick="searchDashNP()" style="flex-shrink:0;padding:8px 16px;background:var(--amber);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">검색</button>
@@ -5725,15 +5751,15 @@ async function downloadExcelNP() {
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, "신제품현장점검");
-  XLSX.writeFile(wb, `신제품현장점검_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.utils.book_append_sheet(wb, ws, "갓빠삭치킨출시교육점검");
+  XLSX.writeFile(wb, `갓빠삭치킨출시교육점검_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
-// ── 점검 내역 조회 (신제품 현장점검) ────────────────
+// ── 점검 내역 조회 (갓빠삭치킨 출시 교육점검) ────────────────
 // 작업지시서 1항: AC/TL/GL/ADMIN 별로 보이는 매장이 다름 (기존 점검내역조회와 동일한 스코프 규칙)
 async function renderRecordsNP(root) {
   if (!_npEnabled) {
-    alert("현재 신제품 현장점검 기능이 비활성화되어 있습니다.");
+    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -5743,7 +5769,7 @@ async function renderRecordsNP(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>점검 내역 조회 (신제품)</h2>
+      <h2>점검 내역 조회 (갓빠삭치킨)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
@@ -5856,7 +5882,7 @@ function setRecNpFilter(val) {
 // ── 승인대기 (신제품, SV의 Q1=Y 건 중 담당 팀장 승인 전) ──
 async function renderApprovalNP(root) {
   if (!_npEnabled) {
-    alert("현재 신제품 현장점검 기능이 비활성화되어 있습니다.");
+    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -5865,7 +5891,7 @@ async function renderApprovalNP(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>승인대기 (신제품)</h2>
+      <h2>승인대기 (갓빠삭치킨)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div style="padding:8px 16px 0;font-size:12px;color:#718096">${scopeDesc} 기준</div>
@@ -5954,7 +5980,7 @@ function renderRecordDetailNP(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>점검 상세 (신제품)</h2>
+      <h2>점검 상세 (갓빠삭치킨)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
@@ -6021,11 +6047,11 @@ async function rejectNpRecord(docId) {
   }
 }
 
-// ── DASHBOARD (스파쿨 홍보물 점검, surveys_spacool 전용) ──
+// ── DASHBOARD (스파쿨 프로모션 현장점검, surveys_spacool 전용) ──
 // TL=담당팀 매장만(단일 팀 집계), GL/관리자=전체 매장 + 팀별 진행률.
 async function renderDashboardSpacool(root) {
   if (!_spacoolEnabled) {
-    alert("현재 스파쿨 홍보물 점검 기능이 비활성화되어 있습니다.");
+    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -6039,7 +6065,7 @@ async function renderDashboardSpacool(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>관리자 대시보드 (스파쿨)</h2>
+      <h2>관리자 대시보드 (스파쿨 프로모션)</h2>
       <button class="btn-home-dash" onclick="go('homeSpacool')" style="margin-left:auto">🏠 Home</button>
     </div>
     <div style="padding:20px;text-align:center;color:#718096">데이터 불러오는 중...</div>`;
@@ -6157,7 +6183,7 @@ function buildDashboardSpacool(root, records, scopeStores) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>관리자 대시보드 (스파쿨)</h2>
+      <h2>관리자 대시보드 (스파쿨 프로모션)</h2>
       <button class="btn-home-dash" onclick="go('homeSpacool')" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="dash-stats">
@@ -6281,14 +6307,14 @@ async function downloadExcelSpacool() {
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, "스파쿨홍보물점검");
-  XLSX.writeFile(wb, `스파쿨홍보물점검_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.utils.book_append_sheet(wb, ws, "스파쿨프로모션현장점검");
+  XLSX.writeFile(wb, `스파쿨프로모션현장점검_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
-// ── 점검 내역 조회 (스파쿨 홍보물 점검) ────────────────
+// ── 점검 내역 조회 (스파쿨 프로모션 현장점검) ────────────────
 async function renderRecordsSpacool(root) {
   if (!_spacoolEnabled) {
-    alert("현재 스파쿨 홍보물 점검 기능이 비활성화되어 있습니다.");
+    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -6298,7 +6324,7 @@ async function renderRecordsSpacool(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>점검 내역 조회 (스파쿨)</h2>
+      <h2>점검 내역 조회 (스파쿨 프로모션)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
@@ -6412,7 +6438,7 @@ function setRecSpacoolFilter(val) {
 // ── 승인대기 (스파쿨, AC의 Q1·Q2 전부 Y 건 — 팀장승인→그룹장승인 2단계) ──
 async function renderApprovalSpacool(root) {
   if (!_spacoolEnabled) {
-    alert("현재 스파쿨 홍보물 점검 기능이 비활성화되어 있습니다.");
+    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -6423,7 +6449,7 @@ async function renderApprovalSpacool(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>승인대기 (스파쿨)</h2>
+      <h2>승인대기 (스파쿨 프로모션)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     ${["gl","admin"].includes(_authRole) ? `
@@ -6551,7 +6577,7 @@ function renderRecordDetailSpacool(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>점검 상세 (스파쿨)</h2>
+      <h2>점검 상세 (스파쿨 프로모션)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
