@@ -363,20 +363,6 @@ const CAT_COLORS = {
   "신제품":"#D69E0E"
 };
 
-// ── 갓빠삭치킨 출시 교육점검(갓빠삭치킨 교육점검) 문항 구성 확정본 ──────────
-// SV/TL/GL 공통 폼(역할 구분 없음). 일반 문항형(SV_QUESTIONS)과 구조가 달라
-// 전용 렌더러(renderFormNP)에서 사용함.
-const NP_FORM = {
-  q1Label: "최종적으로 교육이 완료되었는가?",
-  q2Label: "교육 참석자명",
-  photoSlots: [
-    { key:"battering", label:"배터링", desc:"믹싱볼 내 배터액+계육" },
-    { key:"breading",  label:"브래딩", desc:"인서트 내 브래더+계육" },
-    { key:"final",     label:"완조리", desc:"품질" },
-  ],
-  memoMaxLen: 100,
-};
-
 // ── 스파쿨 프로모션 현장점검 문항 구성 확정본 ──────────
 // SV/TL/GL 공통 폼. Q1/Q2 각각 Y/N + 사진(최대 3장, Y 선택 시 최소 1장 필수) + 문항별 메모.
 // 전용 렌더러(renderFormSpacool)에서 사용함.
@@ -395,8 +381,8 @@ const SPACOOL_FORM = {
 // 완료 판정: Q1=Y, Q2=Y, (Q3=Y면 Q4=Y / Q3=N이면 Q4=N)일 때만 정상 — gbchickenStatus()에서 처리.
 const GBCHICKEN_FORM = {
   questions: [
-    { key:"q1", label:"홍보물(메인포스터, 키오스크속지, 와블러)는 정위치에 부착되어 있는가?", hasPhoto:true },
-    { key:"q2", label:"영양성분&알레르기 표기는 최신화 되어 있는가?", hint:"첨부 사진 내 날짜표기가 나오도록 첨부", hasPhoto:true },
+    { key:"q1", label:"홍보물(메인포스터, POS 와블러)은 정위치에 부착되어 있는가?", hint:"메인포스터 부착 후 매장 전면 사진 포함하도록 첨부 필수", hasPhoto:true },
+    { key:"q2", label:"영양성분&알레르기 표기, 원산지 표기는 최신화 되어 있는가?", hint:"영양성분&알레르기(7/20), 원산지 표기(7/23) 날짜 표기가 보이도록 첨부", hasPhoto:true },
     { key:"q3", label:"해당점은 가맹본부 배달 권장가격 준수 매장인가?", hasPhoto:false },
     { key:"q4", label:"가맹본부 배달 권장가격 준수 스티커가 정위치에 부착되어 있는가?", hasPhoto:true },
   ],
@@ -440,74 +426,6 @@ function currentSurveyCollection() {
   return "surveys";
 }
 
-// 갓빠삭치킨 출시 교육점검 건의 상태 계산: "none"(미점검) | "needs"(재점검필요) | "pending"(승인대기) | "done"(완료)
-// - SV의 Q1=Y는 담당 팀장 승인(tlApproved===true)이 있어야 완료. 필드가 없는 과거 데이터도 승인대기로 취급.
-// - TL/GL/관리자 본인 점검의 Y는 승인 절차 없이 즉시 완료.
-// - 팀장(또는 GL/관리자)이 반려한 건은 재점검필요로 취급 (기존 N항목과 동일 버킷).
-function npStatus(rec) {
-  if (!rec) return "none";
-  if (rec.tlRejected) return "needs";
-  const q1 = rec.npAnswers?.q1;
-  if (q1 === "N") return "needs";
-  if (q1 === "Y") {
-    if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
-    return "done";
-  }
-  return "none";
-}
-
-// 갓빠삭치킨 홍보물 부착 현장점검 건의 상태 계산: "none"|"needs"|"pending"|"done"
-// - 완료(정상) 조건(작업지시서 4항): Q1=Y AND Q2=Y AND (Q3=Y면 Q4=Y / Q3=N이면 Q4=N)
-// - 위 조건 불만족이면 재점검필요. 미응답이면 미점검.
-// - 조건 만족 + SV(AC) 점검 → 팀장승인대기(단일 단계, 그룹장 승인 없음 — 작업지시서 "SV-TL 2단계").
-// - 조건 만족 + TL/GL/관리자 본인점검 → 즉시 완료.
-function gbchickenStatus(rec) {
-  if (!rec) return "none";
-  if (rec.tlRejected) return "needs";
-  const a = rec.gbchickenAnswers;
-  if (!a || a.q1 == null) return "none";
-  const ok = a.q1 === "Y" && a.q2 === "Y" && ((a.q3 === "Y" && a.q4 === "Y") || (a.q3 === "N" && a.q4 === "N"));
-  if (!ok) return "needs";
-  if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
-  return "done";
-}
-
-// 스파쿨 프로모션 현장점검 건의 상태 계산: "none"|"not_delivered"|"needs"|"pending_tl"|"pending_gl"|"done"
-// - Q0(홍보물 입고 여부)에서 N이면 Q1/Q2 진행 자체를 안 하고 "not_delivered"로 즉시 종결
-//   (승인체계 없음). 이후 재점검이 들어오면(최신 문서 기준 판정이라) 자동으로 대체됨.
-// - Q1, Q2 둘 다 Y여야 승인 절차로 진행. 하나라도 N이면 즉시 재점검필요 (보완점검 없음).
-// - AC(SV)의 전부 Y 건은 팀장 승인 → 그룹장 승인 순으로 완료.
-// - 팀장(TL) 본인점검은 자기승인 단계 없이 바로 그룹장 승인대기로 (자기 자신을 승인할 수 없으므로).
-// - GL/관리자 본인 점검만 승인 없이 즉시 완료.
-// Q0(홍보물 입고 여부) 도입 이전 레거시 데이터의 화면표시용 실효값 계산.
-// spacoolStatus() 자체는 q0 필드 부재를 "N 체크만 건너뛰고 기존 로직 진행"으로 이미 올바르게
-// 처리하므로(사실상 Y와 동일 취급) 판정 로직엔 손댈 필요 없음 — 이 헬퍼는 순수 표시용.
-function getEffectiveQ0(a) {
-  if (!a) return null;
-  if (a.q0 === "Y" || a.q0 === "N") return a.q0;
-  return (a.q1 != null || a.q2 != null) ? "Y" : null; // 레거시: q1/q2 응답 있으면 입고(Y)로 간주
-}
-
-function spacoolStatus(rec) {
-  if (!rec) return "none";
-  if (rec.tlRejected) return "needs";
-  const a = rec.spacoolAnswers;
-  if (!a || (a.q0 == null && a.q1 == null && a.q2 == null)) return "none";
-  if (a.q0 === "N") return "not_delivered";
-  if (a.q1 === "N" || a.q2 === "N") return "needs";
-  if (a.q1 === "Y" && a.q2 === "Y") {
-    if (rec.role === "sv") {
-      if (rec.tlApproved !== true) return "pending_tl";
-      return rec.glApproved === true ? "done" : "pending_gl";
-    }
-    if (rec.role === "tl") {
-      return rec.glApproved === true ? "done" : "pending_gl";
-    }
-    return "done"; // gl, admin 본인점검
-  }
-  return "none";
-}
-
 // ── STATE ──────────────────────────────────────────
 let S = {
   screen:"home", role:null, inspType:null, // inspType: "최초"|"보완"
@@ -529,63 +447,6 @@ let S = {
 // { Q1: true, Q7: true, ... } → true=사진필수, false=사진선택
 let _photoSettings = {}; // 로드 전까지 빈 객체 (기본값: 모두 필수)
 let _photoSettingsLoaded = false;
-
-// 갓빠삭치킨 출시 교육점검 설정 (settings/npEnabled, settings/npPhotoRequired)
-let _npEnabled = false;
-let _npEnabledLoaded = false;
-let _npPhotoRequired = true; // 사진 3장(배터링/브래딩/완조리) 일괄 필수 여부
-let _npPhotoRequiredLoaded = false;
-
-async function loadNpEnabled() {
-  if (_npEnabledLoaded) return;
-  try {
-    const snap = await getDoc(doc(db, "settings", "npEnabled"));
-    _npEnabled = snap.exists() ? !!snap.data().value : false;
-  } catch(e) {
-    _npEnabled = false;
-  }
-  _npEnabledLoaded = true;
-}
-
-async function loadNpPhotoRequired() {
-  if (_npPhotoRequiredLoaded) return;
-  try {
-    const snap = await getDoc(doc(db, "settings", "npPhotoRequired"));
-    _npPhotoRequired = snap.exists() ? (snap.data().value !== false) : true;
-  } catch(e) {
-    _npPhotoRequired = true;
-  }
-  _npPhotoRequiredLoaded = true;
-}
-
-let _gbchickenEnabled = false;
-let _gbchickenEnabledLoaded = false;
-
-async function loadGbchickenEnabled() {
-  if (_gbchickenEnabledLoaded) return;
-  try {
-    const snap = await getDoc(doc(db, "settings", "gbchickenEnabled"));
-    _gbchickenEnabled = snap.exists() ? !!snap.data().value : false;
-  } catch(e) {
-    _gbchickenEnabled = false;
-  }
-  _gbchickenEnabledLoaded = true;
-}
-
-// 스파쿨 프로모션 현장점검 설정 (settings/spacoolEnabled)
-let _spacoolEnabled = false;
-let _spacoolEnabledLoaded = false;
-
-async function loadSpacoolEnabled() {
-  if (_spacoolEnabledLoaded) return;
-  try {
-    const snap = await getDoc(doc(db, "settings", "spacoolEnabled"));
-    _spacoolEnabled = snap.exists() ? !!snap.data().value : false;
-  } catch(e) {
-    _spacoolEnabled = false;
-  }
-  _spacoolEnabledLoaded = true;
-}
 
 // 점검일 제한 설정: "none"|"0"|"1"|"3"|"7" (0=당일, 1/3/7=N일전까지)
 let _dateLimitSetting = "none";
@@ -766,961 +627,6 @@ function renderHome(root) {
     </div>`;
 }
 
-// ── HOME (갓빠삭치킨 출시 교육점검) ──────────────────────────
-function renderHomeNP(root) {
-  if (!_npEnabled) {
-    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 있습니다.");
-    go("hub");
-    return;
-  }
-  const roleLabel = _authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":_authRole==="admin"?"관리자":"";
-  const canDash = ["tl","gl","admin"].includes(_authRole);
-
-  root.innerHTML = `
-    <div class="hero-np" style="padding-bottom:16px;position:relative">
-      <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
-      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
-      <div class="logo-wrap">${LOGO_SVG}</div>
-      <h1 class="hero-title">갓빠삭치킨<br>출시 교육점검</h1>
-      <p class="hero-sub">갓빠삭치킨 교육점검</p>
-    </div>
-    <div class="card-section">
-      <button class="btn-primary-np" onclick="startNpInspection()">📋 점검 시작하기</button>
-      <button class="btn-ghost" onclick="go('recordsNP')">📂 점검 내역 조회</button>
-      ${canDash ? `<button class="btn-ghost" id="npApprovalBtn" onclick="go('approvalNP')" style="color:#B7791F;border-color:#F6D384;background:#FFFBEB">✅ 승인대기<span id="npApprovalBadge"></span></button>` : ""}
-      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminNP()">📊 관리자 대시보드 (갓빠삭치킨)</button>` : ""}
-      <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
-            ${_authName ? _authName.slice(0,1) : "?"}
-          </div>
-          <div>
-            <div style="font-size:14px;font-weight:500;color:#2D3748;">${_authName}</div>
-            <div style="font-size:11px;color:#718096;">${roleLabel}</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button onclick="go('changePw')" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">PW 변경</button>
-          <button onclick="authLogout()" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">로그아웃</button>
-        </div>
-      </div>
-    </div>`;
-  if (canDash) loadNpApprovalBadge();
-}
-
-// 홈 화면 승인대기 버튼 옆 건수 배지 (신제품 — 팀장확인 1단계만 존재, 그룹장확인 없음).
-// TL=본인담당팀 범위의 pending 건수, GL/admin=전체 범위 pending 건수(renderApprovalNP와 동일 스코프).
-// 실패해도 조용히 무시(배지는 부가정보).
-async function loadNpApprovalBadge() {
-  const badgeEl = document.getElementById("npApprovalBadge");
-  if (!badgeEl) return;
-  try {
-    let records = cacheGet("recordsNP");
-    if (!records) {
-      const snap = await getDocs(query(collection(db,"surveys_np"), orderBy("createdAt","desc")));
-      records = [];
-      snap.forEach(d => records.push({id:d.id, ...d.data()}));
-      cacheSet("recordsNP", records);
-    }
-    const latestByStore = new Map();
-    records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
-      const t = r.createdAt?.seconds || 0;
-      const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
-    });
-    let list = [...latestByStore.values()];
-    if (_authRole === "tl") {
-      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
-      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
-      list = list.filter(r => teamCodes.has(r.storeCode));
-    }
-    const count = list.filter(r => npStatus(r) === "pending").length;
-
-    if (count > 0) {
-      badgeEl.outerHTML = ` <span id="npApprovalBadge" style="background:#E53E3E;color:white;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:4px">${count}</span>`;
-    }
-  } catch(e) { /* 배지 실패는 조용히 무시 */ }
-}
-
-function goAdminNP() {
-  if (_authRole === "sv") {
-    alert("대시보드 접근 권한이 없습니다.");
-    return;
-  }
-  go("dashboardNP");
-}
-
-function renderHomeGbchicken(root) {
-  if (!_gbchickenEnabled) {
-    alert("현재 갓빠삭치킨 홍보물 부착 현장점검 기능이 비활성화되어 있습니다.");
-    go("hub");
-    return;
-  }
-  const roleLabel = _authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":_authRole==="admin"?"관리자":"";
-  const canDash = ["tl","gl","admin"].includes(_authRole);
-
-  root.innerHTML = `
-    <div class="hero-np" style="padding-bottom:16px;position:relative">
-      <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
-      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
-      <div class="logo-wrap">${LOGO_SVG}</div>
-      <h1 class="hero-title">갓빠삭치킨<br>홍보물 부착 현장점검</h1>
-      <p class="hero-sub">갓빠삭치킨 홍보물 점검</p>
-    </div>
-    <div class="card-section">
-      <button class="btn-primary-np" onclick="startGbchickenInspection()">📋 점검 시작하기</button>
-      <button class="btn-ghost" onclick="go('recordsGbchicken')">📂 점검 내역 조회</button>
-      ${canDash ? `<button class="btn-ghost" id="gbchickenApprovalBtn" onclick="go('approvalGbchicken')" style="color:#B7791F;border-color:#F6D384;background:#FFFBEB">✅ 승인대기<span id="gbchickenApprovalBadge"></span></button>` : ""}
-      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminGbchicken()">📊 관리자 대시보드 (갓빠삭치킨 홍보물)</button>` : ""}
-      <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
-            ${_authName ? _authName.slice(0,1) : "?"}
-          </div>
-          <div>
-            <div style="font-size:14px;font-weight:500;color:#2D3748;">${_authName}</div>
-            <div style="font-size:11px;color:#718096;">${roleLabel}</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button onclick="go('changePw')" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">PW 변경</button>
-          <button onclick="authLogout()" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">로그아웃</button>
-        </div>
-      </div>
-    </div>`;
-  if (canDash) loadGbchickenApprovalBadge();
-}
-
-// 홈 화면 승인대기 버튼 옆 건수 배지 — 신제품과 동일하게 단일단계(TL만)만 존재.
-// TL=본인담당팀 범위의 pending 건수, GL/admin=전체 범위 pending 건수. 실패해도 조용히 무시.
-async function loadGbchickenApprovalBadge() {
-  const badgeEl = document.getElementById("gbchickenApprovalBadge");
-  if (!badgeEl) return;
-  try {
-    let records = cacheGet("recordsGbchicken");
-    if (!records) {
-      const snap = await getDocs(query(collection(db,"surveys_gbchicken"), orderBy("createdAt","desc")));
-      records = [];
-      snap.forEach(d => records.push({id:d.id, ...d.data()}));
-      cacheSet("recordsGbchicken", records);
-    }
-    const latestByStore = new Map();
-    records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
-      const t = r.createdAt?.seconds || 0;
-      const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
-    });
-    let list = [...latestByStore.values()];
-    if (_authRole === "tl") {
-      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
-      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
-      list = list.filter(r => teamCodes.has(r.storeCode));
-    }
-    const count = list.filter(r => gbchickenStatus(r) === "pending").length;
-
-    if (count > 0) {
-      badgeEl.outerHTML = ` <span id="gbchickenApprovalBadge" style="background:#E53E3E;color:white;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:4px">${count}</span>`;
-    }
-  } catch(e) { /* 배지 실패는 조용히 무시 */ }
-}
-
-function goAdminGbchicken() {
-  if (_authRole === "sv") {
-    alert("대시보드 접근 권한이 없습니다.");
-    return;
-  }
-  go("dashboardGbchicken");
-}
-
-// 갓빠삭치킨 홍보물 부착 현장점검 시작: 최초/보완 구분 없음(작업지시서 1항) → inspType 화면
-// 건너뛰고 바로 매장선택으로 이동. 대상 매장은 신제품(NP)과 동일한 npEligible 플래그 기준(작업지시서 3항).
-function startGbchickenInspection() {
-  if (!_gbchickenEnabled) {
-    alert("현재 갓빠삭치킨 홍보물 부착 현장점검 기능이 비활성화되어 있습니다.");
-    go("hub");
-    return;
-  }
-  S.category = "gbchicken";
-  S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.gbchickenAnswers = { q1:null, q2:null, q3:null, q4:null, photos:{q1:[],q2:[],q4:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memo:"" };
-  go("storeSel");
-}
-
-// 갓빠삭치킨 출시 교육점검 시작: 최초/보완 구분 없음 → inspType 화면 건너뛰고 바로 매장선택으로 이동
-function startNpInspection() {
-  if (!_npEnabled) {
-    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 있습니다.");
-    go("hub");
-    return;
-  }
-  S.category = "np";
-  S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.npAnswers = { q1:null, attendees:[""], photos:{battering:null,breading:null,final:null}, memo:"" };
-  go("storeSel");
-}
-
-// 점검내역조회 화면 준비중 안내 (점검시작하기/대시보드는 이미 정상 동작)
-function renderNpComingSoon(root) {
-  root.innerHTML = `
-    <div class="page-header">
-      <button class="btn-back" onclick="goBack()">←</button>
-      <h2>갓빠삭치킨 출시 교육점검</h2>
-      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
-    </div>
-    <div class="card-section" style="text-align:center;padding-top:40px">
-      <div style="font-size:40px;margin-bottom:12px">🛠️</div>
-      <div style="font-size:15px;color:var(--text);font-weight:500;margin-bottom:6px">점검 내역 조회 화면 준비중입니다</div>
-      <div style="font-size:13px;color:var(--sub);line-height:1.6">점검 시작하기 / 관리자 대시보드는<br>정상적으로 이용하실 수 있습니다.</div>
-      <button class="btn-ghost" onclick="goBack()" style="margin-top:24px">돌아가기</button>
-    </div>`;
-}
-
-// ── HOME (스파쿨 프로모션 현장점검) ──────────────────────────
-function renderHomeSpacool(root) {
-  if (!_spacoolEnabled) {
-    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 있습니다.");
-    go("hub");
-    return;
-  }
-  const roleLabel = _authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":_authRole==="admin"?"관리자":"";
-  const canDash = ["tl","gl","admin"].includes(_authRole);
-
-  root.innerHTML = `
-    <div class="hero-spacool" style="padding-bottom:16px;position:relative">
-      <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#173404;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
-      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#173404;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
-      <div class="logo-wrap">${LOGO_SVG}</div>
-      <h1 class="hero-title">스파쿨<br>프로모션 현장점검</h1>
-      <p class="hero-sub">외부 · 내부 홍보물 부착 점검</p>
-    </div>
-    <div class="card-section">
-      <button class="btn-primary-spacool" onclick="startSpacoolInspection()">📋 점검 시작하기</button>
-      <button class="btn-ghost" onclick="go('recordsSpacool')">📂 점검 내역 조회</button>
-      ${canDash ? `<button class="btn-ghost" id="spacoolApprovalBtn" onclick="go('approvalSpacool')" style="color:#3B6D11;border-color:#C0DD97;background:#EAF3DE">✅ 승인대기<span id="spacoolApprovalBadge"></span></button>` : ""}
-      ${canDash ? `<button class="btn-ghost btn-admin-spacool" onclick="goAdminSpacool()">📊 관리자 대시보드 (스파쿨 프로모션)</button>` : ""}
-      <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
-            ${_authName ? _authName.slice(0,1) : "?"}
-          </div>
-          <div>
-            <div style="font-size:14px;font-weight:500;color:#2D3748;">${_authName}</div>
-            <div style="font-size:11px;color:#718096;">${roleLabel}</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button onclick="go('changePw')" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">PW 변경</button>
-          <button onclick="authLogout()" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">로그아웃</button>
-        </div>
-      </div>
-    </div>`;
-  if (canDash) loadSpacoolApprovalBadge();
-}
-
-// 홈 화면 승인대기 버튼 옆 건수 배지: 역할별 본인 처리대상 단계만 카운트
-// (TL=팀장단계, GL=그룹장단계, admin=둘 다 합산). 실패해도 조용히 무시(배지는 부가정보).
-async function loadSpacoolApprovalBadge() {
-  const badgeEl = document.getElementById("spacoolApprovalBadge");
-  if (!badgeEl) return;
-  try {
-    let records = cacheGet("recordsSpacool");
-    if (!records) {
-      const snap = await getDocs(query(collection(db,"surveys_spacool"), orderBy("createdAt","desc")));
-      records = [];
-      snap.forEach(d => records.push({id:d.id, ...d.data()}));
-      cacheSet("recordsSpacool", records);
-    }
-    const latestByStore = new Map();
-    records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
-      const t = r.createdAt?.seconds || 0;
-      const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
-    });
-    let list = [...latestByStore.values()];
-    if (_authRole === "tl") {
-      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
-      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
-      list = list.filter(r => teamCodes.has(r.storeCode));
-    }
-    let count;
-    if (_authRole === "tl") count = list.filter(r => spacoolStatus(r) === "pending_tl").length;
-    else if (_authRole === "gl") count = list.filter(r => spacoolStatus(r) === "pending_gl").length;
-    else count = list.filter(r => ["pending_tl","pending_gl"].includes(spacoolStatus(r))).length; // admin: 팀장+그룹장 합산
-
-    if (count > 0) {
-      badgeEl.outerHTML = ` <span id="spacoolApprovalBadge" style="background:#E53E3E;color:white;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:4px">${count}</span>`;
-    }
-  } catch(e) { /* 배지 실패는 조용히 무시 */ }
-}
-
-function goAdminSpacool() {
-  if (_authRole === "sv") {
-    alert("대시보드 접근 권한이 없습니다.");
-    return;
-  }
-  go("dashboardSpacool");
-}
-
-// 스파쿨 프로모션 현장점검 시작: 최초/보완 구분 없음 → inspType 화면 건너뛰고 바로 매장선택으로 이동
-function startSpacoolInspection() {
-  if (!_spacoolEnabled) {
-    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 있습니다.");
-    go("hub");
-    return;
-  }
-  S.category = "spacool";
-  S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
-  go("storeSel");
-}
-
-// ── FORM (갓빠삭치킨 출시 교육점검 · 갓빠삭치킨 교육점검 전용) ──────────
-function renderFormNP(root) {
-  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
-  const a = S.npAnswers;
-
-  const photoBlocks = NP_FORM.photoSlots.map(slot => {
-    const photo = a.photos[slot.key];
-    return `
-      <div style="margin-bottom:14px">
-        <div style="font-size:13px;font-weight:600;margin-bottom:4px">${slot.label} <span style="font-weight:400;color:var(--sub);font-size:12px">(${slot.desc})</span></div>
-        <label class="img-upload-btn" for="npimg-${slot.key}">📷 사진 첨부
-          <input type="file" id="npimg-${slot.key}" accept="image/*" style="display:none" onchange="handleNpImage('${slot.key}',this)">
-        </label>
-        <span id="npimg-status-${slot.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>
-        <div id="npimg-preview-${slot.key}">${photo?.image ? `
-          <div class="preview-container">
-            <img src="${photo.image}" class="preview-img" onclick="openImageModal('${photo.image}')">
-            <button class="remove-img" onclick="removeNpImage('${slot.key}')">✕</button>
-          </div>` : ""}</div>
-      </div>`;
-  }).join("");
-
-  root.innerHTML = `
-    <div class="sticky-header" style="display:flex;align-items:center;gap:8px;padding:16px;background:white;border-bottom:1px solid var(--border)">
-      <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
-      <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
-        <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
-        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">갓빠삭치킨 출시 교육점검 · ${roleLabel}</span>
-      </div>
-    </div>
-    <div class="form-body">
-      <div class="question-card">
-        <span class="q-title">NP.Q1. ${NP_FORM.q1Label}</span>
-        <div class="answer-row" style="margin-top:10px">
-          <button class="ans-btn ans-yes ${a.q1==='Y'?'selected':''}" id="ans-npq1-Y" onclick="setNpQ1('Y')">✅ Y</button>
-          <button class="ans-btn ans-no ${a.q1==='N'?'selected':''}" id="ans-npq1-N" onclick="setNpQ1('N')">❌ N</button>
-        </div>
-        ${a.q1==='N' ? `<div class="notice-box" style="margin-top:10px">⚠️ 추가점검 필요로 표시됩니다. (제출 자체는 정상 진행)</div>` : ""}
-      </div>
-
-      <div class="question-card">
-        <span class="q-title">NP.Q2. ${NP_FORM.q2Label}</span>
-        <div id="npRosterWrap" style="margin-top:10px">${renderNpRoster()}</div>
-      </div>
-
-      <div class="question-card">
-        <span class="q-title">사진 첨부 ${_npPhotoRequired ? "(필수)" : "(선택)"}</span>
-        <div style="margin-top:10px">${photoBlocks}</div>
-      </div>
-
-      <div class="question-card">
-        <span class="q-title">메모 (선택)</span>
-        <div class="memo-wrap" style="margin-top:10px">
-          <input type="text" id="npMemo" class="memo-input"
-            placeholder="점검 간 특이사항 (선택, 최대 ${NP_FORM.memoMaxLen}자)"
-            maxlength="${NP_FORM.memoMaxLen}"
-            oninput="updateNpMemo(this.value)"
-            value="${escapeHtml(a.memo || "")}" />
-          <span class="memo-counter" id="npMemoCnt">${(a.memo||"").length}/${NP_FORM.memoMaxLen}</span>
-        </div>
-      </div>
-
-      <div class="submit-section">
-        <div id="submitWarning" class="submit-warning" style="display:none">⚠️ 필수 항목을 확인해주세요.</div>
-        <button class="btn-submit" onclick="submitFormNP()">점검 제출하기</button>
-      </div>
-    </div>`;
-}
-
-function renderNpRoster() {
-  const rows = S.npAnswers.attendees.map((name, i) => `
-    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
-      <input type="text" class="input-field" style="flex:1;margin:0" placeholder="성명 입력"
-        value="${escapeHtml(name)}" oninput="updateNpAttendeeName(${i},this.value)" />
-      ${S.npAnswers.attendees.length > 1 ? `<button onclick="removeNpAttendee(${i})" style="flex-shrink:0;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:white;color:var(--red);cursor:pointer">✕</button>` : ""}
-    </div>`).join("");
-  return `${rows}<button class="btn-ghost" onclick="addNpAttendee()" style="margin-top:2px">+ 참석자 추가</button>`;
-}
-
-function addNpAttendee() {
-  S.npAnswers.attendees.push("");
-  const wrap = document.getElementById("npRosterWrap");
-  if (wrap) wrap.innerHTML = renderNpRoster();
-}
-
-function removeNpAttendee(idx) {
-  if (S.npAnswers.attendees.length <= 1) return; // 최소 1명 유지
-  S.npAnswers.attendees.splice(idx, 1);
-  const wrap = document.getElementById("npRosterWrap");
-  if (wrap) wrap.innerHTML = renderNpRoster();
-}
-
-function updateNpAttendeeName(idx, val) {
-  S.npAnswers.attendees[idx] = val;
-}
-
-function updateNpMemo(val) {
-  S.npAnswers.memo = val;
-  const cnt = document.getElementById("npMemoCnt");
-  if (cnt) cnt.textContent = `${val.length}/${NP_FORM.memoMaxLen}`;
-}
-
-function setNpQ1(val) {
-  S.npAnswers.q1 = val;
-  sessionSave();
-  // N 선택 시 안내 문구 표시 위해 폼 재렌더 (상태는 S.npAnswers에 보존되어 손실 없음)
-  renderFormNP(document.getElementById("app"));
-}
-
-async function handleNpImage(slotKey, input) {
-  const file = input.files[0]; if (!file) return;
-  if (file.size > 20 * 1024 * 1024) {
-    alert("파일 크기가 너무 큽니다. (20MB 이하만 가능)\n더 낮은 화질로 촬영하거나 갤러리에서 다른 사진을 선택해주세요.");
-    input.value = "";
-    return;
-  }
-  const statusEl = document.getElementById(`npimg-status-${slotKey}`);
-  if (statusEl) statusEl.textContent = "⏳ 처리 중...";
-  let compressed;
-  try {
-    compressed = await compressImage(file, 400, 0.35);
-  } catch(e) {
-    if (statusEl) statusEl.textContent = "";
-    alert("⚠️ 사진 처리에 실패했습니다: " + e.message + "\n다른 사진으로 다시 시도해주세요.");
-    input.value = "";
-    return;
-  }
-  if (statusEl) statusEl.textContent = "⏳ 업로드 중...";
-  const path = `inspections_np/${S.storeCode}/${Date.now()}_${slotKey}.jpg`;
-  const { ok, url } = await uploadImageToStorage(compressed, path);
-  S.npAnswers.photos[slotKey] = { image: ok ? url : compressed };
-  sessionSave();
-  input.value = "";
-  if (statusEl) statusEl.textContent = "";
-  const preview = document.getElementById(`npimg-preview-${slotKey}`);
-  if (preview) preview.innerHTML = `
-    <div class="preview-container">
-      <img src="${compressed}" class="preview-img" onclick="openImageModal('${compressed}')">
-      <button class="remove-img" onclick="removeNpImage('${slotKey}')">✕</button>
-    </div>`;
-}
-
-function removeNpImage(slotKey) {
-  S.npAnswers.photos[slotKey] = null;
-  const p = document.getElementById(`npimg-preview-${slotKey}`); if (p) p.innerHTML = "";
-  const i = document.getElementById(`npimg-${slotKey}`); if (i) i.value = "";
-}
-
-async function submitFormNP() {
-  if (!_npEnabled) {
-    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
-    return;
-  }
-  const a = S.npAnswers;
-  const warnEl = document.getElementById("submitWarning");
-  const showWarn = (msg) => {
-    if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; }
-    alert("⚠️ " + msg + "\n제출되지 않았습니다.");
-  };
-
-  if (!_npPhotoRequiredLoaded) await loadNpPhotoRequired();
-
-  if (a.q1 !== "Y" && a.q1 !== "N") { showWarn("NP.Q1 (교육 완료 여부)를 선택해주세요."); return; }
-
-  const validAttendees = a.attendees.map(x => (x||"").trim()).filter(x => x);
-  if (validAttendees.length === 0) { showWarn("교육 참석자를 최소 1명 입력해주세요."); return; }
-
-  if (_npPhotoRequired) {
-    const missing = NP_FORM.photoSlots.filter(s => !a.photos[s.key]?.image);
-    if (missing.length > 0) { showWarn(`사진 첨부가 필요합니다: ${missing.map(s=>s.label).join(", ")}`); return; }
-  }
-
-  // 전체 이미지 용량 체크 (Firestore 1MB 문서 한도 고려) — Storage 업로드 실패 시 base64로
-  // 폴백되는데, 여러 장이 동시에 폴백되면 문서가 커질 수 있어 신규플랫폼과 동일하게 방어
-  const npTotalSize = Object.values(a.photos||{}).reduce((sum,p) => sum + (p?.image ? Math.round(p.image.length*0.75) : 0), 0);
-  if (npTotalSize > 900 * 1024) {
-    showWarn(`첨부 이미지 총 용량이 너무 큽니다. (현재 ${Math.round(npTotalSize/1024)}KB / 한도 900KB) 일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
-    return;
-  }
-
-  if (warnEl) warnEl.style.display = "none";
-
-  try {
-    const payload = {
-      storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
-      writerName: S.writerName, role: S.role,
-      inspType: "최초", // 갓빠삭치킨 출시 교육점검은 최초/보완 구분 없음 (작업지시서 기준)
-      visitDate: S.visitDate,
-      npAnswers: {
-        q1: a.q1,
-        attendees: validAttendees,
-        photos: a.photos,
-        memo: (a.memo || "").slice(0, NP_FORM.memoMaxLen),
-      },
-      needsFollowup: a.q1 === "N", // 완료 미판정 → 대시보드에서 "추가점검 필요"로 표시
-      createdAt: new Date(),
-    };
-    // SV가 Q1=Y로 제출한 건은 담당 팀장 승인이 있어야 최종 완료로 인정됨.
-    // TL/GL/관리자 본인 점검은 승인 절차 없이 즉시 완료 처리 (필드 자체를 넣지 않음).
-    if (S.role === "sv" && a.q1 === "Y") {
-      payload.tlApproved = false;
-    }
-    await addDoc(collection(db, "surveys_np"), payload);
-
-    sessionClear();
-    cacheInvalidate("dashboardNP");
-    cacheInvalidate("recordsNP");
-    S.history = [];
-    alert("✅ 점검이 제출되었습니다.");
-    go("homeNP");
-  } catch(e) {
-    alert("제출 중 오류가 발생했습니다: " + e.message);
-  }
-}
-
-// ── FORM (스파쿨 프로모션 현장점검 전용) ──────────
-function renderFormSpacool(root) {
-  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
-  const a = S.spacoolAnswers;
-
-  const q0Block = `
-    <div class="question-card" style="border:1.5px solid #3B6D11;background:#F7FCF2">
-      <span class="q-title">Q0. 홍보물 입고 여부</span>
-      <div style="font-size:13px;color:var(--sub);margin-top:4px">홍보물이 정상적으로 입고되었습니까?</div>
-      <div class="answer-row" style="margin-top:10px">
-        <button class="ans-btn ans-yes ${a.q0==='Y'?'selected':''}" onclick="setSpacoolAnswer('q0','Y')">✅ Y</button>
-        <button class="ans-btn ans-no ${a.q0==='N'?'selected':''}" onclick="setSpacoolAnswer('q0','N')">❌ N</button>
-      </div>
-      ${a.q0==='N' ? `<div class="notice-box" style="margin-top:10px">⚠️ 홍보물 미입고 점포로 접수됩니다. (Q1, Q2는 진행하지 않고 바로 제출)</div>` : ""}
-      <div class="memo-wrap" style="margin-top:12px">
-        <input type="text" class="memo-input"
-          placeholder="Q0 관련 메모 (선택, 최대 ${SPACOOL_FORM.memoMaxLen}자)"
-          maxlength="${SPACOOL_FORM.memoMaxLen}"
-          oninput="updateSpacoolQMemo('memoQ0',this.value)"
-          value="${escapeHtml(a.memoQ0 || "")}" />
-      </div>
-    </div>`;
-
-  const qBlocks = SPACOOL_FORM.questions.map((q, qi) => {
-    const val = a[q.key];
-    const photos = a.photos[q.key] || [];
-    const canAddMore = photos.length < SPACOOL_FORM.maxPhotos;
-    const memoKey = q.key === "q1" ? "memoQ1" : "memoQ2";
-    const photoThumbs = photos.map((p, pi) => `
-      <div class="preview-container" style="display:inline-block;margin-right:6px">
-        <img src="${p.image}" class="preview-img" onclick="openImageModal('${p.image}')">
-        <button class="remove-img" onclick="removeSpacoolImage('${q.key}',${pi})">✕</button>
-      </div>`).join("");
-    return `
-      <div class="question-card">
-        <span class="q-title">${q.key==='q1'?'Q1':'Q2'}. ${q.label}</span>
-        <div class="answer-row" style="margin-top:10px">
-          <button class="ans-btn ans-yes ${val==='Y'?'selected':''}" onclick="setSpacoolAnswer('${q.key}','Y')">✅ Y</button>
-          <button class="ans-btn ans-no ${val==='N'?'selected':''}" onclick="setSpacoolAnswer('${q.key}','N')">❌ N</button>
-        </div>
-        ${val==='N' ? `<div class="notice-box" style="margin-top:10px">⚠️ 재점검필요로 표시됩니다. (제출 자체는 정상 진행)</div>` : ""}
-        <div style="margin-top:12px">
-          <div style="font-size:12px;color:var(--sub);margin-bottom:6px">사진 첨부 (최대 ${SPACOOL_FORM.maxPhotos}장${val==='Y' ? ', 최소 1장 필수' : ', 선택'})</div>
-          <div id="spacoolimg-preview-${q.key}">${photoThumbs}</div>
-          ${canAddMore ? `
-          <label class="img-upload-btn" for="spacoolimg-${q.key}">📷 사진 첨부
-            <input type="file" id="spacoolimg-${q.key}" accept="image/*" style="display:none" onchange="handleSpacoolImage('${q.key}',this)">
-          </label>
-          <span id="spacoolimg-status-${q.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>` : ""}
-        </div>
-        <div class="memo-wrap" style="margin-top:12px">
-          <input type="text" class="memo-input"
-            placeholder="${q.key==='q1'?'Q1':'Q2'} 관련 메모 (선택, 최대 ${SPACOOL_FORM.memoMaxLen}자)"
-            maxlength="${SPACOOL_FORM.memoMaxLen}"
-            oninput="updateSpacoolQMemo('${memoKey}',this.value)"
-            value="${escapeHtml(a[memoKey] || "")}" />
-        </div>
-      </div>`;
-  }).join("");
-
-  root.innerHTML = `
-    <div class="sticky-header" style="display:flex;align-items:center;gap:8px;padding:16px;background:white;border-bottom:1px solid var(--border)">
-      <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
-      <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
-        <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
-        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">스파쿨 프로모션 현장점검 · ${roleLabel}</span>
-      </div>
-    </div>
-    <div class="form-body">
-      ${q0Block}
-      ${a.q0==='Y' ? qBlocks : ""}
-
-      ${a.q0 ? `
-      <div class="question-card">
-        <span class="q-title">전체 메모 (선택)</span>
-        <div class="memo-wrap" style="margin-top:10px">
-          <input type="text" id="spacoolMemo" class="memo-input"
-            placeholder="점검 간 특이사항 (선택, 최대 ${SPACOOL_FORM.memoMaxLen}자)"
-            maxlength="${SPACOOL_FORM.memoMaxLen}"
-            oninput="updateSpacoolMemo(this.value)"
-            value="${escapeHtml(a.memo || "")}" />
-          <span class="memo-counter" id="spacoolMemoCnt">${(a.memo||"").length}/${SPACOOL_FORM.memoMaxLen}</span>
-        </div>
-      </div>
-
-      <div class="submit-section">
-        <div id="submitWarning" class="submit-warning" style="display:none">⚠️ 필수 항목을 확인해주세요.</div>
-        <button class="btn-submit" onclick="submitFormSpacool()">점검 제출하기</button>
-      </div>` : `
-      <div style="text-align:center;padding:20px;color:var(--sub);font-size:13px">Q0을 먼저 선택해주세요.</div>`}
-    </div>`;
-}
-
-function setSpacoolAnswer(qKey, val) {
-  S.spacoolAnswers[qKey] = val;
-  sessionSave();
-  renderFormSpacool(document.getElementById("app"));
-}
-
-function updateSpacoolQMemo(memoKey, val) {
-  S.spacoolAnswers[memoKey] = val;
-  sessionSave();
-}
-
-function updateSpacoolMemo(val) {
-  S.spacoolAnswers.memo = val;
-  const cnt = document.getElementById("spacoolMemoCnt");
-  if (cnt) cnt.textContent = `${val.length}/${SPACOOL_FORM.memoMaxLen}`;
-}
-
-async function handleSpacoolImage(qKey, input) {
-  const file = input.files[0]; if (!file) return;
-  const existing = S.spacoolAnswers.photos[qKey] || [];
-  if (existing.length >= SPACOOL_FORM.maxPhotos) {
-    alert(`사진은 최대 ${SPACOOL_FORM.maxPhotos}장까지 첨부할 수 있습니다.`);
-    input.value = "";
-    return;
-  }
-  if (file.size > 20 * 1024 * 1024) {
-    alert("파일 크기가 너무 큽니다. (20MB 이하만 가능)\n더 낮은 화질로 촬영하거나 갤러리에서 다른 사진을 선택해주세요.");
-    input.value = "";
-    return;
-  }
-  const statusEl = document.getElementById(`spacoolimg-status-${qKey}`);
-  if (statusEl) statusEl.textContent = "⏳ 처리 중...";
-  let compressed;
-  try {
-    compressed = await compressImage(file, 400, 0.35);
-  } catch(e) {
-    if (statusEl) statusEl.textContent = "";
-    alert("⚠️ 사진 처리에 실패했습니다: " + e.message + "\n다른 사진으로 다시 시도해주세요.");
-    input.value = "";
-    return;
-  }
-  if (statusEl) statusEl.textContent = "⏳ 업로드 중...";
-  const path = `inspections_spacool/${S.storeCode}/${Date.now()}_${qKey}_${existing.length}.jpg`;
-  const { ok, url } = await uploadImageToStorage(compressed, path);
-  existing.push({ image: ok ? url : compressed });
-  S.spacoolAnswers.photos[qKey] = existing;
-  sessionSave();
-  input.value = "";
-  renderFormSpacool(document.getElementById("app"));
-}
-
-function removeSpacoolImage(qKey, idx) {
-  const arr = S.spacoolAnswers.photos[qKey] || [];
-  arr.splice(idx, 1);
-  S.spacoolAnswers.photos[qKey] = arr;
-  sessionSave();
-  renderFormSpacool(document.getElementById("app"));
-}
-
-async function submitFormSpacool() {
-  if (!_spacoolEnabled) {
-    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
-    return;
-  }
-  const a = S.spacoolAnswers;
-  const warnEl = document.getElementById("submitWarning");
-  const showWarn = (msg) => {
-    if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; }
-    alert("⚠️ " + msg + "\n제출되지 않았습니다.");
-  };
-
-  if (a.q0 !== "Y" && a.q0 !== "N") { showWarn("Q0 (홍보물 입고 여부)를 선택해주세요."); return; }
-
-  // Q0=N(미입고)이면 Q1/Q2는 진행하지 않고 바로 제출 — 승인체계 없이 미입고 상태로 종결
-  if (a.q0 === "Y") {
-    for (const q of SPACOOL_FORM.questions) {
-      if (a[q.key] !== "Y" && a[q.key] !== "N") { showWarn(`${q.key==='q1'?'Q1':'Q2'} (${q.label})를 선택해주세요.`); return; }
-      if (a[q.key] === "Y" && (a.photos[q.key]||[]).length === 0) {
-        showWarn(`${q.key==='q1'?'Q1':'Q2'}에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.`);
-        return;
-      }
-    }
-  }
-
-  // 전체 이미지 용량 체크 (Firestore 1MB 문서 한도 고려) — Storage 업로드 실패 시 base64로
-  // 폴백되는데, 문항당 최대 3장까지 동시에 폴백될 수 있어 신규플랫폼과 동일하게 방어
-  const spacoolTotalSize = Object.values(a.photos||{}).reduce((sum, arr) =>
-    sum + (arr||[]).reduce((s2,p) => s2 + (p?.image ? Math.round(p.image.length*0.75) : 0), 0), 0);
-  if (spacoolTotalSize > 900 * 1024) {
-    showWarn(`첨부 이미지 총 용량이 너무 큽니다. (현재 ${Math.round(spacoolTotalSize/1024)}KB / 한도 900KB) 일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
-    return;
-  }
-
-  if (warnEl) warnEl.style.display = "none";
-
-  try {
-    const payload = {
-      storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
-      writerName: S.writerName, role: S.role,
-      inspType: "최초", // 스파쿨 프로모션 현장점검은 최초/보완 구분 없음 (작업지시서 기준)
-      visitDate: S.visitDate,
-      spacoolAnswers: {
-        q0: a.q0, q1: a.q0 === "Y" ? a.q1 : null, q2: a.q0 === "Y" ? a.q2 : null,
-        photos: a.q0 === "Y" ? a.photos : {q1:[],q2:[]},
-        memoQ0: (a.memoQ0 || "").slice(0, SPACOOL_FORM.memoMaxLen),
-        memoQ1: (a.memoQ1 || "").slice(0, SPACOOL_FORM.memoMaxLen),
-        memoQ2: (a.memoQ2 || "").slice(0, SPACOOL_FORM.memoMaxLen),
-        memo: (a.memo || "").slice(0, SPACOOL_FORM.memoMaxLen),
-      },
-      needsFollowup: a.q0 === "Y" && (a.q1 === "N" || a.q2 === "N"),
-      createdAt: new Date(),
-    };
-    // AC(SV)가 Q1,Q2 전부 Y로 제출한 건은 담당 팀장 승인 → 그룹장 승인 순으로 최종 완료.
-    // 팀장 본인점검은 자기승인 없이 바로 그룹장 승인대기(payload에 별도 필드 불필요 —
-    // spacoolStatus가 role==='tl'이면 glApproved 유무만으로 판단). GL/관리자 본인점검만 즉시 완료.
-    // Q0=N(미입고)은 승인체계 자체가 없음 — tlApproved 필드를 세팅하지 않음.
-    if (a.q0 === "Y" && S.role === "sv" && a.q1 === "Y" && a.q2 === "Y") {
-      payload.tlApproved = false;
-    }
-    await addDoc(collection(db, "surveys_spacool"), payload);
-
-    sessionClear();
-    cacheInvalidate("dashboardSpacool");
-    cacheInvalidate("recordsSpacool");
-    S.history = [];
-    alert("✅ 점검이 제출되었습니다.");
-    go("homeSpacool");
-  } catch(e) {
-    alert("제출 중 오류가 발생했습니다: " + e.message);
-  }
-}
-
-// ── FORM (갓빠삭치킨 홍보물 부착 현장점검) ──────────────────
-function renderFormGbchicken(root) {
-  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
-  const a = S.gbchickenAnswers;
-
-  const qBlocks = GBCHICKEN_FORM.questions.map((q) => {
-    const val = a[q.key];
-    const qNum = q.key.slice(1); // "q1" -> "1"
-    const memoKey = "memoQ" + qNum;
-    let photoHtml = "";
-    if (q.hasPhoto) {
-      const photos = a.photos[q.key] || [];
-      const canAddMore = photos.length < GBCHICKEN_FORM.maxPhotos;
-      const photoThumbs = photos.map((p, pi) => `
-        <div class="preview-container" style="display:inline-block;margin-right:6px">
-          <img src="${p.image}" class="preview-img" onclick="openImageModal('${p.image}')">
-          <button class="remove-img" onclick="removeGbchickenImage('${q.key}',${pi})">✕</button>
-        </div>`).join("");
-      photoHtml = `
-        <div style="margin-top:12px">
-          <div style="font-size:12px;color:var(--sub);margin-bottom:6px">사진 첨부 (최대 ${GBCHICKEN_FORM.maxPhotos}장${val==='Y' ? ', 최소 1장 필수' : ', 선택'})</div>
-          <div id="gbchickenimg-preview-${q.key}">${photoThumbs}</div>
-          ${canAddMore ? `
-          <label class="img-upload-btn" for="gbchickenimg-${q.key}">📷 사진 첨부
-            <input type="file" id="gbchickenimg-${q.key}" accept="image/*" style="display:none" onchange="handleGbchickenImage('${q.key}',this)">
-          </label>
-          <span id="gbchickenimg-status-${q.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>` : ""}
-        </div>`;
-    }
-    return `
-      <div class="question-card">
-        <span class="q-title">Q${qNum}. ${q.label}</span>
-        ${q.hint ? `<div style="font-size:12px;color:var(--sub);margin-top:4px">${q.hint}</div>` : ""}
-        <div class="answer-row" style="margin-top:10px">
-          <button class="ans-btn ans-yes ${val==='Y'?'selected':''}" onclick="setGbchickenAnswer('${q.key}','Y')">✅ Y</button>
-          <button class="ans-btn ans-no ${val==='N'?'selected':''}" onclick="setGbchickenAnswer('${q.key}','N')">❌ N</button>
-        </div>
-        ${photoHtml}
-        <div class="memo-wrap" style="margin-top:12px">
-          <input type="text" class="memo-input"
-            placeholder="Q${qNum} 관련 메모 (선택, 최대 ${GBCHICKEN_FORM.memoMaxLen}자)"
-            maxlength="${GBCHICKEN_FORM.memoMaxLen}"
-            oninput="updateGbchickenQMemo('${memoKey}',this.value)"
-            value="${escapeHtml(a[memoKey] || "")}" />
-        </div>
-      </div>`;
-  }).join("");
-
-  root.innerHTML = `
-    <div class="sticky-header" style="display:flex;align-items:center;gap:8px;padding:16px;background:white;border-bottom:1px solid var(--border)">
-      <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
-      <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
-        <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
-        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">갓빠삭치킨 홍보물 부착 현장점검 · ${roleLabel}</span>
-      </div>
-    </div>
-    <div class="form-body">
-      ${qBlocks}
-
-      <div class="question-card">
-        <span class="q-title">전체 메모 (선택)</span>
-        <div class="memo-wrap" style="margin-top:10px">
-          <input type="text" id="gbchickenMemo" class="memo-input"
-            placeholder="점검 간 특이사항 (선택, 최대 ${GBCHICKEN_FORM.memoMaxLen}자)"
-            maxlength="${GBCHICKEN_FORM.memoMaxLen}"
-            oninput="updateGbchickenMemo(this.value)"
-            value="${escapeHtml(a.memo || "")}" />
-          <span class="memo-counter" id="gbchickenMemoCnt">${(a.memo||"").length}/${GBCHICKEN_FORM.memoMaxLen}</span>
-        </div>
-      </div>
-
-      <div class="submit-section">
-        <div id="submitWarning" class="submit-warning" style="display:none">⚠️ 필수 항목을 확인해주세요.</div>
-        <button class="btn-submit" onclick="submitFormGbchicken()">점검 제출하기</button>
-      </div>
-    </div>`;
-}
-
-function setGbchickenAnswer(qKey, val) {
-  S.gbchickenAnswers[qKey] = val;
-  sessionSave();
-  renderFormGbchicken(document.getElementById("app"));
-}
-
-function updateGbchickenQMemo(memoKey, val) {
-  S.gbchickenAnswers[memoKey] = val;
-  sessionSave();
-}
-
-function updateGbchickenMemo(val) {
-  S.gbchickenAnswers.memo = val;
-  const cnt = document.getElementById("gbchickenMemoCnt");
-  if (cnt) cnt.textContent = `${val.length}/${GBCHICKEN_FORM.memoMaxLen}`;
-}
-
-async function handleGbchickenImage(qKey, input) {
-  const file = input.files[0]; if (!file) return;
-  const existing = S.gbchickenAnswers.photos[qKey] || [];
-  if (existing.length >= GBCHICKEN_FORM.maxPhotos) {
-    alert(`사진은 최대 ${GBCHICKEN_FORM.maxPhotos}장까지 첨부할 수 있습니다.`);
-    input.value = "";
-    return;
-  }
-  if (file.size > 20 * 1024 * 1024) {
-    alert("파일 크기가 너무 큽니다. (20MB 이하만 가능)\n더 낮은 화질로 촬영하거나 갤러리에서 다른 사진을 선택해주세요.");
-    input.value = "";
-    return;
-  }
-  const statusEl = document.getElementById(`gbchickenimg-status-${qKey}`);
-  if (statusEl) statusEl.textContent = "⏳ 처리 중...";
-  let compressed;
-  try {
-    compressed = await compressImage(file, 400, 0.35);
-  } catch(e) {
-    if (statusEl) statusEl.textContent = "";
-    alert("⚠️ 사진 처리에 실패했습니다: " + e.message + "\n다른 사진으로 다시 시도해주세요.");
-    input.value = "";
-    return;
-  }
-  if (statusEl) statusEl.textContent = "⏳ 업로드 중...";
-  const path = `inspections_gbchicken/${S.storeCode}/${Date.now()}_${qKey}_${existing.length}.jpg`;
-  const { ok, url } = await uploadImageToStorage(compressed, path);
-  existing.push({ image: ok ? url : compressed });
-  S.gbchickenAnswers.photos[qKey] = existing;
-  sessionSave();
-  input.value = "";
-  renderFormGbchicken(document.getElementById("app"));
-}
-
-function removeGbchickenImage(qKey, idx) {
-  const arr = S.gbchickenAnswers.photos[qKey] || [];
-  arr.splice(idx, 1);
-  S.gbchickenAnswers.photos[qKey] = arr;
-  sessionSave();
-  renderFormGbchicken(document.getElementById("app"));
-}
-
-async function submitFormGbchicken() {
-  if (!_gbchickenEnabled) {
-    alert("현재 갓빠삭치킨 홍보물 부착 현장점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
-    return;
-  }
-  const a = S.gbchickenAnswers;
-  const warnEl = document.getElementById("submitWarning");
-  const showWarn = (msg) => {
-    if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; }
-    alert("⚠️ " + msg + "\n제출되지 않았습니다.");
-  };
-
-  for (const q of GBCHICKEN_FORM.questions) {
-    const qNum = q.key.slice(1);
-    if (a[q.key] !== "Y" && a[q.key] !== "N") { showWarn(`Q${qNum} (${q.label})를 선택해주세요.`); return; }
-    if (q.hasPhoto && a[q.key] === "Y" && (a.photos[q.key]||[]).length === 0) {
-      showWarn(`Q${qNum}에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.`);
-      return;
-    }
-  }
-
-  // 전체 이미지 용량 체크 (Firestore 1MB 문서 한도 고려)
-  const gbTotalSize = Object.values(a.photos||{}).reduce((sum, arr) =>
-    sum + (arr||[]).reduce((s2,p) => s2 + (p?.image ? Math.round(p.image.length*0.75) : 0), 0), 0);
-  if (gbTotalSize > 900 * 1024) {
-    showWarn(`첨부 이미지 총 용량이 너무 큽니다. (현재 ${Math.round(gbTotalSize/1024)}KB / 한도 900KB) 일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
-    return;
-  }
-
-  if (warnEl) warnEl.style.display = "none";
-
-  try {
-    const payload = {
-      storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
-      writerName: S.writerName, role: S.role,
-      inspType: "최초", // 갓빠삭치킨 홍보물 부착 현장점검은 최초/보완 구분 없음 (작업지시서 기준)
-      visitDate: S.visitDate,
-      gbchickenAnswers: {
-        q1: a.q1, q2: a.q2, q3: a.q3, q4: a.q4,
-        photos: a.photos,
-        memoQ1: (a.memoQ1 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
-        memoQ2: (a.memoQ2 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
-        memoQ3: (a.memoQ3 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
-        memoQ4: (a.memoQ4 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
-        memo: (a.memo || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
-      },
-      needsFollowup: !(a.q1 === "Y" && a.q2 === "Y" && ((a.q3==="Y"&&a.q4==="Y")||(a.q3==="N"&&a.q4==="N"))),
-      createdAt: new Date(),
-    };
-    // AC(SV)가 정상 조건 만족으로 제출한 건은 담당 팀장 승인 필요(단일 단계 — 작업지시서 "SV-TL 2단계",
-    // 그룹장 승인 없음). TL/GL/관리자 본인점검은 승인 없이 즉시 완료.
-    if (S.role === "sv" && !payload.needsFollowup) {
-      payload.tlApproved = false;
-    }
-    await addDoc(collection(db, "surveys_gbchicken"), payload);
-
-    sessionClear();
-    cacheInvalidate("dashboardGbchicken");
-    cacheInvalidate("recordsGbchicken");
-    S.history = [];
-    alert("✅ 점검이 제출되었습니다.");
-    go("homeGbchicken");
-  } catch(e) {
-    alert("제출 중 오류가 발생했습니다: " + e.message);
-  }
-}
-
 // ── INSP TYPE ──────────────────────────────────────
 // 이 화면은 startDefaultInspection()에서만 진입한다(신제품/스파쿨/갓빠삭치킨은 각자
 // 시작함수에서 inspType을 직접 "최초"로 세팅하고 이 화면 자체를 건너뜀) — 따라서 신규플랫폼
@@ -1858,46 +764,6 @@ async function searchStores() {
     if (matched === null) return; // 이미 결과/에러 화면 렌더링 완료
   }
   renderStoreList(matched, preservedKeyword);
-}
-
-// 갓빠삭치킨 출시 교육점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출, 신제품 대상 매장만
-function buildMatchedStoresNP(activeStores, name) {
-  let matched;
-  if (S.role === "sv") {
-    // 본인 담당 매장에서 소속 TL을 역으로 찾아 그 TL 팀 전체로 확장
-    const myStore = activeStores.find(s => s.sv === name);
-    const teamTl = myStore ? myStore.tl : null;
-    matched = teamTl ? activeStores.filter(s => s.tl === teamTl) : activeStores.filter(s => s.sv === name);
-  } else if (S.role === "tl") {
-    const svStores = activeStores.filter(s => s.sv === name);
-    const tlStores = activeStores.filter(s => s.tl === name);
-    const codeSet  = new Set(svStores.map(s => s.code));
-    matched = [...svStores, ...tlStores.filter(s => !codeSet.has(s.code))];
-  } else {
-    // GL/admin: 전체 매장
-    matched = activeStores.slice();
-  }
-  // 신제품 판매/교육 대상 매장만 노출 (STORE INFO의 "신제품-갓빠삭" 컬럼 기준)
-  return matched.filter(s => s.npEligible);
-}
-
-// 스파쿨 프로모션 현장점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출, 스파쿨 대상 매장만
-function buildMatchedStoresSpacool(activeStores, name) {
-  let matched;
-  if (S.role === "sv") {
-    const myStore = activeStores.find(s => s.sv === name);
-    const teamTl = myStore ? myStore.tl : null;
-    matched = teamTl ? activeStores.filter(s => s.tl === teamTl) : activeStores.filter(s => s.sv === name);
-  } else if (S.role === "tl") {
-    const svStores = activeStores.filter(s => s.sv === name);
-    const tlStores = activeStores.filter(s => s.tl === name);
-    const codeSet  = new Set(svStores.map(s => s.code));
-    matched = [...svStores, ...tlStores.filter(s => !codeSet.has(s.code))];
-  } else {
-    matched = activeStores.slice();
-  }
-  // 스파쿨 판매 대상 매장만 노출 (STORE INFO의 "스파쿨" 컬럼 기준)
-  return matched.filter(s => s.spacool);
 }
 
 // 신규플랫폼 현장점검: SV=본인담당, TL=본인담당+담당팀 전체, GL/admin=전체
@@ -4222,38 +3088,6 @@ function togglePhoto(key) {
   if (thumb) thumb.style.left      = isOn ? "23px" : "3px";
 }
 
-function toggleNpEnabled() {
-  _npEnabled = !_npEnabled;
-  const wrap  = document.getElementById("toggle_wrap_npEnabled");
-  const thumb = document.getElementById("toggle_thumb_npEnabled");
-  if (wrap)  wrap.style.background = _npEnabled ? "#D69E0E" : "#CBD5E0";
-  if (thumb) thumb.style.left      = _npEnabled ? "23px" : "3px";
-}
-
-function toggleNpPhotoRequired() {
-  _npPhotoRequired = !_npPhotoRequired;
-  const wrap  = document.getElementById("toggle_wrap_npPhotoRequired");
-  const thumb = document.getElementById("toggle_thumb_npPhotoRequired");
-  if (wrap)  wrap.style.background = _npPhotoRequired ? "#D69E0E" : "#CBD5E0";
-  if (thumb) thumb.style.left      = _npPhotoRequired ? "23px" : "3px";
-}
-
-function toggleSpacoolEnabled() {
-  _spacoolEnabled = !_spacoolEnabled;
-  const wrap  = document.getElementById("toggle_wrap_spacoolEnabled");
-  const thumb = document.getElementById("toggle_thumb_spacoolEnabled");
-  if (wrap)  wrap.style.background = _spacoolEnabled ? "#3B6D11" : "#CBD5E0";
-  if (thumb) thumb.style.left      = _spacoolEnabled ? "23px" : "3px";
-}
-
-function toggleGbchickenEnabled() {
-  _gbchickenEnabled = !_gbchickenEnabled;
-  const wrap  = document.getElementById("toggle_wrap_gbchickenEnabled");
-  const thumb = document.getElementById("toggle_thumb_gbchickenEnabled");
-  if (wrap)  wrap.style.background = _gbchickenEnabled ? "#C2410C" : "#CBD5E0";
-  if (thumb) thumb.style.left      = _gbchickenEnabled ? "23px" : "3px";
-}
-
 async function applyPhotoSettings() {
   try {
     // 저장 전: 모든 Q1~Q16 항목이 _photoSettings에 있는지 보장
@@ -5884,6 +4718,744 @@ async function handleStoreUpload(input) {
   input.value = "";
 }
 
+async function viewRecordDash(docId) {
+  const records = window._dashRecords||[];
+  const found = records.find(r=>r.id===docId);
+  if (!found) return;
+  S.loadedDocId = docId;
+  // 매장 객체 설정 (배지 표시용) - beef 필드 있는 문서 우선
+  const activeStores = window._activeStores || await getActiveStoreData();
+  S.storeObj = activeStores.find(s => s.code === found.storeCode) || null;
+
+  // GL glRejected 건: compare 화면으로 이동 (그룹장 최초점검 결과 + 보완점검 시작 버튼)
+  if (found.role === "gl" && found.glRejected && !found.finalConfirmed && !found.tlConfirmed) {
+    // GL 반려건: loadGLCompareAndShow로 이미지 포함 전체 로드
+    loadGLCompareAndShow(docId);
+    return;
+  }
+
+  // SV/TL건 N항목 보완 대상 (GL은 직접 보완점검 수행 안 함): "점검 시작하기"와 동일 경로 재사용
+  const nItems = Object.values(found.answers||{}).filter(a=>a.value==="N").length;
+  const hasFollowup = !!(found.followupSvAnswers || found.followupTlAnswers);
+  const isClosedStoreD = !!(window._closedMap||new Map()).get(found.storeCode);
+  const needFollowup = found.role !== "gl" && nItems > 0 && !found.finalConfirmed && !hasFollowup && !isClosedStoreD;
+  if (isClosedStoreD && nItems > 0 && !found.finalConfirmed && !hasFollowup && found.role !== "gl") {
+    alert("🚫 폐점된 매장입니다. 보완점검을 진행할 수 없습니다.");
+  }
+  if (needFollowup && ["sv","tl"].includes(_authRole)) {
+    S.role = _authRole;
+    S.writerName = _authName || "";
+    S.storeCode = found.storeCode;
+    S.storeName = found.storeName;
+    S.storeTeam = found.storeTeam;
+    S.inspType = "보완";
+    S.answers = {};
+    await loadPrevNItems(found.storeCode);
+    return;
+  }
+
+  // 이미지 포함 전체 문서 로드 (stripImages된 캐시 대신 getDoc 재조회)
+  await loadCompareData(docId);
+  go("compare");
+}
+
+// ── EXCEL ──────────────────────────────────────────
+async function downloadPDF() {
+  const records = window._dashRecords;
+  if (!records || records.length === 0) { alert("다운로드할 데이터가 없습니다."); return; }
+
+  const today = new Date().toLocaleDateString("ko-KR");
+  const total       = records.length;
+  const hasFirst    = records.filter(r => r.inspType==="최초"||!r.inspType).length;
+  const hasFollowup = records.filter(r => r.followupSvAnswers && Object.values(r.followupSvAnswers||{}).filter(a=>a.value==="N").length===0).length;
+  const pending     = records.filter(r =>
+    !r.finalConfirmed &&
+    Object.values(r.answers||{}).some(a => a.value === "N") &&
+    !r.followupSvAnswers && !r.followupTlAnswers).length;
+  const finalDone   = records.filter(r => r.finalConfirmed).length;
+
+  // 테이블 행 생성
+  const rows = records.map(r => {
+    const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleDateString("ko-KR") : "-";
+    // GL 문서는 Q1~Q11(GL_QUESTIONS) 기준, Q10 제외 N항목
+    const nItems = r.role === "gl"
+      ? Object.entries(r.answers||{}).filter(([k,v]) => Number(k) !== 10 && v.value === "N").length
+      : Object.values(r.answers||{}).filter(a=>a.value==="N").length;
+    const followupN = Object.values(r.followupSvAnswers||{}).filter(a=>a.value==="N").length;
+    let status = "";
+    if (r.finalConfirmed)            status = '<span style="color:#276749;font-weight:700">✅ 최종확인</span>';
+    else if (r.tlConfirmed)          status = '<span style="color:#553C9A;font-weight:700">👥 그룹장확인 대기</span>';
+    else if (r.followupSvAnswers && followupN===0) status = '<span style="color:#2B6CB0;font-weight:700">📋 팀장확인 대기</span>';
+    else if (r.followupSvAnswers)    status = '<span style="color:#C53030;font-weight:700">보완중 N '+followupN+'건</span>';
+    else if (nItems > 0)             status = '<span style="color:#D69E2E;font-weight:700">⏳ 보완필요</span>';
+    else                             status = '<span style="color:#276749">이상없음</span>';
+    return `<tr>
+      <td>${r.storeName||""}</td>
+      <td>${r.storeTeam||""}</td>
+      <td>${r.writerName||""}</td>
+      <td>${dt}</td>
+      <td>${r.inspType||"최초"}점검</td>
+      <td>${nItems > 0 ? '<span style="color:#C53030;font-weight:700">N '+nItems+'건</span>' : '<span style="color:#276749">이상없음</span>'}</td>
+      <td>${status}</td>
+    </tr>`;
+  }).join("");
+
+  const printHTML = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>신규플랫폼 점검리포트 ${today}</title>
+<style>
+  @page { size: A4 landscape; margin: 15mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; font-size: 11px; color: #1A202C; }
+  .header { background: #E53E3E; color: white; padding: 14px 20px; border-radius: 8px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .header-title { font-size: 20px; font-weight: 800; }
+  .header-sub { font-size: 12px; opacity: 0.85; }
+  .stats { display: flex; gap: 10px; margin-bottom: 14px; }
+  .stat { flex: 1; background: #F7F8FA; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px; text-align: center; }
+  .stat-num { font-size: 22px; font-weight: 800; }
+  .stat-label { font-size: 10px; color: #718096; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  th { background: #E53E3E; color: white; padding: 7px 8px; text-align: left; font-size: 11px; }
+  td { padding: 6px 8px; border-bottom: 1px solid #E2E8F0; vertical-align: middle; }
+  tr:nth-child(even) td { background: #F7F8FA; }
+  .footer { margin-top: 12px; text-align: center; font-size: 10px; color: #718096; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="header-title">신규플랫폼 현장점검 리포트</div>
+      <div class="header-sub">비프 · 피자 · 스파쿨 | 출력일: ${today}</div>
+    </div>
+    <div style="font-size:13px;opacity:0.9">총 ${total}건</div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">전체점검</div></div>
+    <div class="stat"><div class="stat-num" style="color:#3182CE">${hasFirst}</div><div class="stat-label">최초점검</div></div>
+    <div class="stat"><div class="stat-num" style="color:#D69E2E">${pending}</div><div class="stat-label">보완미실시</div></div>
+    <div class="stat"><div class="stat-num" style="color:#2B6CB0">${hasFollowup}</div><div class="stat-label">보완점검완료</div></div>
+    <div class="stat"><div class="stat-num" style="color:#276749">${finalDone}</div><div class="stat-label">최종확인</div></div>
+  </div>
+  <table>
+    <thead><tr><th>매장명</th><th>팀</th><th>SV</th><th>점검일</th><th>유형</th><th>최초결과</th><th>진행상태</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="footer">Moms Touch 신규플랫폼 현장점검 시스템 · ${today}</div>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank");
+  win.document.write(printHTML);
+  win.document.close();
+  win.onload = () => {
+    win.print();
+  };
+}
+async function downloadExcel() {
+  const records = window._dashRecords;
+  if(!records||records.length===0) { alert("다운로드할 데이터가 없습니다."); return; }
+  // SheetJS 지연 로딩
+  try {
+    await loadXLSX();
+  } catch(e) {
+    alert("Excel 라이브러리 로드 실패\n인터넷 연결을 확인해주세요."); return;
+  }
+
+  // 헤더: 답변값만 (이미지 제외)
+  const svH  = SV_QUESTIONS.map(q=>`[SV] Q${q.id} ${q.title}`);
+  const tlH  = SV_QUESTIONS.map(q=>`[팀장] Q${q.id} ${q.title}`);
+  const glH  = GL_QUESTIONS.map(q=>`[그룹장] Q${q.id} ${q.title}`);
+  const confirmH = ["팀장확인자","팀장확인일시","그룹장확인일시","최종확인여부","반려여부","보완횟수","반려횟수","보완이력요약"];
+  const dateH    = ["최초점검일","보완점검일"];
+
+  const rows = [["매장코드","매장명","팀","점검유형","역할","점검자","방문일시",...svH,...tlH,...glH,...confirmH,...dateH]];
+
+  const roleLabelMap = { sv:"SV", tl:"팀장", gl:"그룹장" };
+  const historyEventLabelMap = { submit_sv:"제출(SV)", submit_tl:"제출(팀장)", reject_tl:"반려(팀장)", reject_gl:"반려(그룹장)" };
+
+  records.forEach(r => {
+    const addRow = (type, role, name, date, answers, tla, gla) => {
+      if (!name && !Object.keys(answers||{}).length) return;
+
+      const svVals = SV_QUESTIONS.map(q=> answers?.[q.id]?.value||"");
+      const tlVals = SV_QUESTIONS.map(q=> tla?.[q.id]?.value||"");
+      const glVals = GL_QUESTIONS.map(q=> gla?.[q.id]?.value||"");
+      const history = Array.isArray(r.followupHistory) ? r.followupHistory : [];
+      const submitCount = history.filter(h => h.event==="submit_sv"||h.event==="submit_tl").length;
+      const rejectCount = history.filter(h => h.event==="reject_tl"||h.event==="reject_gl").length;
+      const historySummary = [...history].sort((a,b) => {
+        const at = a.at?.seconds ?? (a.at ? new Date(a.at).getTime()/1000 : 0);
+        const bt = b.at?.seconds ?? (b.at ? new Date(b.at).getTime()/1000 : 0);
+        return at - bt;
+      }).map(h => historyEventLabelMap[h.event] || h.event).join(" → ");
+      const confirmVals = [
+        r.tlConfirmerName||"",
+        r.tlConfirmedAt ? fmtDateExcel(r.tlConfirmedAt) : "",
+        r.finalConfirmedAt ? fmtDateExcel(r.finalConfirmedAt) : "",
+        r.finalConfirmed ? "Y" : "N",
+        (r.tlRejected || r.glRejected) ? "Y" : "N",
+        submitCount,
+        rejectCount,
+        historySummary,
+      ];
+      // 최초점검일: visitDate
+      // 보완점검일: N값 있으면 followup 날짜, 없으면(해당없음) 빈칸
+      const firstDate   = r.visitDate ? fmtDateExcel(r.visitDate) : "";
+      const hasNItems   = Object.values(r.answers||{}).some(a => a.value === "N");
+      const followupDate = hasNItems
+        ? (r.followupSvVisitDate ? fmtDateExcel(r.followupSvVisitDate)
+          : r.followupTlVisitDate ? fmtDateExcel(r.followupTlVisitDate) : "")
+        : ""; // N없음 → 보완점검 해당없음이므로 빈칸 (최초점검일 복사 안 함)
+      const dateVals = [firstDate, followupDate];
+      rows.push([r.storeCode,r.storeName,r.storeTeam,type,role,name||"",fmtDateExcel(date),...svVals,...tlVals,...glVals,...confirmVals,...dateVals]);
+    };
+    const roleLabel = roleLabelMap[r.role] || "SV";
+    // GL 자체 최초점검(role==="gl")은 SV 문항과 무관한 별도 11문항 체크리스트이므로
+    // SV Q1~Q16 칸에는 값을 넣지 않고(빈칸), 그룹장 Q1~Q11 칸(glAnswers)에만 표시한다.
+    const svAnswersForRow = r.role === "gl" ? null : r.answers;
+    addRow("최초점검", roleLabel, r.writerName, r.visitDate, svAnswersForRow, r.tlAnswers, r.glAnswers);
+    // 보완점검: SV 또는 TL 누가 진행했는지에 따라 동적으로 role/name/date/answers 결정
+    // (GL 최초점검 N → TL 보완 등, 보완 주체가 SV가 아닌 경우도 별도 "보완점검" 행으로 정확히 출력)
+    const hasSvFu = r.followupSvAnswers && Object.keys(r.followupSvAnswers).length > 0;
+    const hasTlFu = r.followupTlAnswers && Object.keys(r.followupTlAnswers).length > 0;
+    if (hasSvFu || hasTlFu) {
+      const fuRole = hasSvFu ? "SV" : "팀장";
+      const fuName = hasSvFu ? (r.followupSvWriterName||"") : (r.tlConfirmerName||r.followupTlWriterName||"");
+      const fuDate = hasSvFu ? r.followupSvVisitDate : (r.followupTlVisitDate||r.followupSvVisitDate);
+      const fuAnswers = hasSvFu ? r.followupSvAnswers : r.followupTlAnswers;
+      addRow("보완점검", fuRole, fuName, fuDate, fuAnswers, r.followupTlAnswers, r.followupGlAnswers);
+    }
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // 이미지 Data URL 셀 처리: URL 텍스트로 저장 + 열 너비 고정
+  const colCount = rows[0].length;
+  for (let ri = 1; ri < rows.length; ri++) {
+    for (let ci = 0; ci < colCount; ci++) {
+      const val = rows[ri][ci];
+      if (typeof val === "string" && val.startsWith("data:image")) {
+        const cellRef = XLSX.utils.encode_cell({r: ri, c: ci});
+        if (ws[cellRef]) {
+          // Data URL을 그대로 텍스트로 저장 (브라우저 주소창에 붙여넣으면 이미지 열림)
+          ws[cellRef].v = val;
+          ws[cellRef].t = "s";
+        }
+      }
+    }
+  }
+
+  // 열 너비 고정 - 이미지 URL 열은 고정폭(넘쳐도 옆 셀 침범 안 함)
+  const colW = [{wch:10},{wch:16},{wch:8},{wch:8},{wch:10},{wch:10},{wch:18},
+    ...Array(SV_QUESTIONS.length).fill({wch:10}),
+    ...Array(SV_QUESTIONS.length).fill({wch:10}),
+    ...Array(GL_QUESTIONS.length).fill({wch:10}),
+    {wch:12},{wch:18},{wch:18},{wch:10},{wch:10},{wch:9},{wch:9},{wch:40},
+    {wch:14},{wch:14}]; // 최초점검일, 보완점검일
+  ws["!cols"] = colW;
+
+  XLSX.utils.book_append_sheet(wb,ws,"점검이력");
+  try {
+    XLSX.writeFile(wb,`신규플랫폼_점검이력_${new Date().toISOString().slice(0,10)}.xlsx`);
+  } catch(e) {
+    alert("Excel 다운로드 오류: " + e.message);
+    console.error("Excel error:", e);
+  }
+}
+
+// ── UTILS ──────────────────────────────────────────
+function openImageModal(src) {
+  const modal = document.createElement("div");
+  modal.className = "img-modal";
+  modal.innerHTML = `<div class="img-modal-bg" onclick="this.parentElement.remove()"></div>
+    <img src="${src}" class="img-modal-img">
+    <button class="img-modal-close" onclick="this.parentElement.remove()">✕</button>`;
+  document.body.appendChild(modal);
+}
+function go(screen) {
+  if (!S.history) S.history = [];
+  if (S.screen && S.screen !== screen) S.history.push(S.screen);
+  S.screen = screen;
+  render();
+}
+function goBack() {
+  if (!S.history) S.history = [];
+  const prev = S.history.pop();
+  if (prev) { S.screen = prev; render(); }
+  else goCategoryHome();
+}
+// 현재 카테고리(신규플랫폼/신제품/스파쿨)에 맞는 홈 화면으로 이동하는 공용 헬퍼.
+// 각 화면에서 개별적으로 "S.category==='np'?...":..." 분기를 반복하면 한 곳만 놓쳐도
+// 엉뚱한 홈으로 보내는 실수가 나오기 쉬우므로 반드시 이 함수 하나만 쓸 것.
+// 카테고리(신규플랫폼/신제품/스파쿨)를 명시적으로 세팅한 뒤 해당 홈으로 이동.
+// 허브 카드에서 호출 — 인라인 onclick은 모듈스코프 변수(S)에 직접 접근 불가하므로
+// 반드시 이런 래퍼 함수를 통해서만 S를 건드려야 함.
+function enterCategory(category, screen) {
+  S.category = category;
+  go(screen);
+}
+
+function goCategoryHome() {
+  go(S.category === "np" ? "homeNP" : S.category === "spacool" ? "homeSpacool" : S.category === "gbchicken" ? "homeGbchicken" : "home");
+}
+function confirmBack() { if(confirm("작성 중인 내용이 사라집니다. 돌아가시겠습니까?")) { S.history = []; goCategoryHome(); } }
+function nowDTL() {
+  const now=new Date(), pad=n=>String(n).padStart(2,"0");
+  return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+function fmtDate(v) {
+  if (!v) return "-";
+  try {
+    // Firestore Timestamp 객체(.seconds 필드 보유)는 new Date()가 직접 못 읽어서 "Invalid Date"가 남 —
+    // followupHistory처럼 배열 안에 중첩 저장된 시각값은 읽어올 때 Timestamp 객체 형태로 돌아옴
+    const d = (v && typeof v === "object" && typeof v.seconds === "number") ? new Date(v.seconds * 1000) : new Date(v);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleString("ko-KR");
+  } catch { return "-"; }
+}
+// 엑셀 export 전용: 자릿수가 항상 고정된 형식(YYYY-MM-DD HH:mm)으로 저장해
+// 분석 도구에서 .slice(0,10) 등으로 날짜만 잘라써도 항상 정확히 잘리도록 함.
+// (fmtDate는 화면 표시용이라 한국어 로케일 형식을 그대로 유지하고, 여긴 별도 함수로 분리)
+function fmtDateExcel(v) {
+  if (!v) return "-";
+  try {
+    const d = (v && typeof v === "object" && typeof v.seconds === "number") ? new Date(v.seconds * 1000) : new Date(v);
+    if (isNaN(d.getTime())) return "-";
+    const pad = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch { return "-"; }
+}
+
+// ════════════════════════════════════════════════════════════
+// 신제품(갓빠삭치킨 출시 교육점검) 전용 코드 — surveys_np 컬렉션
+// ════════════════════════════════════════════════════════════
+// ── 갓빠삭치킨 출시 교육점검(갓빠삭치킨 교육점검) 문항 구성 확정본 ──────────
+// SV/TL/GL 공통 폼(역할 구분 없음). 일반 문항형(SV_QUESTIONS)과 구조가 달라
+// 전용 렌더러(renderFormNP)에서 사용함.
+const NP_FORM = {
+  q1Label: "최종적으로 교육이 완료되었는가?",
+  q2Label: "교육 참석자명",
+  photoSlots: [
+    { key:"battering", label:"배터링", desc:"믹싱볼 내 배터액+계육" },
+    { key:"breading",  label:"브래딩", desc:"인서트 내 브래더+계육" },
+    { key:"final",     label:"완조리", desc:"품질" },
+  ],
+  memoMaxLen: 100,
+};
+
+// 갓빠삭치킨 출시 교육점검 건의 상태 계산: "none"(미점검) | "needs"(재점검필요) | "pending"(승인대기) | "done"(완료)
+// - SV의 Q1=Y는 담당 팀장 승인(tlApproved===true)이 있어야 완료. 필드가 없는 과거 데이터도 승인대기로 취급.
+// - TL/GL/관리자 본인 점검의 Y는 승인 절차 없이 즉시 완료.
+// - 팀장(또는 GL/관리자)이 반려한 건은 재점검필요로 취급 (기존 N항목과 동일 버킷).
+function npStatus(rec) {
+  if (!rec) return "none";
+  if (rec.tlRejected) return "needs";
+  const q1 = rec.npAnswers?.q1;
+  if (q1 === "N") return "needs";
+  if (q1 === "Y") {
+    if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
+    return "done";
+  }
+  return "none";
+}
+
+// 갓빠삭치킨 출시 교육점검 설정 (settings/npEnabled, settings/npPhotoRequired)
+let _npEnabled = false;
+let _npEnabledLoaded = false;
+let _npPhotoRequired = true; // 사진 3장(배터링/브래딩/완조리) 일괄 필수 여부
+let _npPhotoRequiredLoaded = false;
+
+async function loadNpEnabled() {
+  if (_npEnabledLoaded) return;
+  try {
+    const snap = await getDoc(doc(db, "settings", "npEnabled"));
+    _npEnabled = snap.exists() ? !!snap.data().value : false;
+  } catch(e) {
+    _npEnabled = false;
+  }
+  _npEnabledLoaded = true;
+}
+
+async function loadNpPhotoRequired() {
+  if (_npPhotoRequiredLoaded) return;
+  try {
+    const snap = await getDoc(doc(db, "settings", "npPhotoRequired"));
+    _npPhotoRequired = snap.exists() ? (snap.data().value !== false) : true;
+  } catch(e) {
+    _npPhotoRequired = true;
+  }
+  _npPhotoRequiredLoaded = true;
+}
+
+// ── HOME (갓빠삭치킨 출시 교육점검) ──────────────────────────
+function renderHomeNP(root) {
+  if (!_npEnabled) {
+    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 있습니다.");
+    go("hub");
+    return;
+  }
+  const roleLabel = _authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":_authRole==="admin"?"관리자":"";
+  const canDash = ["tl","gl","admin"].includes(_authRole);
+
+  root.innerHTML = `
+    <div class="hero-np" style="padding-bottom:16px;position:relative">
+      <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
+      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
+      <div class="logo-wrap">${LOGO_SVG}</div>
+      <h1 class="hero-title">갓빠삭치킨<br>출시 교육점검</h1>
+      <p class="hero-sub">갓빠삭치킨 교육점검</p>
+    </div>
+    <div class="card-section">
+      <button class="btn-primary-np" onclick="startNpInspection()">📋 점검 시작하기</button>
+      <button class="btn-ghost" onclick="go('recordsNP')">📂 점검 내역 조회</button>
+      ${canDash ? `<button class="btn-ghost" id="npApprovalBtn" onclick="go('approvalNP')" style="color:#B7791F;border-color:#F6D384;background:#FFFBEB">✅ 승인대기<span id="npApprovalBadge"></span></button>` : ""}
+      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminNP()">📊 관리자 대시보드 (갓빠삭치킨)</button>` : ""}
+      <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
+            ${_authName ? _authName.slice(0,1) : "?"}
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:500;color:#2D3748;">${_authName}</div>
+            <div style="font-size:11px;color:#718096;">${roleLabel}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="go('changePw')" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">PW 변경</button>
+          <button onclick="authLogout()" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">로그아웃</button>
+        </div>
+      </div>
+    </div>`;
+  if (canDash) loadNpApprovalBadge();
+}
+
+// 홈 화면 승인대기 버튼 옆 건수 배지 (신제품 — 팀장확인 1단계만 존재, 그룹장확인 없음).
+// TL=본인담당팀 범위의 pending 건수, GL/admin=전체 범위 pending 건수(renderApprovalNP와 동일 스코프).
+// 실패해도 조용히 무시(배지는 부가정보).
+async function loadNpApprovalBadge() {
+  const badgeEl = document.getElementById("npApprovalBadge");
+  if (!badgeEl) return;
+  try {
+    let records = cacheGet("recordsNP");
+    if (!records) {
+      const snap = await getDocs(query(collection(db,"surveys_np"), orderBy("createdAt","desc")));
+      records = [];
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("recordsNP", records);
+    }
+    const latestByStore = new Map();
+    records.forEach(r => {
+      const ex = latestByStore.get(r.storeCode);
+      const t = r.createdAt?.seconds || 0;
+      const exT = ex?.createdAt?.seconds || 0;
+      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    });
+    let list = [...latestByStore.values()];
+    if (_authRole === "tl") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
+      list = list.filter(r => teamCodes.has(r.storeCode));
+    }
+    const count = list.filter(r => npStatus(r) === "pending").length;
+
+    if (count > 0) {
+      badgeEl.outerHTML = ` <span id="npApprovalBadge" style="background:#E53E3E;color:white;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:4px">${count}</span>`;
+    }
+  } catch(e) { /* 배지 실패는 조용히 무시 */ }
+}
+
+function goAdminNP() {
+  if (_authRole === "sv") {
+    alert("대시보드 접근 권한이 없습니다.");
+    return;
+  }
+  go("dashboardNP");
+}
+
+// 갓빠삭치킨 출시 교육점검 시작: 최초/보완 구분 없음 → inspType 화면 건너뛰고 바로 매장선택으로 이동
+function startNpInspection() {
+  if (!_npEnabled) {
+    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 있습니다.");
+    go("hub");
+    return;
+  }
+  S.category = "np";
+  S.role = _authRole; S.inspType = "최초"; S.answers = {};
+  S.npAnswers = { q1:null, attendees:[""], photos:{battering:null,breading:null,final:null}, memo:"" };
+  go("storeSel");
+}
+
+// 점검내역조회 화면 준비중 안내 (점검시작하기/대시보드는 이미 정상 동작)
+function renderNpComingSoon(root) {
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>갓빠삭치킨 출시 교육점검</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
+    </div>
+    <div class="card-section" style="text-align:center;padding-top:40px">
+      <div style="font-size:40px;margin-bottom:12px">🛠️</div>
+      <div style="font-size:15px;color:var(--text);font-weight:500;margin-bottom:6px">점검 내역 조회 화면 준비중입니다</div>
+      <div style="font-size:13px;color:var(--sub);line-height:1.6">점검 시작하기 / 관리자 대시보드는<br>정상적으로 이용하실 수 있습니다.</div>
+      <button class="btn-ghost" onclick="goBack()" style="margin-top:24px">돌아가기</button>
+    </div>`;
+}
+
+// ── FORM (갓빠삭치킨 출시 교육점검 · 갓빠삭치킨 교육점검 전용) ──────────
+function renderFormNP(root) {
+  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
+  const a = S.npAnswers;
+
+  const photoBlocks = NP_FORM.photoSlots.map(slot => {
+    const photo = a.photos[slot.key];
+    return `
+      <div style="margin-bottom:14px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">${slot.label} <span style="font-weight:400;color:var(--sub);font-size:12px">(${slot.desc})</span></div>
+        <label class="img-upload-btn" for="npimg-${slot.key}">📷 사진 첨부
+          <input type="file" id="npimg-${slot.key}" accept="image/*" style="display:none" onchange="handleNpImage('${slot.key}',this)">
+        </label>
+        <span id="npimg-status-${slot.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>
+        <div id="npimg-preview-${slot.key}">${photo?.image ? `
+          <div class="preview-container">
+            <img src="${photo.image}" class="preview-img" onclick="openImageModal('${photo.image}')">
+            <button class="remove-img" onclick="removeNpImage('${slot.key}')">✕</button>
+          </div>` : ""}</div>
+      </div>`;
+  }).join("");
+
+  root.innerHTML = `
+    <div class="sticky-header" style="display:flex;align-items:center;gap:8px;padding:16px;background:white;border-bottom:1px solid var(--border)">
+      <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
+      <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
+        <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
+        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">갓빠삭치킨 출시 교육점검 · ${roleLabel}</span>
+      </div>
+    </div>
+    <div class="form-body">
+      <div class="question-card">
+        <span class="q-title">NP.Q1. ${NP_FORM.q1Label}</span>
+        <div class="answer-row" style="margin-top:10px">
+          <button class="ans-btn ans-yes ${a.q1==='Y'?'selected':''}" id="ans-npq1-Y" onclick="setNpQ1('Y')">✅ Y</button>
+          <button class="ans-btn ans-no ${a.q1==='N'?'selected':''}" id="ans-npq1-N" onclick="setNpQ1('N')">❌ N</button>
+        </div>
+        ${a.q1==='N' ? `<div class="notice-box" style="margin-top:10px">⚠️ 추가점검 필요로 표시됩니다. (제출 자체는 정상 진행)</div>` : ""}
+      </div>
+
+      <div class="question-card">
+        <span class="q-title">NP.Q2. ${NP_FORM.q2Label}</span>
+        <div id="npRosterWrap" style="margin-top:10px">${renderNpRoster()}</div>
+      </div>
+
+      <div class="question-card">
+        <span class="q-title">사진 첨부 ${_npPhotoRequired ? "(필수)" : "(선택)"}</span>
+        <div style="margin-top:10px">${photoBlocks}</div>
+      </div>
+
+      <div class="question-card">
+        <span class="q-title">메모 (선택)</span>
+        <div class="memo-wrap" style="margin-top:10px">
+          <input type="text" id="npMemo" class="memo-input"
+            placeholder="점검 간 특이사항 (선택, 최대 ${NP_FORM.memoMaxLen}자)"
+            maxlength="${NP_FORM.memoMaxLen}"
+            oninput="updateNpMemo(this.value)"
+            value="${escapeHtml(a.memo || "")}" />
+          <span class="memo-counter" id="npMemoCnt">${(a.memo||"").length}/${NP_FORM.memoMaxLen}</span>
+        </div>
+      </div>
+
+      <div class="submit-section">
+        <div id="submitWarning" class="submit-warning" style="display:none">⚠️ 필수 항목을 확인해주세요.</div>
+        <button class="btn-submit" onclick="submitFormNP()">점검 제출하기</button>
+      </div>
+    </div>`;
+}
+
+function renderNpRoster() {
+  const rows = S.npAnswers.attendees.map((name, i) => `
+    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+      <input type="text" class="input-field" style="flex:1;margin:0" placeholder="성명 입력"
+        value="${escapeHtml(name)}" oninput="updateNpAttendeeName(${i},this.value)" />
+      ${S.npAnswers.attendees.length > 1 ? `<button onclick="removeNpAttendee(${i})" style="flex-shrink:0;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:white;color:var(--red);cursor:pointer">✕</button>` : ""}
+    </div>`).join("");
+  return `${rows}<button class="btn-ghost" onclick="addNpAttendee()" style="margin-top:2px">+ 참석자 추가</button>`;
+}
+
+function addNpAttendee() {
+  S.npAnswers.attendees.push("");
+  const wrap = document.getElementById("npRosterWrap");
+  if (wrap) wrap.innerHTML = renderNpRoster();
+}
+
+function removeNpAttendee(idx) {
+  if (S.npAnswers.attendees.length <= 1) return; // 최소 1명 유지
+  S.npAnswers.attendees.splice(idx, 1);
+  const wrap = document.getElementById("npRosterWrap");
+  if (wrap) wrap.innerHTML = renderNpRoster();
+}
+
+function updateNpAttendeeName(idx, val) {
+  S.npAnswers.attendees[idx] = val;
+}
+
+function updateNpMemo(val) {
+  S.npAnswers.memo = val;
+  const cnt = document.getElementById("npMemoCnt");
+  if (cnt) cnt.textContent = `${val.length}/${NP_FORM.memoMaxLen}`;
+}
+
+function setNpQ1(val) {
+  S.npAnswers.q1 = val;
+  sessionSave();
+  // N 선택 시 안내 문구 표시 위해 폼 재렌더 (상태는 S.npAnswers에 보존되어 손실 없음)
+  renderFormNP(document.getElementById("app"));
+}
+
+async function handleNpImage(slotKey, input) {
+  const file = input.files[0]; if (!file) return;
+  if (file.size > 20 * 1024 * 1024) {
+    alert("파일 크기가 너무 큽니다. (20MB 이하만 가능)\n더 낮은 화질로 촬영하거나 갤러리에서 다른 사진을 선택해주세요.");
+    input.value = "";
+    return;
+  }
+  const statusEl = document.getElementById(`npimg-status-${slotKey}`);
+  if (statusEl) statusEl.textContent = "⏳ 처리 중...";
+  let compressed;
+  try {
+    compressed = await compressImage(file, 400, 0.35);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = "";
+    alert("⚠️ 사진 처리에 실패했습니다: " + e.message + "\n다른 사진으로 다시 시도해주세요.");
+    input.value = "";
+    return;
+  }
+  if (statusEl) statusEl.textContent = "⏳ 업로드 중...";
+  const path = `inspections_np/${S.storeCode}/${Date.now()}_${slotKey}.jpg`;
+  const { ok, url } = await uploadImageToStorage(compressed, path);
+  S.npAnswers.photos[slotKey] = { image: ok ? url : compressed };
+  sessionSave();
+  input.value = "";
+  if (statusEl) statusEl.textContent = "";
+  const preview = document.getElementById(`npimg-preview-${slotKey}`);
+  if (preview) preview.innerHTML = `
+    <div class="preview-container">
+      <img src="${compressed}" class="preview-img" onclick="openImageModal('${compressed}')">
+      <button class="remove-img" onclick="removeNpImage('${slotKey}')">✕</button>
+    </div>`;
+}
+
+function removeNpImage(slotKey) {
+  S.npAnswers.photos[slotKey] = null;
+  const p = document.getElementById(`npimg-preview-${slotKey}`); if (p) p.innerHTML = "";
+  const i = document.getElementById(`npimg-${slotKey}`); if (i) i.value = "";
+}
+
+async function submitFormNP() {
+  if (!_npEnabled) {
+    alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
+    return;
+  }
+  const a = S.npAnswers;
+  const warnEl = document.getElementById("submitWarning");
+  const showWarn = (msg) => {
+    if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; }
+    alert("⚠️ " + msg + "\n제출되지 않았습니다.");
+  };
+
+  if (!_npPhotoRequiredLoaded) await loadNpPhotoRequired();
+
+  if (a.q1 !== "Y" && a.q1 !== "N") { showWarn("NP.Q1 (교육 완료 여부)를 선택해주세요."); return; }
+
+  const validAttendees = a.attendees.map(x => (x||"").trim()).filter(x => x);
+  if (validAttendees.length === 0) { showWarn("교육 참석자를 최소 1명 입력해주세요."); return; }
+
+  if (_npPhotoRequired) {
+    const missing = NP_FORM.photoSlots.filter(s => !a.photos[s.key]?.image);
+    if (missing.length > 0) { showWarn(`사진 첨부가 필요합니다: ${missing.map(s=>s.label).join(", ")}`); return; }
+  }
+
+  // 전체 이미지 용량 체크 (Firestore 1MB 문서 한도 고려) — Storage 업로드 실패 시 base64로
+  // 폴백되는데, 여러 장이 동시에 폴백되면 문서가 커질 수 있어 신규플랫폼과 동일하게 방어
+  const npTotalSize = Object.values(a.photos||{}).reduce((sum,p) => sum + (p?.image ? Math.round(p.image.length*0.75) : 0), 0);
+  if (npTotalSize > 900 * 1024) {
+    showWarn(`첨부 이미지 총 용량이 너무 큽니다. (현재 ${Math.round(npTotalSize/1024)}KB / 한도 900KB) 일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
+    return;
+  }
+
+  if (warnEl) warnEl.style.display = "none";
+
+  try {
+    const payload = {
+      storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
+      writerName: S.writerName, role: S.role,
+      inspType: "최초", // 갓빠삭치킨 출시 교육점검은 최초/보완 구분 없음 (작업지시서 기준)
+      visitDate: S.visitDate,
+      npAnswers: {
+        q1: a.q1,
+        attendees: validAttendees,
+        photos: a.photos,
+        memo: (a.memo || "").slice(0, NP_FORM.memoMaxLen),
+      },
+      needsFollowup: a.q1 === "N", // 완료 미판정 → 대시보드에서 "추가점검 필요"로 표시
+      createdAt: new Date(),
+    };
+    // SV가 Q1=Y로 제출한 건은 담당 팀장 승인이 있어야 최종 완료로 인정됨.
+    // TL/GL/관리자 본인 점검은 승인 절차 없이 즉시 완료 처리 (필드 자체를 넣지 않음).
+    if (S.role === "sv" && a.q1 === "Y") {
+      payload.tlApproved = false;
+    }
+    await addDoc(collection(db, "surveys_np"), payload);
+
+    sessionClear();
+    cacheInvalidate("dashboardNP");
+    cacheInvalidate("recordsNP");
+    S.history = [];
+    alert("✅ 점검이 제출되었습니다.");
+    go("homeNP");
+  } catch(e) {
+    alert("제출 중 오류가 발생했습니다: " + e.message);
+  }
+}
+
+// 갓빠삭치킨 출시 교육점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출, 신제품 대상 매장만
+function buildMatchedStoresNP(activeStores, name) {
+  let matched;
+  if (S.role === "sv") {
+    // 본인 담당 매장에서 소속 TL을 역으로 찾아 그 TL 팀 전체로 확장
+    const myStore = activeStores.find(s => s.sv === name);
+    const teamTl = myStore ? myStore.tl : null;
+    matched = teamTl ? activeStores.filter(s => s.tl === teamTl) : activeStores.filter(s => s.sv === name);
+  } else if (S.role === "tl") {
+    const svStores = activeStores.filter(s => s.sv === name);
+    const tlStores = activeStores.filter(s => s.tl === name);
+    const codeSet  = new Set(svStores.map(s => s.code));
+    matched = [...svStores, ...tlStores.filter(s => !codeSet.has(s.code))];
+  } else {
+    // GL/admin: 전체 매장
+    matched = activeStores.slice();
+  }
+  // 신제품 판매/교육 대상 매장만 노출 (STORE INFO의 "신제품-갓빠삭" 컬럼 기준)
+  return matched.filter(s => s.npEligible);
+}
+
+function toggleNpEnabled() {
+  _npEnabled = !_npEnabled;
+  const wrap  = document.getElementById("toggle_wrap_npEnabled");
+  const thumb = document.getElementById("toggle_thumb_npEnabled");
+  if (wrap)  wrap.style.background = _npEnabled ? "#D69E0E" : "#CBD5E0";
+  if (thumb) thumb.style.left      = _npEnabled ? "23px" : "3px";
+}
+
+function toggleNpPhotoRequired() {
+  _npPhotoRequired = !_npPhotoRequired;
+  const wrap  = document.getElementById("toggle_wrap_npPhotoRequired");
+  const thumb = document.getElementById("toggle_thumb_npPhotoRequired");
+  if (wrap)  wrap.style.background = _npPhotoRequired ? "#D69E0E" : "#CBD5E0";
+  if (thumb) thumb.style.left      = _npPhotoRequired ? "23px" : "3px";
+}
+
 // ── DASHBOARD (갓빠삭치킨 출시 교육점검 · 갓빠삭치킨 교육점검, surveys_np 전용) ──
 // 작업지시서 7항: TL=담당팀 매장만, GL/관리자=전체 매장, 매장별 교육완료여부(Y/N)+교육인원 표시.
 // 승인/반려 없음 (작업지시서 명시) — 읽기 전용 집계 화면.
@@ -6436,6 +6008,412 @@ async function rejectNpRecord(docId) {
   } catch(e) {
     alert("반려 처리 중 오류가 발생했습니다: " + e.message);
   }
+}
+
+// ════════════════════════════════════════════════════════════
+// 스파쿨 프로모션 현장점검 전용 코드 — surveys_spacool 컬렉션
+// ════════════════════════════════════════════════════════════
+// 스파쿨 프로모션 현장점검 건의 상태 계산: "none"|"not_delivered"|"needs"|"pending_tl"|"pending_gl"|"done"
+// - Q0(홍보물 입고 여부)에서 N이면 Q1/Q2 진행 자체를 안 하고 "not_delivered"로 즉시 종결
+//   (승인체계 없음). 이후 재점검이 들어오면(최신 문서 기준 판정이라) 자동으로 대체됨.
+// - Q1, Q2 둘 다 Y여야 승인 절차로 진행. 하나라도 N이면 즉시 재점검필요 (보완점검 없음).
+// - AC(SV)의 전부 Y 건은 팀장 승인 → 그룹장 승인 순으로 완료.
+// - 팀장(TL) 본인점검은 자기승인 단계 없이 바로 그룹장 승인대기로 (자기 자신을 승인할 수 없으므로).
+// - GL/관리자 본인 점검만 승인 없이 즉시 완료.
+// Q0(홍보물 입고 여부) 도입 이전 레거시 데이터의 화면표시용 실효값 계산.
+// spacoolStatus() 자체는 q0 필드 부재를 "N 체크만 건너뛰고 기존 로직 진행"으로 이미 올바르게
+// 처리하므로(사실상 Y와 동일 취급) 판정 로직엔 손댈 필요 없음 — 이 헬퍼는 순수 표시용.
+function getEffectiveQ0(a) {
+  if (!a) return null;
+  if (a.q0 === "Y" || a.q0 === "N") return a.q0;
+  return (a.q1 != null || a.q2 != null) ? "Y" : null; // 레거시: q1/q2 응답 있으면 입고(Y)로 간주
+}
+
+function spacoolStatus(rec) {
+  if (!rec) return "none";
+  if (rec.tlRejected) return "needs";
+  const a = rec.spacoolAnswers;
+  if (!a || (a.q0 == null && a.q1 == null && a.q2 == null)) return "none";
+  if (a.q0 === "N") return "not_delivered";
+  if (a.q1 === "N" || a.q2 === "N") return "needs";
+  if (a.q1 === "Y" && a.q2 === "Y") {
+    if (rec.role === "sv") {
+      if (rec.tlApproved !== true) return "pending_tl";
+      return rec.glApproved === true ? "done" : "pending_gl";
+    }
+    if (rec.role === "tl") {
+      return rec.glApproved === true ? "done" : "pending_gl";
+    }
+    return "done"; // gl, admin 본인점검
+  }
+  return "none";
+}
+
+// 스파쿨 프로모션 현장점검 설정 (settings/spacoolEnabled)
+let _spacoolEnabled = false;
+let _spacoolEnabledLoaded = false;
+
+async function loadSpacoolEnabled() {
+  if (_spacoolEnabledLoaded) return;
+  try {
+    const snap = await getDoc(doc(db, "settings", "spacoolEnabled"));
+    _spacoolEnabled = snap.exists() ? !!snap.data().value : false;
+  } catch(e) {
+    _spacoolEnabled = false;
+  }
+  _spacoolEnabledLoaded = true;
+}
+
+// ── HOME (스파쿨 프로모션 현장점검) ──────────────────────────
+function renderHomeSpacool(root) {
+  if (!_spacoolEnabled) {
+    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 있습니다.");
+    go("hub");
+    return;
+  }
+  const roleLabel = _authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":_authRole==="admin"?"관리자":"";
+  const canDash = ["tl","gl","admin"].includes(_authRole);
+
+  root.innerHTML = `
+    <div class="hero-spacool" style="padding-bottom:16px;position:relative">
+      <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#173404;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
+      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#173404;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
+      <div class="logo-wrap">${LOGO_SVG}</div>
+      <h1 class="hero-title">스파쿨<br>프로모션 현장점검</h1>
+      <p class="hero-sub">외부 · 내부 홍보물 부착 점검</p>
+    </div>
+    <div class="card-section">
+      <button class="btn-primary-spacool" onclick="startSpacoolInspection()">📋 점검 시작하기</button>
+      <button class="btn-ghost" onclick="go('recordsSpacool')">📂 점검 내역 조회</button>
+      ${canDash ? `<button class="btn-ghost" id="spacoolApprovalBtn" onclick="go('approvalSpacool')" style="color:#3B6D11;border-color:#C0DD97;background:#EAF3DE">✅ 승인대기<span id="spacoolApprovalBadge"></span></button>` : ""}
+      ${canDash ? `<button class="btn-ghost btn-admin-spacool" onclick="goAdminSpacool()">📊 관리자 대시보드 (스파쿨 프로모션)</button>` : ""}
+      <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
+            ${_authName ? _authName.slice(0,1) : "?"}
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:500;color:#2D3748;">${_authName}</div>
+            <div style="font-size:11px;color:#718096;">${roleLabel}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="go('changePw')" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">PW 변경</button>
+          <button onclick="authLogout()" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">로그아웃</button>
+        </div>
+      </div>
+    </div>`;
+  if (canDash) loadSpacoolApprovalBadge();
+}
+
+// 홈 화면 승인대기 버튼 옆 건수 배지: 역할별 본인 처리대상 단계만 카운트
+// (TL=팀장단계, GL=그룹장단계, admin=둘 다 합산). 실패해도 조용히 무시(배지는 부가정보).
+async function loadSpacoolApprovalBadge() {
+  const badgeEl = document.getElementById("spacoolApprovalBadge");
+  if (!badgeEl) return;
+  try {
+    let records = cacheGet("recordsSpacool");
+    if (!records) {
+      const snap = await getDocs(query(collection(db,"surveys_spacool"), orderBy("createdAt","desc")));
+      records = [];
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("recordsSpacool", records);
+    }
+    const latestByStore = new Map();
+    records.forEach(r => {
+      const ex = latestByStore.get(r.storeCode);
+      const t = r.createdAt?.seconds || 0;
+      const exT = ex?.createdAt?.seconds || 0;
+      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    });
+    let list = [...latestByStore.values()];
+    if (_authRole === "tl") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
+      list = list.filter(r => teamCodes.has(r.storeCode));
+    }
+    let count;
+    if (_authRole === "tl") count = list.filter(r => spacoolStatus(r) === "pending_tl").length;
+    else if (_authRole === "gl") count = list.filter(r => spacoolStatus(r) === "pending_gl").length;
+    else count = list.filter(r => ["pending_tl","pending_gl"].includes(spacoolStatus(r))).length; // admin: 팀장+그룹장 합산
+
+    if (count > 0) {
+      badgeEl.outerHTML = ` <span id="spacoolApprovalBadge" style="background:#E53E3E;color:white;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:4px">${count}</span>`;
+    }
+  } catch(e) { /* 배지 실패는 조용히 무시 */ }
+}
+
+function goAdminSpacool() {
+  if (_authRole === "sv") {
+    alert("대시보드 접근 권한이 없습니다.");
+    return;
+  }
+  go("dashboardSpacool");
+}
+
+// 스파쿨 프로모션 현장점검 시작: 최초/보완 구분 없음 → inspType 화면 건너뛰고 바로 매장선택으로 이동
+function startSpacoolInspection() {
+  if (!_spacoolEnabled) {
+    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 있습니다.");
+    go("hub");
+    return;
+  }
+  S.category = "spacool";
+  S.role = _authRole; S.inspType = "최초"; S.answers = {};
+  S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
+  go("storeSel");
+}
+
+// ── FORM (스파쿨 프로모션 현장점검 전용) ──────────
+function renderFormSpacool(root) {
+  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
+  const a = S.spacoolAnswers;
+
+  const q0Block = `
+    <div class="question-card" style="border:1.5px solid #3B6D11;background:#F7FCF2">
+      <span class="q-title">Q0. 홍보물 입고 여부</span>
+      <div style="font-size:13px;color:var(--sub);margin-top:4px">홍보물이 정상적으로 입고되었습니까?</div>
+      <div class="answer-row" style="margin-top:10px">
+        <button class="ans-btn ans-yes ${a.q0==='Y'?'selected':''}" onclick="setSpacoolAnswer('q0','Y')">✅ Y</button>
+        <button class="ans-btn ans-no ${a.q0==='N'?'selected':''}" onclick="setSpacoolAnswer('q0','N')">❌ N</button>
+      </div>
+      ${a.q0==='N' ? `<div class="notice-box" style="margin-top:10px">⚠️ 홍보물 미입고 점포로 접수됩니다. (Q1, Q2는 진행하지 않고 바로 제출)</div>` : ""}
+      <div class="memo-wrap" style="margin-top:12px">
+        <input type="text" class="memo-input"
+          placeholder="Q0 관련 메모 (선택, 최대 ${SPACOOL_FORM.memoMaxLen}자)"
+          maxlength="${SPACOOL_FORM.memoMaxLen}"
+          oninput="updateSpacoolQMemo('memoQ0',this.value)"
+          value="${escapeHtml(a.memoQ0 || "")}" />
+      </div>
+    </div>`;
+
+  const qBlocks = SPACOOL_FORM.questions.map((q, qi) => {
+    const val = a[q.key];
+    const photos = a.photos[q.key] || [];
+    const canAddMore = photos.length < SPACOOL_FORM.maxPhotos;
+    const memoKey = q.key === "q1" ? "memoQ1" : "memoQ2";
+    const photoThumbs = photos.map((p, pi) => `
+      <div class="preview-container" style="display:inline-block;margin-right:6px">
+        <img src="${p.image}" class="preview-img" onclick="openImageModal('${p.image}')">
+        <button class="remove-img" onclick="removeSpacoolImage('${q.key}',${pi})">✕</button>
+      </div>`).join("");
+    return `
+      <div class="question-card">
+        <span class="q-title">${q.key==='q1'?'Q1':'Q2'}. ${q.label}</span>
+        <div class="answer-row" style="margin-top:10px">
+          <button class="ans-btn ans-yes ${val==='Y'?'selected':''}" onclick="setSpacoolAnswer('${q.key}','Y')">✅ Y</button>
+          <button class="ans-btn ans-no ${val==='N'?'selected':''}" onclick="setSpacoolAnswer('${q.key}','N')">❌ N</button>
+        </div>
+        ${val==='N' ? `<div class="notice-box" style="margin-top:10px">⚠️ 재점검필요로 표시됩니다. (제출 자체는 정상 진행)</div>` : ""}
+        <div style="margin-top:12px">
+          <div style="font-size:12px;color:var(--sub);margin-bottom:6px">사진 첨부 (최대 ${SPACOOL_FORM.maxPhotos}장${val==='Y' ? ', 최소 1장 필수' : ', 선택'})</div>
+          <div id="spacoolimg-preview-${q.key}">${photoThumbs}</div>
+          ${canAddMore ? `
+          <label class="img-upload-btn" for="spacoolimg-${q.key}">📷 사진 첨부
+            <input type="file" id="spacoolimg-${q.key}" accept="image/*" style="display:none" onchange="handleSpacoolImage('${q.key}',this)">
+          </label>
+          <span id="spacoolimg-status-${q.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>` : ""}
+        </div>
+        <div class="memo-wrap" style="margin-top:12px">
+          <input type="text" class="memo-input"
+            placeholder="${q.key==='q1'?'Q1':'Q2'} 관련 메모 (선택, 최대 ${SPACOOL_FORM.memoMaxLen}자)"
+            maxlength="${SPACOOL_FORM.memoMaxLen}"
+            oninput="updateSpacoolQMemo('${memoKey}',this.value)"
+            value="${escapeHtml(a[memoKey] || "")}" />
+        </div>
+      </div>`;
+  }).join("");
+
+  root.innerHTML = `
+    <div class="sticky-header" style="display:flex;align-items:center;gap:8px;padding:16px;background:white;border-bottom:1px solid var(--border)">
+      <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
+      <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
+        <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
+        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">스파쿨 프로모션 현장점검 · ${roleLabel}</span>
+      </div>
+    </div>
+    <div class="form-body">
+      ${q0Block}
+      ${a.q0==='Y' ? qBlocks : ""}
+
+      ${a.q0 ? `
+      <div class="question-card">
+        <span class="q-title">전체 메모 (선택)</span>
+        <div class="memo-wrap" style="margin-top:10px">
+          <input type="text" id="spacoolMemo" class="memo-input"
+            placeholder="점검 간 특이사항 (선택, 최대 ${SPACOOL_FORM.memoMaxLen}자)"
+            maxlength="${SPACOOL_FORM.memoMaxLen}"
+            oninput="updateSpacoolMemo(this.value)"
+            value="${escapeHtml(a.memo || "")}" />
+          <span class="memo-counter" id="spacoolMemoCnt">${(a.memo||"").length}/${SPACOOL_FORM.memoMaxLen}</span>
+        </div>
+      </div>
+
+      <div class="submit-section">
+        <div id="submitWarning" class="submit-warning" style="display:none">⚠️ 필수 항목을 확인해주세요.</div>
+        <button class="btn-submit" onclick="submitFormSpacool()">점검 제출하기</button>
+      </div>` : `
+      <div style="text-align:center;padding:20px;color:var(--sub);font-size:13px">Q0을 먼저 선택해주세요.</div>`}
+    </div>`;
+}
+
+function setSpacoolAnswer(qKey, val) {
+  S.spacoolAnswers[qKey] = val;
+  sessionSave();
+  renderFormSpacool(document.getElementById("app"));
+}
+
+function updateSpacoolQMemo(memoKey, val) {
+  S.spacoolAnswers[memoKey] = val;
+  sessionSave();
+}
+
+function updateSpacoolMemo(val) {
+  S.spacoolAnswers.memo = val;
+  const cnt = document.getElementById("spacoolMemoCnt");
+  if (cnt) cnt.textContent = `${val.length}/${SPACOOL_FORM.memoMaxLen}`;
+}
+
+async function handleSpacoolImage(qKey, input) {
+  const file = input.files[0]; if (!file) return;
+  const existing = S.spacoolAnswers.photos[qKey] || [];
+  if (existing.length >= SPACOOL_FORM.maxPhotos) {
+    alert(`사진은 최대 ${SPACOOL_FORM.maxPhotos}장까지 첨부할 수 있습니다.`);
+    input.value = "";
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    alert("파일 크기가 너무 큽니다. (20MB 이하만 가능)\n더 낮은 화질로 촬영하거나 갤러리에서 다른 사진을 선택해주세요.");
+    input.value = "";
+    return;
+  }
+  const statusEl = document.getElementById(`spacoolimg-status-${qKey}`);
+  if (statusEl) statusEl.textContent = "⏳ 처리 중...";
+  let compressed;
+  try {
+    compressed = await compressImage(file, 400, 0.35);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = "";
+    alert("⚠️ 사진 처리에 실패했습니다: " + e.message + "\n다른 사진으로 다시 시도해주세요.");
+    input.value = "";
+    return;
+  }
+  if (statusEl) statusEl.textContent = "⏳ 업로드 중...";
+  const path = `inspections_spacool/${S.storeCode}/${Date.now()}_${qKey}_${existing.length}.jpg`;
+  const { ok, url } = await uploadImageToStorage(compressed, path);
+  existing.push({ image: ok ? url : compressed });
+  S.spacoolAnswers.photos[qKey] = existing;
+  sessionSave();
+  input.value = "";
+  renderFormSpacool(document.getElementById("app"));
+}
+
+function removeSpacoolImage(qKey, idx) {
+  const arr = S.spacoolAnswers.photos[qKey] || [];
+  arr.splice(idx, 1);
+  S.spacoolAnswers.photos[qKey] = arr;
+  sessionSave();
+  renderFormSpacool(document.getElementById("app"));
+}
+
+async function submitFormSpacool() {
+  if (!_spacoolEnabled) {
+    alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
+    return;
+  }
+  const a = S.spacoolAnswers;
+  const warnEl = document.getElementById("submitWarning");
+  const showWarn = (msg) => {
+    if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; }
+    alert("⚠️ " + msg + "\n제출되지 않았습니다.");
+  };
+
+  if (a.q0 !== "Y" && a.q0 !== "N") { showWarn("Q0 (홍보물 입고 여부)를 선택해주세요."); return; }
+
+  // Q0=N(미입고)이면 Q1/Q2는 진행하지 않고 바로 제출 — 승인체계 없이 미입고 상태로 종결
+  if (a.q0 === "Y") {
+    for (const q of SPACOOL_FORM.questions) {
+      if (a[q.key] !== "Y" && a[q.key] !== "N") { showWarn(`${q.key==='q1'?'Q1':'Q2'} (${q.label})를 선택해주세요.`); return; }
+      if (a[q.key] === "Y" && (a.photos[q.key]||[]).length === 0) {
+        showWarn(`${q.key==='q1'?'Q1':'Q2'}에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.`);
+        return;
+      }
+    }
+  }
+
+  // 전체 이미지 용량 체크 (Firestore 1MB 문서 한도 고려) — Storage 업로드 실패 시 base64로
+  // 폴백되는데, 문항당 최대 3장까지 동시에 폴백될 수 있어 신규플랫폼과 동일하게 방어
+  const spacoolTotalSize = Object.values(a.photos||{}).reduce((sum, arr) =>
+    sum + (arr||[]).reduce((s2,p) => s2 + (p?.image ? Math.round(p.image.length*0.75) : 0), 0), 0);
+  if (spacoolTotalSize > 900 * 1024) {
+    showWarn(`첨부 이미지 총 용량이 너무 큽니다. (현재 ${Math.round(spacoolTotalSize/1024)}KB / 한도 900KB) 일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
+    return;
+  }
+
+  if (warnEl) warnEl.style.display = "none";
+
+  try {
+    const payload = {
+      storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
+      writerName: S.writerName, role: S.role,
+      inspType: "최초", // 스파쿨 프로모션 현장점검은 최초/보완 구분 없음 (작업지시서 기준)
+      visitDate: S.visitDate,
+      spacoolAnswers: {
+        q0: a.q0, q1: a.q0 === "Y" ? a.q1 : null, q2: a.q0 === "Y" ? a.q2 : null,
+        photos: a.q0 === "Y" ? a.photos : {q1:[],q2:[]},
+        memoQ0: (a.memoQ0 || "").slice(0, SPACOOL_FORM.memoMaxLen),
+        memoQ1: (a.memoQ1 || "").slice(0, SPACOOL_FORM.memoMaxLen),
+        memoQ2: (a.memoQ2 || "").slice(0, SPACOOL_FORM.memoMaxLen),
+        memo: (a.memo || "").slice(0, SPACOOL_FORM.memoMaxLen),
+      },
+      needsFollowup: a.q0 === "Y" && (a.q1 === "N" || a.q2 === "N"),
+      createdAt: new Date(),
+    };
+    // AC(SV)가 Q1,Q2 전부 Y로 제출한 건은 담당 팀장 승인 → 그룹장 승인 순으로 최종 완료.
+    // 팀장 본인점검은 자기승인 없이 바로 그룹장 승인대기(payload에 별도 필드 불필요 —
+    // spacoolStatus가 role==='tl'이면 glApproved 유무만으로 판단). GL/관리자 본인점검만 즉시 완료.
+    // Q0=N(미입고)은 승인체계 자체가 없음 — tlApproved 필드를 세팅하지 않음.
+    if (a.q0 === "Y" && S.role === "sv" && a.q1 === "Y" && a.q2 === "Y") {
+      payload.tlApproved = false;
+    }
+    await addDoc(collection(db, "surveys_spacool"), payload);
+
+    sessionClear();
+    cacheInvalidate("dashboardSpacool");
+    cacheInvalidate("recordsSpacool");
+    S.history = [];
+    alert("✅ 점검이 제출되었습니다.");
+    go("homeSpacool");
+  } catch(e) {
+    alert("제출 중 오류가 발생했습니다: " + e.message);
+  }
+}
+
+// 스파쿨 프로모션 현장점검: 역할 무관하게 TL과 동일한 담당팀 전체 범위 노출, 스파쿨 대상 매장만
+function buildMatchedStoresSpacool(activeStores, name) {
+  let matched;
+  if (S.role === "sv") {
+    const myStore = activeStores.find(s => s.sv === name);
+    const teamTl = myStore ? myStore.tl : null;
+    matched = teamTl ? activeStores.filter(s => s.tl === teamTl) : activeStores.filter(s => s.sv === name);
+  } else if (S.role === "tl") {
+    const svStores = activeStores.filter(s => s.sv === name);
+    const tlStores = activeStores.filter(s => s.tl === name);
+    const codeSet  = new Set(svStores.map(s => s.code));
+    matched = [...svStores, ...tlStores.filter(s => !codeSet.has(s.code))];
+  } else {
+    matched = activeStores.slice();
+  }
+  // 스파쿨 판매 대상 매장만 노출 (STORE INFO의 "스파쿨" 컬럼 기준)
+  return matched.filter(s => s.spacool);
+}
+
+function toggleSpacoolEnabled() {
+  _spacoolEnabled = !_spacoolEnabled;
+  const wrap  = document.getElementById("toggle_wrap_spacoolEnabled");
+  const thumb = document.getElementById("toggle_thumb_spacoolEnabled");
+  if (wrap)  wrap.style.background = _spacoolEnabled ? "#3B6D11" : "#CBD5E0";
+  if (thumb) thumb.style.left      = _spacoolEnabled ? "23px" : "3px";
 }
 
 // ── DASHBOARD (스파쿨 프로모션 현장점검, surveys_spacool 전용) ──
@@ -7046,6 +7024,349 @@ async function rejectSpacoolRecord(docId) {
   }
 }
 
+// ════════════════════════════════════════════════════════════
+// 갓빠삭치킨 홍보물 부착 현장점검 전용 코드 — surveys_gbchicken 컬렉션
+// (매장범위는 신제품과 동일한 buildMatchedStoresNP를 재사용함 — 위 신제품 섹션 참조)
+// ════════════════════════════════════════════════════════════
+// 갓빠삭치킨 홍보물 부착 현장점검 건의 상태 계산: "none"|"needs"|"pending"|"done"
+// - 완료(정상) 조건(작업지시서 4항): Q1=Y AND Q2=Y AND (Q3=Y면 Q4=Y / Q3=N이면 Q4=N)
+// - 위 조건 불만족이면 재점검필요. 미응답이면 미점검.
+// - 조건 만족 + SV(AC) 점검 → 팀장승인대기(단일 단계, 그룹장 승인 없음 — 작업지시서 "SV-TL 2단계").
+// - 조건 만족 + TL/GL/관리자 본인점검 → 즉시 완료.
+function gbchickenStatus(rec) {
+  if (!rec) return "none";
+  if (rec.tlRejected) return "needs";
+  const a = rec.gbchickenAnswers;
+  if (!a || a.q1 == null) return "none";
+  const ok = a.q1 === "Y" && a.q2 === "Y" && ((a.q3 === "Y" && a.q4 === "Y") || (a.q3 === "N" && a.q4 === "N"));
+  if (!ok) return "needs";
+  if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
+  return "done";
+}
+
+let _gbchickenEnabled = false;
+let _gbchickenEnabledLoaded = false;
+
+async function loadGbchickenEnabled() {
+  if (_gbchickenEnabledLoaded) return;
+  try {
+    const snap = await getDoc(doc(db, "settings", "gbchickenEnabled"));
+    _gbchickenEnabled = snap.exists() ? !!snap.data().value : false;
+  } catch(e) {
+    _gbchickenEnabled = false;
+  }
+  _gbchickenEnabledLoaded = true;
+}
+
+function renderHomeGbchicken(root) {
+  if (!_gbchickenEnabled) {
+    alert("현재 갓빠삭치킨 홍보물 부착 현장점검 기능이 비활성화되어 있습니다.");
+    go("hub");
+    return;
+  }
+  const roleLabel = _authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":_authRole==="admin"?"관리자":"";
+  const canDash = ["tl","gl","admin"].includes(_authRole);
+
+  root.innerHTML = `
+    <div class="hero-np" style="padding-bottom:16px;position:relative">
+      <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
+      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
+      <div class="logo-wrap">${LOGO_SVG}</div>
+      <h1 class="hero-title">갓빠삭치킨<br>홍보물 부착 현장점검</h1>
+      <p class="hero-sub">갓빠삭치킨 홍보물 점검</p>
+    </div>
+    <div class="card-section">
+      <button class="btn-primary-np" onclick="startGbchickenInspection()">📋 점검 시작하기</button>
+      <button class="btn-ghost" onclick="go('recordsGbchicken')">📂 점검 내역 조회</button>
+      ${canDash ? `<button class="btn-ghost" id="gbchickenApprovalBtn" onclick="go('approvalGbchicken')" style="color:#B7791F;border-color:#F6D384;background:#FFFBEB">✅ 승인대기<span id="gbchickenApprovalBadge"></span></button>` : ""}
+      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminGbchicken()">📊 관리자 대시보드 (갓빠삭치킨 홍보물)</button>` : ""}
+      <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
+            ${_authName ? _authName.slice(0,1) : "?"}
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:500;color:#2D3748;">${_authName}</div>
+            <div style="font-size:11px;color:#718096;">${roleLabel}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="go('changePw')" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">PW 변경</button>
+          <button onclick="authLogout()" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">로그아웃</button>
+        </div>
+      </div>
+    </div>`;
+  if (canDash) loadGbchickenApprovalBadge();
+}
+
+// 홈 화면 승인대기 버튼 옆 건수 배지 — 신제품과 동일하게 단일단계(TL만)만 존재.
+// TL=본인담당팀 범위의 pending 건수, GL/admin=전체 범위 pending 건수. 실패해도 조용히 무시.
+async function loadGbchickenApprovalBadge() {
+  const badgeEl = document.getElementById("gbchickenApprovalBadge");
+  if (!badgeEl) return;
+  try {
+    let records = cacheGet("recordsGbchicken");
+    if (!records) {
+      const snap = await getDocs(query(collection(db,"surveys_gbchicken"), orderBy("createdAt","desc")));
+      records = [];
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("recordsGbchicken", records);
+    }
+    const latestByStore = new Map();
+    records.forEach(r => {
+      const ex = latestByStore.get(r.storeCode);
+      const t = r.createdAt?.seconds || 0;
+      const exT = ex?.createdAt?.seconds || 0;
+      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    });
+    let list = [...latestByStore.values()];
+    if (_authRole === "tl") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
+      list = list.filter(r => teamCodes.has(r.storeCode));
+    }
+    const count = list.filter(r => gbchickenStatus(r) === "pending").length;
+
+    if (count > 0) {
+      badgeEl.outerHTML = ` <span id="gbchickenApprovalBadge" style="background:#E53E3E;color:white;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:4px">${count}</span>`;
+    }
+  } catch(e) { /* 배지 실패는 조용히 무시 */ }
+}
+
+function goAdminGbchicken() {
+  if (_authRole === "sv") {
+    alert("대시보드 접근 권한이 없습니다.");
+    return;
+  }
+  go("dashboardGbchicken");
+}
+
+// 갓빠삭치킨 홍보물 부착 현장점검 시작: 최초/보완 구분 없음(작업지시서 1항) → inspType 화면
+// 건너뛰고 바로 매장선택으로 이동. 대상 매장은 신제품(NP)과 동일한 npEligible 플래그 기준(작업지시서 3항).
+function startGbchickenInspection() {
+  if (!_gbchickenEnabled) {
+    alert("현재 갓빠삭치킨 홍보물 부착 현장점검 기능이 비활성화되어 있습니다.");
+    go("hub");
+    return;
+  }
+  S.category = "gbchicken";
+  S.role = _authRole; S.inspType = "최초"; S.answers = {};
+  S.gbchickenAnswers = { q1:null, q2:null, q3:null, q4:null, photos:{q1:[],q2:[],q4:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memo:"" };
+  go("storeSel");
+}
+
+// ── FORM (갓빠삭치킨 홍보물 부착 현장점검) ──────────────────
+function renderFormGbchicken(root) {
+  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
+  const a = S.gbchickenAnswers;
+
+  const qBlocks = GBCHICKEN_FORM.questions.map((q) => {
+    const val = a[q.key];
+    const qNum = q.key.slice(1); // "q1" -> "1"
+    const memoKey = "memoQ" + qNum;
+    let photoHtml = "";
+    if (q.hasPhoto) {
+      const photos = a.photos[q.key] || [];
+      const canAddMore = photos.length < GBCHICKEN_FORM.maxPhotos;
+      const photoThumbs = photos.map((p, pi) => `
+        <div class="preview-container" style="display:inline-block;margin-right:6px">
+          <img src="${p.image}" class="preview-img" onclick="openImageModal('${p.image}')">
+          <button class="remove-img" onclick="removeGbchickenImage('${q.key}',${pi})">✕</button>
+        </div>`).join("");
+      photoHtml = `
+        <div style="margin-top:12px">
+          <div style="font-size:12px;color:var(--sub);margin-bottom:6px">사진 첨부 (최대 ${GBCHICKEN_FORM.maxPhotos}장${val==='Y' ? ', 최소 1장 필수' : ', 선택'})</div>
+          <div id="gbchickenimg-preview-${q.key}">${photoThumbs}</div>
+          ${canAddMore ? `
+          <label class="img-upload-btn" for="gbchickenimg-${q.key}">📷 사진 첨부
+            <input type="file" id="gbchickenimg-${q.key}" accept="image/*" style="display:none" onchange="handleGbchickenImage('${q.key}',this)">
+          </label>
+          <span id="gbchickenimg-status-${q.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>` : ""}
+        </div>`;
+    }
+    return `
+      <div class="question-card">
+        <span class="q-title">Q${qNum}. ${q.label}</span>
+        ${q.hint ? `<div style="font-size:12px;color:var(--sub);margin-top:4px">${q.hint}</div>` : ""}
+        <div class="answer-row" style="margin-top:10px">
+          <button class="ans-btn ans-yes ${val==='Y'?'selected':''}" onclick="setGbchickenAnswer('${q.key}','Y')">✅ Y</button>
+          <button class="ans-btn ans-no ${val==='N'?'selected':''}" onclick="setGbchickenAnswer('${q.key}','N')">❌ N</button>
+        </div>
+        ${photoHtml}
+        <div class="memo-wrap" style="margin-top:12px">
+          <input type="text" class="memo-input"
+            placeholder="Q${qNum} 관련 메모 (선택, 최대 ${GBCHICKEN_FORM.memoMaxLen}자)"
+            maxlength="${GBCHICKEN_FORM.memoMaxLen}"
+            oninput="updateGbchickenQMemo('${memoKey}',this.value)"
+            value="${escapeHtml(a[memoKey] || "")}" />
+        </div>
+      </div>`;
+  }).join("");
+
+  root.innerHTML = `
+    <div class="sticky-header" style="display:flex;align-items:center;gap:8px;padding:16px;background:white;border-bottom:1px solid var(--border)">
+      <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
+      <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
+        <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
+        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">갓빠삭치킨 홍보물 부착 현장점검 · ${roleLabel}</span>
+      </div>
+    </div>
+    <div class="form-body">
+      ${qBlocks}
+
+      <div class="question-card">
+        <span class="q-title">전체 메모 (선택)</span>
+        <div class="memo-wrap" style="margin-top:10px">
+          <input type="text" id="gbchickenMemo" class="memo-input"
+            placeholder="점검 간 특이사항 (선택, 최대 ${GBCHICKEN_FORM.memoMaxLen}자)"
+            maxlength="${GBCHICKEN_FORM.memoMaxLen}"
+            oninput="updateGbchickenMemo(this.value)"
+            value="${escapeHtml(a.memo || "")}" />
+          <span class="memo-counter" id="gbchickenMemoCnt">${(a.memo||"").length}/${GBCHICKEN_FORM.memoMaxLen}</span>
+        </div>
+      </div>
+
+      <div class="submit-section">
+        <div id="submitWarning" class="submit-warning" style="display:none">⚠️ 필수 항목을 확인해주세요.</div>
+        <button class="btn-submit" onclick="submitFormGbchicken()">점검 제출하기</button>
+      </div>
+    </div>`;
+}
+
+function setGbchickenAnswer(qKey, val) {
+  S.gbchickenAnswers[qKey] = val;
+  sessionSave();
+  renderFormGbchicken(document.getElementById("app"));
+}
+
+function updateGbchickenQMemo(memoKey, val) {
+  S.gbchickenAnswers[memoKey] = val;
+  sessionSave();
+}
+
+function updateGbchickenMemo(val) {
+  S.gbchickenAnswers.memo = val;
+  const cnt = document.getElementById("gbchickenMemoCnt");
+  if (cnt) cnt.textContent = `${val.length}/${GBCHICKEN_FORM.memoMaxLen}`;
+}
+
+async function handleGbchickenImage(qKey, input) {
+  const file = input.files[0]; if (!file) return;
+  const existing = S.gbchickenAnswers.photos[qKey] || [];
+  if (existing.length >= GBCHICKEN_FORM.maxPhotos) {
+    alert(`사진은 최대 ${GBCHICKEN_FORM.maxPhotos}장까지 첨부할 수 있습니다.`);
+    input.value = "";
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    alert("파일 크기가 너무 큽니다. (20MB 이하만 가능)\n더 낮은 화질로 촬영하거나 갤러리에서 다른 사진을 선택해주세요.");
+    input.value = "";
+    return;
+  }
+  const statusEl = document.getElementById(`gbchickenimg-status-${qKey}`);
+  if (statusEl) statusEl.textContent = "⏳ 처리 중...";
+  let compressed;
+  try {
+    compressed = await compressImage(file, 400, 0.35);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = "";
+    alert("⚠️ 사진 처리에 실패했습니다: " + e.message + "\n다른 사진으로 다시 시도해주세요.");
+    input.value = "";
+    return;
+  }
+  if (statusEl) statusEl.textContent = "⏳ 업로드 중...";
+  const path = `inspections_gbchicken/${S.storeCode}/${Date.now()}_${qKey}_${existing.length}.jpg`;
+  const { ok, url } = await uploadImageToStorage(compressed, path);
+  existing.push({ image: ok ? url : compressed });
+  S.gbchickenAnswers.photos[qKey] = existing;
+  sessionSave();
+  input.value = "";
+  renderFormGbchicken(document.getElementById("app"));
+}
+
+function removeGbchickenImage(qKey, idx) {
+  const arr = S.gbchickenAnswers.photos[qKey] || [];
+  arr.splice(idx, 1);
+  S.gbchickenAnswers.photos[qKey] = arr;
+  sessionSave();
+  renderFormGbchicken(document.getElementById("app"));
+}
+
+async function submitFormGbchicken() {
+  if (!_gbchickenEnabled) {
+    alert("현재 갓빠삭치킨 홍보물 부착 현장점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
+    return;
+  }
+  const a = S.gbchickenAnswers;
+  const warnEl = document.getElementById("submitWarning");
+  const showWarn = (msg) => {
+    if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; }
+    alert("⚠️ " + msg + "\n제출되지 않았습니다.");
+  };
+
+  for (const q of GBCHICKEN_FORM.questions) {
+    const qNum = q.key.slice(1);
+    if (a[q.key] !== "Y" && a[q.key] !== "N") { showWarn(`Q${qNum} (${q.label})를 선택해주세요.`); return; }
+    if (q.hasPhoto && a[q.key] === "Y" && (a.photos[q.key]||[]).length === 0) {
+      showWarn(`Q${qNum}에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.`);
+      return;
+    }
+  }
+
+  // 전체 이미지 용량 체크 (Firestore 1MB 문서 한도 고려)
+  const gbTotalSize = Object.values(a.photos||{}).reduce((sum, arr) =>
+    sum + (arr||[]).reduce((s2,p) => s2 + (p?.image ? Math.round(p.image.length*0.75) : 0), 0), 0);
+  if (gbTotalSize > 900 * 1024) {
+    showWarn(`첨부 이미지 총 용량이 너무 큽니다. (현재 ${Math.round(gbTotalSize/1024)}KB / 한도 900KB) 일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
+    return;
+  }
+
+  if (warnEl) warnEl.style.display = "none";
+
+  try {
+    const payload = {
+      storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
+      writerName: S.writerName, role: S.role,
+      inspType: "최초", // 갓빠삭치킨 홍보물 부착 현장점검은 최초/보완 구분 없음 (작업지시서 기준)
+      visitDate: S.visitDate,
+      gbchickenAnswers: {
+        q1: a.q1, q2: a.q2, q3: a.q3, q4: a.q4,
+        photos: a.photos,
+        memoQ1: (a.memoQ1 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
+        memoQ2: (a.memoQ2 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
+        memoQ3: (a.memoQ3 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
+        memoQ4: (a.memoQ4 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
+        memo: (a.memo || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
+      },
+      needsFollowup: !(a.q1 === "Y" && a.q2 === "Y" && ((a.q3==="Y"&&a.q4==="Y")||(a.q3==="N"&&a.q4==="N"))),
+      createdAt: new Date(),
+    };
+    // AC(SV)가 정상 조건 만족으로 제출한 건은 담당 팀장 승인 필요(단일 단계 — 작업지시서 "SV-TL 2단계",
+    // 그룹장 승인 없음). TL/GL/관리자 본인점검은 승인 없이 즉시 완료.
+    if (S.role === "sv" && !payload.needsFollowup) {
+      payload.tlApproved = false;
+    }
+    await addDoc(collection(db, "surveys_gbchicken"), payload);
+
+    sessionClear();
+    cacheInvalidate("dashboardGbchicken");
+    cacheInvalidate("recordsGbchicken");
+    S.history = [];
+    alert("✅ 점검이 제출되었습니다.");
+    go("homeGbchicken");
+  } catch(e) {
+    alert("제출 중 오류가 발생했습니다: " + e.message);
+  }
+}
+
+function toggleGbchickenEnabled() {
+  _gbchickenEnabled = !_gbchickenEnabled;
+  const wrap  = document.getElementById("toggle_wrap_gbchickenEnabled");
+  const thumb = document.getElementById("toggle_thumb_gbchickenEnabled");
+  if (wrap)  wrap.style.background = _gbchickenEnabled ? "#C2410C" : "#CBD5E0";
+  if (thumb) thumb.style.left      = _gbchickenEnabled ? "23px" : "3px";
+}
+
 // ── 점검 내역 조회 (갓빠삭치킨 홍보물 부착 현장점검) ────────────────
 async function renderRecordsGbchicken(root) {
   if (!_gbchickenEnabled) {
@@ -7579,317 +7900,6 @@ async function downloadExcelGbchicken() {
   const ws = XLSX.utils.aoa_to_sheet(rows);
   XLSX.utils.book_append_sheet(wb, ws, "갓빠삭치킨홍보물부착점검");
   XLSX.writeFile(wb, `갓빠삭치킨홍보물부착점검_${new Date().toISOString().slice(0,10)}.xlsx`);
-}
-
-async function viewRecordDash(docId) {
-  const records = window._dashRecords||[];
-  const found = records.find(r=>r.id===docId);
-  if (!found) return;
-  S.loadedDocId = docId;
-  // 매장 객체 설정 (배지 표시용) - beef 필드 있는 문서 우선
-  const activeStores = window._activeStores || await getActiveStoreData();
-  S.storeObj = activeStores.find(s => s.code === found.storeCode) || null;
-
-  // GL glRejected 건: compare 화면으로 이동 (그룹장 최초점검 결과 + 보완점검 시작 버튼)
-  if (found.role === "gl" && found.glRejected && !found.finalConfirmed && !found.tlConfirmed) {
-    // GL 반려건: loadGLCompareAndShow로 이미지 포함 전체 로드
-    loadGLCompareAndShow(docId);
-    return;
-  }
-
-  // SV/TL건 N항목 보완 대상 (GL은 직접 보완점검 수행 안 함): "점검 시작하기"와 동일 경로 재사용
-  const nItems = Object.values(found.answers||{}).filter(a=>a.value==="N").length;
-  const hasFollowup = !!(found.followupSvAnswers || found.followupTlAnswers);
-  const isClosedStoreD = !!(window._closedMap||new Map()).get(found.storeCode);
-  const needFollowup = found.role !== "gl" && nItems > 0 && !found.finalConfirmed && !hasFollowup && !isClosedStoreD;
-  if (isClosedStoreD && nItems > 0 && !found.finalConfirmed && !hasFollowup && found.role !== "gl") {
-    alert("🚫 폐점된 매장입니다. 보완점검을 진행할 수 없습니다.");
-  }
-  if (needFollowup && ["sv","tl"].includes(_authRole)) {
-    S.role = _authRole;
-    S.writerName = _authName || "";
-    S.storeCode = found.storeCode;
-    S.storeName = found.storeName;
-    S.storeTeam = found.storeTeam;
-    S.inspType = "보완";
-    S.answers = {};
-    await loadPrevNItems(found.storeCode);
-    return;
-  }
-
-  // 이미지 포함 전체 문서 로드 (stripImages된 캐시 대신 getDoc 재조회)
-  await loadCompareData(docId);
-  go("compare");
-}
-
-// ── EXCEL ──────────────────────────────────────────
-async function downloadPDF() {
-  const records = window._dashRecords;
-  if (!records || records.length === 0) { alert("다운로드할 데이터가 없습니다."); return; }
-
-  const today = new Date().toLocaleDateString("ko-KR");
-  const total       = records.length;
-  const hasFirst    = records.filter(r => r.inspType==="최초"||!r.inspType).length;
-  const hasFollowup = records.filter(r => r.followupSvAnswers && Object.values(r.followupSvAnswers||{}).filter(a=>a.value==="N").length===0).length;
-  const pending     = records.filter(r =>
-    !r.finalConfirmed &&
-    Object.values(r.answers||{}).some(a => a.value === "N") &&
-    !r.followupSvAnswers && !r.followupTlAnswers).length;
-  const finalDone   = records.filter(r => r.finalConfirmed).length;
-
-  // 테이블 행 생성
-  const rows = records.map(r => {
-    const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleDateString("ko-KR") : "-";
-    // GL 문서는 Q1~Q11(GL_QUESTIONS) 기준, Q10 제외 N항목
-    const nItems = r.role === "gl"
-      ? Object.entries(r.answers||{}).filter(([k,v]) => Number(k) !== 10 && v.value === "N").length
-      : Object.values(r.answers||{}).filter(a=>a.value==="N").length;
-    const followupN = Object.values(r.followupSvAnswers||{}).filter(a=>a.value==="N").length;
-    let status = "";
-    if (r.finalConfirmed)            status = '<span style="color:#276749;font-weight:700">✅ 최종확인</span>';
-    else if (r.tlConfirmed)          status = '<span style="color:#553C9A;font-weight:700">👥 그룹장확인 대기</span>';
-    else if (r.followupSvAnswers && followupN===0) status = '<span style="color:#2B6CB0;font-weight:700">📋 팀장확인 대기</span>';
-    else if (r.followupSvAnswers)    status = '<span style="color:#C53030;font-weight:700">보완중 N '+followupN+'건</span>';
-    else if (nItems > 0)             status = '<span style="color:#D69E2E;font-weight:700">⏳ 보완필요</span>';
-    else                             status = '<span style="color:#276749">이상없음</span>';
-    return `<tr>
-      <td>${r.storeName||""}</td>
-      <td>${r.storeTeam||""}</td>
-      <td>${r.writerName||""}</td>
-      <td>${dt}</td>
-      <td>${r.inspType||"최초"}점검</td>
-      <td>${nItems > 0 ? '<span style="color:#C53030;font-weight:700">N '+nItems+'건</span>' : '<span style="color:#276749">이상없음</span>'}</td>
-      <td>${status}</td>
-    </tr>`;
-  }).join("");
-
-  const printHTML = `<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<title>신규플랫폼 점검리포트 ${today}</title>
-<style>
-  @page { size: A4 landscape; margin: 15mm; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; font-size: 11px; color: #1A202C; }
-  .header { background: #E53E3E; color: white; padding: 14px 20px; border-radius: 8px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
-  .header-title { font-size: 20px; font-weight: 800; }
-  .header-sub { font-size: 12px; opacity: 0.85; }
-  .stats { display: flex; gap: 10px; margin-bottom: 14px; }
-  .stat { flex: 1; background: #F7F8FA; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px; text-align: center; }
-  .stat-num { font-size: 22px; font-weight: 800; }
-  .stat-label { font-size: 10px; color: #718096; margin-top: 2px; }
-  table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
-  th { background: #E53E3E; color: white; padding: 7px 8px; text-align: left; font-size: 11px; }
-  td { padding: 6px 8px; border-bottom: 1px solid #E2E8F0; vertical-align: middle; }
-  tr:nth-child(even) td { background: #F7F8FA; }
-  .footer { margin-top: 12px; text-align: center; font-size: 10px; color: #718096; }
-</style>
-</head>
-<body>
-  <div class="header">
-    <div>
-      <div class="header-title">신규플랫폼 현장점검 리포트</div>
-      <div class="header-sub">비프 · 피자 · 스파쿨 | 출력일: ${today}</div>
-    </div>
-    <div style="font-size:13px;opacity:0.9">총 ${total}건</div>
-  </div>
-  <div class="stats">
-    <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">전체점검</div></div>
-    <div class="stat"><div class="stat-num" style="color:#3182CE">${hasFirst}</div><div class="stat-label">최초점검</div></div>
-    <div class="stat"><div class="stat-num" style="color:#D69E2E">${pending}</div><div class="stat-label">보완미실시</div></div>
-    <div class="stat"><div class="stat-num" style="color:#2B6CB0">${hasFollowup}</div><div class="stat-label">보완점검완료</div></div>
-    <div class="stat"><div class="stat-num" style="color:#276749">${finalDone}</div><div class="stat-label">최종확인</div></div>
-  </div>
-  <table>
-    <thead><tr><th>매장명</th><th>팀</th><th>SV</th><th>점검일</th><th>유형</th><th>최초결과</th><th>진행상태</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-  <div class="footer">Moms Touch 신규플랫폼 현장점검 시스템 · ${today}</div>
-</body>
-</html>`;
-
-  const win = window.open("", "_blank");
-  win.document.write(printHTML);
-  win.document.close();
-  win.onload = () => {
-    win.print();
-  };
-}
-async function downloadExcel() {
-  const records = window._dashRecords;
-  if(!records||records.length===0) { alert("다운로드할 데이터가 없습니다."); return; }
-  // SheetJS 지연 로딩
-  try {
-    await loadXLSX();
-  } catch(e) {
-    alert("Excel 라이브러리 로드 실패\n인터넷 연결을 확인해주세요."); return;
-  }
-
-  // 헤더: 답변값만 (이미지 제외)
-  const svH  = SV_QUESTIONS.map(q=>`[SV] Q${q.id} ${q.title}`);
-  const tlH  = SV_QUESTIONS.map(q=>`[팀장] Q${q.id} ${q.title}`);
-  const glH  = GL_QUESTIONS.map(q=>`[그룹장] Q${q.id} ${q.title}`);
-  const confirmH = ["팀장확인자","팀장확인일시","그룹장확인일시","최종확인여부","반려여부","보완횟수","반려횟수","보완이력요약"];
-  const dateH    = ["최초점검일","보완점검일"];
-
-  const rows = [["매장코드","매장명","팀","점검유형","역할","점검자","방문일시",...svH,...tlH,...glH,...confirmH,...dateH]];
-
-  const roleLabelMap = { sv:"SV", tl:"팀장", gl:"그룹장" };
-  const historyEventLabelMap = { submit_sv:"제출(SV)", submit_tl:"제출(팀장)", reject_tl:"반려(팀장)", reject_gl:"반려(그룹장)" };
-
-  records.forEach(r => {
-    const addRow = (type, role, name, date, answers, tla, gla) => {
-      if (!name && !Object.keys(answers||{}).length) return;
-
-      const svVals = SV_QUESTIONS.map(q=> answers?.[q.id]?.value||"");
-      const tlVals = SV_QUESTIONS.map(q=> tla?.[q.id]?.value||"");
-      const glVals = GL_QUESTIONS.map(q=> gla?.[q.id]?.value||"");
-      const history = Array.isArray(r.followupHistory) ? r.followupHistory : [];
-      const submitCount = history.filter(h => h.event==="submit_sv"||h.event==="submit_tl").length;
-      const rejectCount = history.filter(h => h.event==="reject_tl"||h.event==="reject_gl").length;
-      const historySummary = [...history].sort((a,b) => {
-        const at = a.at?.seconds ?? (a.at ? new Date(a.at).getTime()/1000 : 0);
-        const bt = b.at?.seconds ?? (b.at ? new Date(b.at).getTime()/1000 : 0);
-        return at - bt;
-      }).map(h => historyEventLabelMap[h.event] || h.event).join(" → ");
-      const confirmVals = [
-        r.tlConfirmerName||"",
-        r.tlConfirmedAt ? fmtDateExcel(r.tlConfirmedAt) : "",
-        r.finalConfirmedAt ? fmtDateExcel(r.finalConfirmedAt) : "",
-        r.finalConfirmed ? "Y" : "N",
-        (r.tlRejected || r.glRejected) ? "Y" : "N",
-        submitCount,
-        rejectCount,
-        historySummary,
-      ];
-      // 최초점검일: visitDate
-      // 보완점검일: N값 있으면 followup 날짜, 없으면(해당없음) 빈칸
-      const firstDate   = r.visitDate ? fmtDateExcel(r.visitDate) : "";
-      const hasNItems   = Object.values(r.answers||{}).some(a => a.value === "N");
-      const followupDate = hasNItems
-        ? (r.followupSvVisitDate ? fmtDateExcel(r.followupSvVisitDate)
-          : r.followupTlVisitDate ? fmtDateExcel(r.followupTlVisitDate) : "")
-        : ""; // N없음 → 보완점검 해당없음이므로 빈칸 (최초점검일 복사 안 함)
-      const dateVals = [firstDate, followupDate];
-      rows.push([r.storeCode,r.storeName,r.storeTeam,type,role,name||"",fmtDateExcel(date),...svVals,...tlVals,...glVals,...confirmVals,...dateVals]);
-    };
-    const roleLabel = roleLabelMap[r.role] || "SV";
-    // GL 자체 최초점검(role==="gl")은 SV 문항과 무관한 별도 11문항 체크리스트이므로
-    // SV Q1~Q16 칸에는 값을 넣지 않고(빈칸), 그룹장 Q1~Q11 칸(glAnswers)에만 표시한다.
-    const svAnswersForRow = r.role === "gl" ? null : r.answers;
-    addRow("최초점검", roleLabel, r.writerName, r.visitDate, svAnswersForRow, r.tlAnswers, r.glAnswers);
-    // 보완점검: SV 또는 TL 누가 진행했는지에 따라 동적으로 role/name/date/answers 결정
-    // (GL 최초점검 N → TL 보완 등, 보완 주체가 SV가 아닌 경우도 별도 "보완점검" 행으로 정확히 출력)
-    const hasSvFu = r.followupSvAnswers && Object.keys(r.followupSvAnswers).length > 0;
-    const hasTlFu = r.followupTlAnswers && Object.keys(r.followupTlAnswers).length > 0;
-    if (hasSvFu || hasTlFu) {
-      const fuRole = hasSvFu ? "SV" : "팀장";
-      const fuName = hasSvFu ? (r.followupSvWriterName||"") : (r.tlConfirmerName||r.followupTlWriterName||"");
-      const fuDate = hasSvFu ? r.followupSvVisitDate : (r.followupTlVisitDate||r.followupSvVisitDate);
-      const fuAnswers = hasSvFu ? r.followupSvAnswers : r.followupTlAnswers;
-      addRow("보완점검", fuRole, fuName, fuDate, fuAnswers, r.followupTlAnswers, r.followupGlAnswers);
-    }
-  });
-
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-
-  // 이미지 Data URL 셀 처리: URL 텍스트로 저장 + 열 너비 고정
-  const colCount = rows[0].length;
-  for (let ri = 1; ri < rows.length; ri++) {
-    for (let ci = 0; ci < colCount; ci++) {
-      const val = rows[ri][ci];
-      if (typeof val === "string" && val.startsWith("data:image")) {
-        const cellRef = XLSX.utils.encode_cell({r: ri, c: ci});
-        if (ws[cellRef]) {
-          // Data URL을 그대로 텍스트로 저장 (브라우저 주소창에 붙여넣으면 이미지 열림)
-          ws[cellRef].v = val;
-          ws[cellRef].t = "s";
-        }
-      }
-    }
-  }
-
-  // 열 너비 고정 - 이미지 URL 열은 고정폭(넘쳐도 옆 셀 침범 안 함)
-  const colW = [{wch:10},{wch:16},{wch:8},{wch:8},{wch:10},{wch:10},{wch:18},
-    ...Array(SV_QUESTIONS.length).fill({wch:10}),
-    ...Array(SV_QUESTIONS.length).fill({wch:10}),
-    ...Array(GL_QUESTIONS.length).fill({wch:10}),
-    {wch:12},{wch:18},{wch:18},{wch:10},{wch:10},{wch:9},{wch:9},{wch:40},
-    {wch:14},{wch:14}]; // 최초점검일, 보완점검일
-  ws["!cols"] = colW;
-
-  XLSX.utils.book_append_sheet(wb,ws,"점검이력");
-  try {
-    XLSX.writeFile(wb,`신규플랫폼_점검이력_${new Date().toISOString().slice(0,10)}.xlsx`);
-  } catch(e) {
-    alert("Excel 다운로드 오류: " + e.message);
-    console.error("Excel error:", e);
-  }
-}
-
-// ── UTILS ──────────────────────────────────────────
-function openImageModal(src) {
-  const modal = document.createElement("div");
-  modal.className = "img-modal";
-  modal.innerHTML = `<div class="img-modal-bg" onclick="this.parentElement.remove()"></div>
-    <img src="${src}" class="img-modal-img">
-    <button class="img-modal-close" onclick="this.parentElement.remove()">✕</button>`;
-  document.body.appendChild(modal);
-}
-function go(screen) {
-  if (!S.history) S.history = [];
-  if (S.screen && S.screen !== screen) S.history.push(S.screen);
-  S.screen = screen;
-  render();
-}
-function goBack() {
-  if (!S.history) S.history = [];
-  const prev = S.history.pop();
-  if (prev) { S.screen = prev; render(); }
-  else goCategoryHome();
-}
-// 현재 카테고리(신규플랫폼/신제품/스파쿨)에 맞는 홈 화면으로 이동하는 공용 헬퍼.
-// 각 화면에서 개별적으로 "S.category==='np'?...":..." 분기를 반복하면 한 곳만 놓쳐도
-// 엉뚱한 홈으로 보내는 실수가 나오기 쉬우므로 반드시 이 함수 하나만 쓸 것.
-// 카테고리(신규플랫폼/신제품/스파쿨)를 명시적으로 세팅한 뒤 해당 홈으로 이동.
-// 허브 카드에서 호출 — 인라인 onclick은 모듈스코프 변수(S)에 직접 접근 불가하므로
-// 반드시 이런 래퍼 함수를 통해서만 S를 건드려야 함.
-function enterCategory(category, screen) {
-  S.category = category;
-  go(screen);
-}
-
-function goCategoryHome() {
-  go(S.category === "np" ? "homeNP" : S.category === "spacool" ? "homeSpacool" : S.category === "gbchicken" ? "homeGbchicken" : "home");
-}
-function confirmBack() { if(confirm("작성 중인 내용이 사라집니다. 돌아가시겠습니까?")) { S.history = []; goCategoryHome(); } }
-function nowDTL() {
-  const now=new Date(), pad=n=>String(n).padStart(2,"0");
-  return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-}
-function fmtDate(v) {
-  if (!v) return "-";
-  try {
-    // Firestore Timestamp 객체(.seconds 필드 보유)는 new Date()가 직접 못 읽어서 "Invalid Date"가 남 —
-    // followupHistory처럼 배열 안에 중첩 저장된 시각값은 읽어올 때 Timestamp 객체 형태로 돌아옴
-    const d = (v && typeof v === "object" && typeof v.seconds === "number") ? new Date(v.seconds * 1000) : new Date(v);
-    if (isNaN(d.getTime())) return "-";
-    return d.toLocaleString("ko-KR");
-  } catch { return "-"; }
-}
-// 엑셀 export 전용: 자릿수가 항상 고정된 형식(YYYY-MM-DD HH:mm)으로 저장해
-// 분석 도구에서 .slice(0,10) 등으로 날짜만 잘라써도 항상 정확히 잘리도록 함.
-// (fmtDate는 화면 표시용이라 한국어 로케일 형식을 그대로 유지하고, 여긴 별도 함수로 분리)
-function fmtDateExcel(v) {
-  if (!v) return "-";
-  try {
-    const d = (v && typeof v === "object" && typeof v.seconds === "number") ? new Date(v.seconds * 1000) : new Date(v);
-    if (isNaN(d.getTime())) return "-";
-    const pad = n => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  } catch { return "-"; }
 }
 
 Object.assign(window, {
