@@ -382,7 +382,7 @@ const SPACOOL_FORM = {
 const GBCHICKEN_FORM = {
   questions: [
     { key:"q1", label:"홍보물(메인포스터, POS 와블러)은 정위치에 부착되어 있는가?", hint:"메인포스터 부착 후 매장 전면 사진 포함하도록 첨부 필수", hasPhoto:true },
-    { key:"q2", label:"영양성분&알레르기 표기, 원산지 표기는 최신화 되어 있는가?", hint:"영양성분&알레르기(7/20), 원산지 표기(7/23) 날짜 표기가 보이도록 첨부", hasPhoto:true },
+    { key:"q2", label:"영양성분&알레르기 표기, 원산지 표기는 최신화 되어 있는가?", hint:"터치단독: 영양성분&알레르기(7/20), 원산지 표기(7/23)<br>S&S: 영양성분&알레르기(7/20, 7/23 각각), 원산지 표기(7/23, S&S용)", hasPhoto:true },
     { key:"q3", label:"해당점은 가맹본부 배달 권장가격 준수 매장인가?", hasPhoto:false },
     { key:"q4", label:"가맹본부 배달 권장가격 준수 스티커가 정위치에 부착되어 있는가?", hasPhoto:true },
   ],
@@ -3165,6 +3165,7 @@ function sessionSave() {
       answers:     S.answers,
       npAnswers:   S.npAnswers,
       spacoolAnswers: S.spacoolAnswers,
+      gbchickenAnswers: S.gbchickenAnswers,
       loadedDocId: S.loadedDocId,
       prevNItems:  S.prevNItems,
       storeObj:    S.storeObj,
@@ -3198,6 +3199,8 @@ function sessionRestore() {
     S.answers    = data.answers || {};
     S.npAnswers  = data.npAnswers || null;
     S.spacoolAnswers = data.spacoolAnswers || null;
+    S.gbchickenAnswers = data.gbchickenAnswers ||
+      (data.category === "gbchicken" ? { q1:null, q2:null, q3:null, q4:null, photos:{q1:[],q2:[],q4:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memo:"" } : null);
     S.loadedDocId= data.loadedDocId;
     S.prevNItems = data.prevNItems || [];
     S.storeObj   = data.storeObj || null;
