@@ -1517,6 +1517,210 @@ async function submitFormSpacool() {
   }
 }
 
+// ── FORM (갓빠삭치킨 홍보물 부착 현장점검) ──────────────────
+function renderFormGbchicken(root) {
+  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
+  const a = S.gbchickenAnswers;
+
+  const qBlocks = GBCHICKEN_FORM.questions.map((q) => {
+    const val = a[q.key];
+    const qNum = q.key.slice(1); // "q1" -> "1"
+    const memoKey = "memoQ" + qNum;
+    let photoHtml = "";
+    if (q.hasPhoto) {
+      const photos = a.photos[q.key] || [];
+      const canAddMore = photos.length < GBCHICKEN_FORM.maxPhotos;
+      const photoThumbs = photos.map((p, pi) => `
+        <div class="preview-container" style="display:inline-block;margin-right:6px">
+          <img src="${p.image}" class="preview-img" onclick="openImageModal('${p.image}')">
+          <button class="remove-img" onclick="removeGbchickenImage('${q.key}',${pi})">✕</button>
+        </div>`).join("");
+      photoHtml = `
+        <div style="margin-top:12px">
+          <div style="font-size:12px;color:var(--sub);margin-bottom:6px">사진 첨부 (최대 ${GBCHICKEN_FORM.maxPhotos}장${val==='Y' ? ', 최소 1장 필수' : ', 선택'})</div>
+          <div id="gbchickenimg-preview-${q.key}">${photoThumbs}</div>
+          ${canAddMore ? `
+          <label class="img-upload-btn" for="gbchickenimg-${q.key}">📷 사진 첨부
+            <input type="file" id="gbchickenimg-${q.key}" accept="image/*" style="display:none" onchange="handleGbchickenImage('${q.key}',this)">
+          </label>
+          <span id="gbchickenimg-status-${q.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>` : ""}
+        </div>`;
+    }
+    return `
+      <div class="question-card">
+        <span class="q-title">Q${qNum}. ${q.label}</span>
+        ${q.hint ? `<div style="font-size:12px;color:var(--sub);margin-top:4px">${q.hint}</div>` : ""}
+        <div class="answer-row" style="margin-top:10px">
+          <button class="ans-btn ans-yes ${val==='Y'?'selected':''}" onclick="setGbchickenAnswer('${q.key}','Y')">✅ Y</button>
+          <button class="ans-btn ans-no ${val==='N'?'selected':''}" onclick="setGbchickenAnswer('${q.key}','N')">❌ N</button>
+        </div>
+        ${photoHtml}
+        <div class="memo-wrap" style="margin-top:12px">
+          <input type="text" class="memo-input"
+            placeholder="Q${qNum} 관련 메모 (선택, 최대 ${GBCHICKEN_FORM.memoMaxLen}자)"
+            maxlength="${GBCHICKEN_FORM.memoMaxLen}"
+            oninput="updateGbchickenQMemo('${memoKey}',this.value)"
+            value="${escapeHtml(a[memoKey] || "")}" />
+        </div>
+      </div>`;
+  }).join("");
+
+  root.innerHTML = `
+    <div class="sticky-header" style="display:flex;align-items:center;gap:8px;padding:16px;background:white;border-bottom:1px solid var(--border)">
+      <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
+      <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
+        <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
+        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">갓빠삭치킨 홍보물 부착 현장점검 · ${roleLabel}</span>
+      </div>
+    </div>
+    <div class="form-body">
+      ${qBlocks}
+
+      <div class="question-card">
+        <span class="q-title">전체 메모 (선택)</span>
+        <div class="memo-wrap" style="margin-top:10px">
+          <input type="text" id="gbchickenMemo" class="memo-input"
+            placeholder="점검 간 특이사항 (선택, 최대 ${GBCHICKEN_FORM.memoMaxLen}자)"
+            maxlength="${GBCHICKEN_FORM.memoMaxLen}"
+            oninput="updateGbchickenMemo(this.value)"
+            value="${escapeHtml(a.memo || "")}" />
+          <span class="memo-counter" id="gbchickenMemoCnt">${(a.memo||"").length}/${GBCHICKEN_FORM.memoMaxLen}</span>
+        </div>
+      </div>
+
+      <div class="submit-section">
+        <div id="submitWarning" class="submit-warning" style="display:none">⚠️ 필수 항목을 확인해주세요.</div>
+        <button class="btn-submit" onclick="submitFormGbchicken()">점검 제출하기</button>
+      </div>
+    </div>`;
+}
+
+function setGbchickenAnswer(qKey, val) {
+  S.gbchickenAnswers[qKey] = val;
+  sessionSave();
+  renderFormGbchicken(document.getElementById("app"));
+}
+
+function updateGbchickenQMemo(memoKey, val) {
+  S.gbchickenAnswers[memoKey] = val;
+  sessionSave();
+}
+
+function updateGbchickenMemo(val) {
+  S.gbchickenAnswers.memo = val;
+  const cnt = document.getElementById("gbchickenMemoCnt");
+  if (cnt) cnt.textContent = `${val.length}/${GBCHICKEN_FORM.memoMaxLen}`;
+}
+
+async function handleGbchickenImage(qKey, input) {
+  const file = input.files[0]; if (!file) return;
+  const existing = S.gbchickenAnswers.photos[qKey] || [];
+  if (existing.length >= GBCHICKEN_FORM.maxPhotos) {
+    alert(`사진은 최대 ${GBCHICKEN_FORM.maxPhotos}장까지 첨부할 수 있습니다.`);
+    input.value = "";
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    alert("파일 크기가 너무 큽니다. (20MB 이하만 가능)\n더 낮은 화질로 촬영하거나 갤러리에서 다른 사진을 선택해주세요.");
+    input.value = "";
+    return;
+  }
+  const statusEl = document.getElementById(`gbchickenimg-status-${qKey}`);
+  if (statusEl) statusEl.textContent = "⏳ 처리 중...";
+  let compressed;
+  try {
+    compressed = await compressImage(file, 400, 0.35);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = "";
+    alert("⚠️ 사진 처리에 실패했습니다: " + e.message + "\n다른 사진으로 다시 시도해주세요.");
+    input.value = "";
+    return;
+  }
+  if (statusEl) statusEl.textContent = "⏳ 업로드 중...";
+  const path = `inspections_gbchicken/${S.storeCode}/${Date.now()}_${qKey}_${existing.length}.jpg`;
+  const { ok, url } = await uploadImageToStorage(compressed, path);
+  existing.push({ image: ok ? url : compressed });
+  S.gbchickenAnswers.photos[qKey] = existing;
+  sessionSave();
+  input.value = "";
+  renderFormGbchicken(document.getElementById("app"));
+}
+
+function removeGbchickenImage(qKey, idx) {
+  const arr = S.gbchickenAnswers.photos[qKey] || [];
+  arr.splice(idx, 1);
+  S.gbchickenAnswers.photos[qKey] = arr;
+  sessionSave();
+  renderFormGbchicken(document.getElementById("app"));
+}
+
+async function submitFormGbchicken() {
+  if (!_gbchickenEnabled) {
+    alert("현재 갓빠삭치킨 홍보물 부착 현장점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
+    return;
+  }
+  const a = S.gbchickenAnswers;
+  const warnEl = document.getElementById("submitWarning");
+  const showWarn = (msg) => {
+    if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; }
+    alert("⚠️ " + msg + "\n제출되지 않았습니다.");
+  };
+
+  for (const q of GBCHICKEN_FORM.questions) {
+    const qNum = q.key.slice(1);
+    if (a[q.key] !== "Y" && a[q.key] !== "N") { showWarn(`Q${qNum} (${q.label})를 선택해주세요.`); return; }
+    if (q.hasPhoto && a[q.key] === "Y" && (a.photos[q.key]||[]).length === 0) {
+      showWarn(`Q${qNum}에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.`);
+      return;
+    }
+  }
+
+  // 전체 이미지 용량 체크 (Firestore 1MB 문서 한도 고려)
+  const gbTotalSize = Object.values(a.photos||{}).reduce((sum, arr) =>
+    sum + (arr||[]).reduce((s2,p) => s2 + (p?.image ? Math.round(p.image.length*0.75) : 0), 0), 0);
+  if (gbTotalSize > 900 * 1024) {
+    showWarn(`첨부 이미지 총 용량이 너무 큽니다. (현재 ${Math.round(gbTotalSize/1024)}KB / 한도 900KB) 일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
+    return;
+  }
+
+  if (warnEl) warnEl.style.display = "none";
+
+  try {
+    const payload = {
+      storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
+      writerName: S.writerName, role: S.role,
+      inspType: "최초", // 갓빠삭치킨 홍보물 부착 현장점검은 최초/보완 구분 없음 (작업지시서 기준)
+      visitDate: S.visitDate,
+      gbchickenAnswers: {
+        q1: a.q1, q2: a.q2, q3: a.q3, q4: a.q4,
+        photos: a.photos,
+        memoQ1: (a.memoQ1 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
+        memoQ2: (a.memoQ2 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
+        memoQ3: (a.memoQ3 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
+        memoQ4: (a.memoQ4 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
+        memo: (a.memo || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
+      },
+      needsFollowup: !(a.q1 === "Y" && a.q2 === "Y" && ((a.q3==="Y"&&a.q4==="Y")||(a.q3==="N"&&a.q4==="N"))),
+      createdAt: new Date(),
+    };
+    // AC(SV)가 정상 조건 만족으로 제출한 건은 담당 팀장 승인 필요(단일 단계 — 작업지시서 "SV-TL 2단계",
+    // 그룹장 승인 없음). TL/GL/관리자 본인점검은 승인 없이 즉시 완료.
+    if (S.role === "sv" && !payload.needsFollowup) {
+      payload.tlApproved = false;
+    }
+    await addDoc(collection(db, "surveys_gbchicken"), payload);
+
+    sessionClear();
+    cacheInvalidate("dashboardGbchicken");
+    cacheInvalidate("recordsGbchicken");
+    S.history = [];
+    alert("✅ 점검이 제출되었습니다.");
+    go("homeGbchicken");
+  } catch(e) {
+    alert("제출 중 오류가 발생했습니다: " + e.message);
+  }
+}
+
 // ── INSP TYPE ──────────────────────────────────────
 // 이 화면은 startDefaultInspection()에서만 진입한다(신제품/스파쿨/갓빠삭치킨은 각자
 // 시작함수에서 inspType을 직접 "최초"로 세팅하고 이 화면 자체를 건너뜀) — 따라서 신규플랫폼
@@ -7724,7 +7928,7 @@ Object.assign(window, {
     } else {
       sessionClear();
       S.role = null; S.answers = {}; S.storeCode = "";
-      go(S.category === "np" ? "homeNP" : S.category === "spacool" ? "homeSpacool" : "home");
+      go(S.category === "np" ? "homeNP" : S.category === "spacool" ? "homeSpacool" : S.category === "gbchicken" ? "homeGbchicken" : "home");
       return;
     }
   }
