@@ -550,27 +550,30 @@ function renderHub(root) {
           <span class="hub-card-sub" style="display:block">비프 · 피자 · 스파쿨</span>
         </span>
       </button>
-      <button class="hub-card np${_npEnabled ? "" : " disabled"}" ${_npEnabled ? `onclick="enterCategory('np','homeNP')"` : `onclick="alert('현재 관리자 설정에서 비활성화되어 있습니다.')"`}>
+      ${_npEnabled ? `
+      <button class="hub-card np" onclick="enterCategory('np','homeNP')">
         <span class="hub-card-icon" style="background:#FFFBEB;color:#B7791F">P</span>
         <span>
           <span class="hub-card-title">갓빠삭치킨 출시 교육점검</span>
-          <span class="hub-card-sub" style="display:block">${_npEnabled ? "문항 확인하고 점검 시작" : "준비중"}</span>
+          <span class="hub-card-sub" style="display:block">문항 확인하고 점검 시작</span>
         </span>
-      </button>
-      <button class="hub-card spacool${_spacoolEnabled ? "" : " disabled"}" ${_spacoolEnabled ? `onclick="enterCategory('spacool','homeSpacool')"` : `onclick="alert('현재 관리자 설정에서 비활성화되어 있습니다.')"`}>
+      </button>` : ""}
+      ${_spacoolEnabled ? `
+      <button class="hub-card spacool" onclick="enterCategory('spacool','homeSpacool')">
         <span class="hub-card-icon" style="background:#EAF3DE;color:#3B6D11">S</span>
         <span>
           <span class="hub-card-title">스파쿨 프로모션 현장점검</span>
-          <span class="hub-card-sub" style="display:block">${_spacoolEnabled ? "문항 확인하고 점검 시작" : "준비중"}</span>
+          <span class="hub-card-sub" style="display:block">문항 확인하고 점검 시작</span>
         </span>
-      </button>
-      <button class="hub-card np${_gbchickenEnabled ? "" : " disabled"}" ${_gbchickenEnabled ? `onclick="enterCategory('gbchicken','homeGbchicken')"` : `onclick="alert('현재 관리자 설정에서 비활성화되어 있습니다.')"`}>
+      </button>` : ""}
+      ${_gbchickenEnabled ? `
+      <button class="hub-card np" onclick="enterCategory('gbchicken','homeGbchicken')">
         <span class="hub-card-icon" style="background:#FFF0E6;color:#C2410C">G</span>
         <span>
           <span class="hub-card-title">갓빠삭치킨 홍보물 부착 현장점검</span>
-          <span class="hub-card-sub" style="display:block">${_gbchickenEnabled ? "문항 확인하고 점검 시작" : "준비중"}</span>
+          <span class="hub-card-sub" style="display:block">문항 확인하고 점검 시작</span>
         </span>
-      </button>
+      </button>` : ""}
       ${_authRole === "admin" ? `<button class="btn-ghost" onclick="go('photoSetting')" style="color:#6B46C1;border-color:#D6BCFA">⚙️ 관리자 설정</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
