@@ -5751,6 +5751,7 @@ async function renderRecordsNP(root) {
         <button id="rnf_done" onclick="setRecNpFilter('done')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #9AE6B4;background:white;color:#276749;cursor:pointer">완료</button>
         <button id="rnf_pending" onclick="setRecNpFilter('pending')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #F6D384;background:white;color:#B7791F;cursor:pointer">승인대기</button>
         <button id="rnf_needs" onclick="setRecNpFilter('needs')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FEB2B2;background:white;color:#C53030;cursor:pointer">재점검필요</button>
+        <button id="rnf_none" onclick="setRecNpFilter('none')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #CBD5E0;background:white;color:#4A5568;cursor:pointer">미점검</button>
       </div>
       <div id="recListNP"></div>
     </div>`;
@@ -5800,20 +5801,45 @@ async function fetchRecordsNP() {
     if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
 
     const filter = window._recNpFilter || "";
-    if (filter) records = records.filter(r => npStatus(r) === filter);
 
     // 필터 버튼 활성화 스타일
-    const activeStyle = { all:"var(--amber)", done:"#9AE6B4", pending:"#F6D384", needs:"#FEB2B2" };
-    const activeText  = { all:"white", done:"#276749", pending:"#B7791F", needs:"#C53030" };
-    ["all","done","pending","needs"].forEach(k => {
+    const activeStyle = { all:"var(--amber)", done:"#9AE6B4", pending:"#F6D384", needs:"#FEB2B2", none:"#CBD5E0" };
+    const activeText  = { all:"white", done:"#276749", pending:"#B7791F", needs:"#C53030", none:"#2D3748" };
+    ["all","done","pending","needs","none"].forEach(k => {
       const btn = document.getElementById("rnf_"+k);
       if (!btn) return;
-      const map = {all:"", done:"done", pending:"pending", needs:"needs"};
+      const map = {all:"", done:"done", pending:"pending", needs:"needs", none:"none"};
       const isActive = map[k] === filter;
       btn.style.background = isActive ? activeStyle[k] : "white";
       btn.style.color = isActive ? activeText[k] : (k==="all"?"#4A5568":activeText[k]);
       btn.style.fontWeight = isActive ? "600" : "400";
     });
+
+    // 미점검: 문서 자체가 없는 매장 — 담당범위(buildMatchedStoresNP 재사용) 중 위에서 만든
+    // latestByStore(문서 있는 매장 집합)에 없는 매장만 골라서 별도로 렌더링
+    if (filter === "none") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      let notInspected = buildMatchedStoresNP(activeStores, _authName)
+        .filter(s => !latestByStore.has(s.code));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      notInspected.sort((a,b) => a.name.localeCompare(b.name));
+
+      if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
+      let html = `<div class="store-count" style="padding:8px 2px">${notInspected.length}개 매장</div><div class="search-list">`;
+      notInspected.forEach(s => {
+        html += `<div class="search-item" onclick="startInspectionForStoreNP('${s.code}','${escapeHtml(s.name)}','${escapeHtml(s.team||"")}')">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <span class="si-store">${escapeHtml(s.name)}</span>
+            <span class="insp-badge badge-sm">미점검</span>
+          </div>
+          <div class="si-meta">${escapeHtml(s.code)} · ${escapeHtml(s.team||"-")} · 탭하여 점검 시작</div>
+        </div>`;
+      });
+      recList.innerHTML = html + `</div>`;
+      return;
+    }
+
+    if (filter) records = records.filter(r => npStatus(r) === filter);
 
     if (records.length === 0) { recList.innerHTML = `<p class="error-text">검색 결과가 없습니다.</p>`; return; }
     let html = `<div class="store-count" style="padding:8px 2px">${records.length}건</div><div class="search-list">`;
@@ -5840,6 +5866,14 @@ async function fetchRecordsNP() {
   }
 }
 
+// 미점검 매장 목록(점검내역조회)에서 클릭 시 바로 점검 시작 — startNpInspection()과 동일한
+// 초기화 후 selectStore()로 이어서, 기존 매장선택 로직을 그대로 재사용(신규 로직 최소화)
+function startInspectionForStoreNP(code, name, team) {
+  S.category = "np";
+  S.role = _authRole; S.inspType = "최초"; S.answers = {};
+  S.npAnswers = { q1:null, attendees:[""], photos:{battering:null,breading:null,final:null}, memo:"" };
+  selectStore(code, name, team);
+}
 function setRecNpFilter(val) {
   window._recNpFilter = val;
   fetchRecordsNP();
@@ -6714,6 +6748,7 @@ async function renderRecordsSpacool(root) {
         <button id="rsf_pending_gl" onclick="setRecSpacoolFilter('pending_gl')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #F6D384;background:white;color:#B7791F;cursor:pointer">그룹장승인대기</button>
         <button id="rsf_needs" onclick="setRecSpacoolFilter('needs')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FEB2B2;background:white;color:#C53030;cursor:pointer">재점검필요</button>
         <button id="rsf_not_delivered" onclick="setRecSpacoolFilter('not_delivered')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #D6BCFA;background:white;color:#805AD5;cursor:pointer">홍보물미입고</button>
+        <button id="rsf_none" onclick="setRecSpacoolFilter('none')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #CBD5E0;background:white;color:#4A5568;cursor:pointer">미점검</button>
       </div>
       <div id="recListSpacool"></div>
     </div>`;
@@ -6762,19 +6797,44 @@ async function fetchRecordsSpacool() {
     if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
 
     const filter = window._recSpacoolFilter || "";
-    if (filter) records = records.filter(r => spacoolStatus(r) === filter);
 
-    const activeStyle = { all:"#3B6D11", done:"#9AE6B4", pending_tl:"#F6D384", pending_gl:"#F6D384", needs:"#FEB2B2", not_delivered:"#D6BCFA" };
-    const activeText  = { all:"white", done:"#276749", pending_tl:"#B7791F", pending_gl:"#B7791F", needs:"#C53030", not_delivered:"#805AD5" };
-    ["all","done","pending_tl","pending_gl","needs","not_delivered"].forEach(k => {
+    const activeStyle = { all:"#3B6D11", done:"#9AE6B4", pending_tl:"#F6D384", pending_gl:"#F6D384", needs:"#FEB2B2", not_delivered:"#D6BCFA", none:"#CBD5E0" };
+    const activeText  = { all:"white", done:"#276749", pending_tl:"#B7791F", pending_gl:"#B7791F", needs:"#C53030", not_delivered:"#805AD5", none:"#2D3748" };
+    ["all","done","pending_tl","pending_gl","needs","not_delivered","none"].forEach(k => {
       const btn = document.getElementById("rsf_"+k);
       if (!btn) return;
-      const map = {all:"", done:"done", pending_tl:"pending_tl", pending_gl:"pending_gl", needs:"needs", not_delivered:"not_delivered"};
+      const map = {all:"", done:"done", pending_tl:"pending_tl", pending_gl:"pending_gl", needs:"needs", not_delivered:"not_delivered", none:"none"};
       const isActive = map[k] === filter;
       btn.style.background = isActive ? activeStyle[k] : "white";
       btn.style.color = isActive ? activeText[k] : (k==="all"?"#4A5568":activeText[k]);
       btn.style.fontWeight = isActive ? "600" : "400";
     });
+
+    // 미점검: 문서 자체가 없는 매장 — 담당범위(buildMatchedStoresSpacool 재사용) 중 위에서 만든
+    // latestByStore(문서 있는 매장 집합)에 없는 매장만 골라서 별도로 렌더링
+    if (filter === "none") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      let notInspected = buildMatchedStoresSpacool(activeStores, _authName)
+        .filter(s => !latestByStore.has(s.code));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      notInspected.sort((a,b) => a.name.localeCompare(b.name));
+
+      if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
+      let html = `<div class="store-count" style="padding:8px 2px">${notInspected.length}개 매장</div><div class="search-list">`;
+      notInspected.forEach(s => {
+        html += `<div class="search-item" onclick="startInspectionForStoreSpacool('${s.code}','${escapeHtml(s.name)}','${escapeHtml(s.team||"")}')">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <span class="si-store">${escapeHtml(s.name)}</span>
+            <span class="insp-badge badge-sm">미점검</span>
+          </div>
+          <div class="si-meta">${escapeHtml(s.code)} · ${escapeHtml(s.team||"-")} · 탭하여 점검 시작</div>
+        </div>`;
+      });
+      recList.innerHTML = html + `</div>`;
+      return;
+    }
+
+    if (filter) records = records.filter(r => spacoolStatus(r) === filter);
 
     if (records.length === 0) { recList.innerHTML = `<p class="error-text">검색 결과가 없습니다.</p>`; return; }
     let html = `<div class="store-count" style="padding:8px 2px">${records.length}건</div><div class="search-list">`;
@@ -6800,6 +6860,15 @@ async function fetchRecordsSpacool() {
   } catch(e) {
     recList.innerHTML = `<p class="error-text">오류: ${e.message}</p>`;
   }
+}
+
+// 미점검 매장 목록(점검내역조회)에서 클릭 시 바로 점검 시작 — startSpacoolInspection()과 동일한
+// 초기화 후 selectStore()로 이어서, 기존 매장선택 로직을 그대로 재사용
+function startInspectionForStoreSpacool(code, name, team) {
+  S.category = "spacool";
+  S.role = _authRole; S.inspType = "최초"; S.answers = {};
+  S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
+  selectStore(code, name, team);
 }
 
 function setRecSpacoolFilter(val) {
@@ -7400,6 +7469,7 @@ async function renderRecordsGbchicken(root) {
         <button id="rgf_done" onclick="setRecGbchickenFilter('done')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #9AE6B4;background:white;color:#276749;cursor:pointer">완료</button>
         <button id="rgf_pending" onclick="setRecGbchickenFilter('pending')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #F6D384;background:white;color:#B7791F;cursor:pointer">승인대기</button>
         <button id="rgf_needs" onclick="setRecGbchickenFilter('needs')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FEB2B2;background:white;color:#C53030;cursor:pointer">재점검필요</button>
+        <button id="rgf_none" onclick="setRecGbchickenFilter('none')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #CBD5E0;background:white;color:#4A5568;cursor:pointer">미점검</button>
       </div>
       <div id="recListGbchicken"></div>
     </div>`;
@@ -7446,19 +7516,45 @@ async function fetchRecordsGbchicken() {
     if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
 
     const filter = window._recGbchickenFilter || "";
-    if (filter) records = records.filter(r => gbchickenStatus(r) === filter);
 
-    const activeStyle = { all:"var(--amber)", done:"#9AE6B4", pending:"#F6D384", needs:"#FEB2B2" };
-    const activeText  = { all:"white", done:"#276749", pending:"#B7791F", needs:"#C53030" };
-    ["all","done","pending","needs"].forEach(k => {
+    const activeStyle = { all:"var(--amber)", done:"#9AE6B4", pending:"#F6D384", needs:"#FEB2B2", none:"#CBD5E0" };
+    const activeText  = { all:"white", done:"#276749", pending:"#B7791F", needs:"#C53030", none:"#2D3748" };
+    ["all","done","pending","needs","none"].forEach(k => {
       const btn = document.getElementById("rgf_"+k);
       if (!btn) return;
-      const map = {all:"", done:"done", pending:"pending", needs:"needs"};
+      const map = {all:"", done:"done", pending:"pending", needs:"needs", none:"none"};
       const isActive = map[k] === filter;
       btn.style.background = isActive ? activeStyle[k] : "white";
       btn.style.color = isActive ? activeText[k] : (k==="all"?"#4A5568":activeText[k]);
       btn.style.fontWeight = isActive ? "600" : "400";
     });
+
+    // 미점검: 문서 자체가 없는 매장 — 담당범위(buildMatchedStoresNP 재사용, 갓빠삭치킨은
+    // 신제품과 동일한 매장범위 사용) 중 위에서 만든 latestByStore(문서 있는 매장 집합)에
+    // 없는 매장만 골라서 별도로 렌더링
+    if (filter === "none") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      let notInspected = buildMatchedStoresNP(activeStores, _authName)
+        .filter(s => !latestByStore.has(s.code));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      notInspected.sort((a,b) => a.name.localeCompare(b.name));
+
+      if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
+      let html = `<div class="store-count" style="padding:8px 2px">${notInspected.length}개 매장</div><div class="search-list">`;
+      notInspected.forEach(s => {
+        html += `<div class="search-item" onclick="startInspectionForStoreGbchicken('${s.code}','${escapeHtml(s.name)}','${escapeHtml(s.team||"")}')">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <span class="si-store">${escapeHtml(s.name)}</span>
+            <span class="insp-badge badge-sm">미점검</span>
+          </div>
+          <div class="si-meta">${escapeHtml(s.code)} · ${escapeHtml(s.team||"-")} · 탭하여 점검 시작</div>
+        </div>`;
+      });
+      recList.innerHTML = html + `</div>`;
+      return;
+    }
+
+    if (filter) records = records.filter(r => gbchickenStatus(r) === filter);
 
     if (records.length === 0) { recList.innerHTML = `<p class="error-text">검색 결과가 없습니다.</p>`; return; }
     let html = `<div class="store-count" style="padding:8px 2px">${records.length}건</div><div class="search-list">`;
@@ -7482,6 +7578,15 @@ async function fetchRecordsGbchicken() {
   } catch(e) {
     recList.innerHTML = `<p class="error-text">오류: ${e.message}</p>`;
   }
+}
+
+// 미점검 매장 목록(점검내역조회)에서 클릭 시 바로 점검 시작 — startGbchickenInspection()과
+// 동일한 초기화 후 selectStore()로 이어서, 기존 매장선택 로직을 그대로 재사용
+function startInspectionForStoreGbchicken(code, name, team) {
+  S.category = "gbchicken";
+  S.role = _authRole; S.inspType = "최초"; S.answers = {};
+  S.gbchickenAnswers = { q1:null, q2:null, q3:null, q4:null, photos:{q1:[],q2:[],q4:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memo:"" };
+  selectStore(code, name, team);
 }
 
 function setRecGbchickenFilter(val) {
@@ -7916,13 +8021,13 @@ Object.assign(window, {
   setRecStatusFilter, setDateLimitUI, applyAdminSettings, scanDataCleanupIssues, applyDataCleanupFix,
   startDefaultInspection, startNpInspection, goAdminNP, toggleNpEnabled, toggleNpPhotoRequired,
   setNpQ1, addNpAttendee, removeNpAttendee, updateNpAttendeeName, updateNpMemo, handleNpImage, removeNpImage, submitFormNP, downloadExcelNP,
-  fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter, viewStoreHistoryNP, approveNpRecord, rejectNpRecord, searchDashNP,
+  fetchRecordsNP, setRecNpFilter, viewRecordNP, setDashNpFilter, viewStoreHistoryNP, approveNpRecord, rejectNpRecord, searchDashNP, startInspectionForStoreNP,
   startSpacoolInspection, goAdminSpacool, toggleSpacoolEnabled,
   setSpacoolAnswer, updateSpacoolQMemo, updateSpacoolMemo, handleSpacoolImage, removeSpacoolImage, submitFormSpacool, downloadExcelSpacool,
-  fetchRecordsSpacool, setRecSpacoolFilter, viewRecordSpacool, setDashSpacoolFilter, viewStoreHistorySpacool, approveSpacoolRecord, rejectSpacoolRecord, searchDashSpacool, setSpacoolApprovalStage,
+  fetchRecordsSpacool, setRecSpacoolFilter, viewRecordSpacool, setDashSpacoolFilter, viewStoreHistorySpacool, approveSpacoolRecord, rejectSpacoolRecord, searchDashSpacool, setSpacoolApprovalStage, startInspectionForStoreSpacool,
   startGbchickenInspection, goAdminGbchicken, toggleGbchickenEnabled,
   setGbchickenAnswer, updateGbchickenQMemo, updateGbchickenMemo, handleGbchickenImage, removeGbchickenImage, submitFormGbchicken, downloadExcelGbchicken,
-  fetchRecordsGbchicken, setRecGbchickenFilter, viewRecordGbchicken, setDashGbchickenFilter, viewStoreHistoryGbchicken, approveGbchickenRecord, rejectGbchickenRecord, searchDashGbchicken,
+  fetchRecordsGbchicken, setRecGbchickenFilter, viewRecordGbchicken, setDashGbchickenFilter, viewStoreHistoryGbchicken, approveGbchickenRecord, rejectGbchickenRecord, searchDashGbchicken, startInspectionForStoreGbchicken,
 });
 // 앱 시작 시 세션 복원
 (async () => {
