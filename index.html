@@ -378,7 +378,7 @@ const SPACOOL_FORM = {
 // ── 갓빠삭치킨 홍보물 부착 현장점검 문항 구성 확정본 (작업지시서 기준) ──
 // Q1/Q2/Q4: Y/N + 사진(최대 3장, Y 선택 시 최소 1장 필수) + 문항별 메모.
 // Q3: Y/N만(사진 첨부 기능 없음) + 문항별 메모.
-// 완료 판정: Q1=Y, Q2=Y, (Q3=Y면 Q4=Y / Q3=N이면 Q4=N)일 때만 정상 — gbchickenStatus()에서 처리.
+// 완료 판정: Q1=Y, Q2=Y일 때만 정상(Q3/Q4는 응답 필수이나 판정에는 영향 없음) — gbchickenStatus()에서 처리.
 const GBCHICKEN_FORM = {
   questions: [
     { key:"q1", label:"홍보물(메인포스터, POS 와블러)은 정위치에 부착되어 있는가?", hint:"메인포스터 부착 후 매장 전면 사진 포함하도록 첨부 필수", hasPhoto:true },
@@ -7032,7 +7032,8 @@ async function rejectSpacoolRecord(docId) {
 // (매장범위는 신제품과 동일한 buildMatchedStoresNP를 재사용함 — 위 신제품 섹션 참조)
 // ════════════════════════════════════════════════════════════
 // 갓빠삭치킨 홍보물 부착 현장점검 건의 상태 계산: "none"|"needs"|"pending"|"done"
-// - 완료(정상) 조건(작업지시서 4항): Q1=Y AND Q2=Y AND (Q3=Y면 Q4=Y / Q3=N이면 Q4=N)
+// - 완료(정상) 조건: Q1=Y AND Q2=Y만 확인. Q3/Q4는 응답은 필수(폼 제출 검증에서 강제)이지만
+//   Y든 N이든 이 판정 자체에는 영향을 주지 않음(사진첨부 조건은 기존과 동일하게 유지).
 // - 위 조건 불만족이면 재점검필요. 미응답이면 미점검.
 // - 조건 만족 + SV(AC) 점검 → 팀장승인대기(단일 단계, 그룹장 승인 없음 — 작업지시서 "SV-TL 2단계").
 // - 조건 만족 + TL/GL/관리자 본인점검 → 즉시 완료.
@@ -7041,7 +7042,7 @@ function gbchickenStatus(rec) {
   if (rec.tlRejected) return "needs";
   const a = rec.gbchickenAnswers;
   if (!a || a.q1 == null) return "none";
-  const ok = a.q1 === "Y" && a.q2 === "Y" && ((a.q3 === "Y" && a.q4 === "Y") || (a.q3 === "N" && a.q4 === "N"));
+  const ok = a.q1 === "Y" && a.q2 === "Y";
   if (!ok) return "needs";
   if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
   return "done";
@@ -7341,7 +7342,7 @@ async function submitFormGbchicken() {
         memoQ4: (a.memoQ4 || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
         memo: (a.memo || "").slice(0, GBCHICKEN_FORM.memoMaxLen),
       },
-      needsFollowup: !(a.q1 === "Y" && a.q2 === "Y" && ((a.q3==="Y"&&a.q4==="Y")||(a.q3==="N"&&a.q4==="N"))),
+      needsFollowup: !(a.q1 === "Y" && a.q2 === "Y"),
       createdAt: new Date(),
     };
     // AC(SV)가 정상 조건 만족으로 제출한 건은 담당 팀장 승인 필요(단일 단계 — 작업지시서 "SV-TL 2단계",
