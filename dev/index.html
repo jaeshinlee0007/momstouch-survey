@@ -692,7 +692,7 @@ function selectRole(role) {
 
 // ── STORE SELECT ───────────────────────────────────
 function renderStoreSel(root) {
-  const roleLabel = {sv:"SV",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
+  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
@@ -705,7 +705,7 @@ function renderStoreSel(root) {
         placeholder="${S.role==='gl' ? '그룹장 입력 시 전체 매장 표시' : '이름 입력 후 검색'}"
         value="${_currentUser && _authName ? _authName : S.writerName}"
         ${_currentUser && _authName ? 'readonly style="background:#F7FAFC;color:#4A5568;"' : ''} />
-      ${_currentUser && _authName ? `<div style="font-size:11px;color:#48BB78;margin-top:2px;">✅ ${_authName} (${_authRole==="sv"?"SV/AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":"관리자"}) 로그인 계정으로 자동 적용됩니다</div>` : ''}
+      ${_currentUser && _authName ? `<div style="font-size:11px;color:#48BB78;margin-top:2px;">✅ ${_authName} (${_authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":"관리자"}) 로그인 계정으로 자동 적용됩니다</div>` : ''}
       <button class="btn-primary" onclick="searchStores()">매장 검색</button>
       <div id="storeSearchWrap" style="display:none">
         <input id="storeKeywordFixed" class="input-field" type="text"
@@ -915,7 +915,7 @@ function renderStoreListInner(list, keyword="") {
         </div>
         <div style="display:flex;gap:3px;flex-shrink:0">${productBadges(s)}</div>
       </div>
-      <div class="si-meta">${s.code} · ${s.team} · SV: ${s.sv}</div>
+      <div class="si-meta">${s.code} · ${s.team} · AC: ${s.sv}</div>
       ${rejReason}
     </div>`;
   });
@@ -1143,7 +1143,7 @@ async function loadPrevNItems(storeCode) {
 
 // ── INFO ───────────────────────────────────────────
 function renderInfo(root) {
-  const roleLabel = {sv:"SV",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
+  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
@@ -1191,7 +1191,7 @@ function startForm() {
 // ── FORM ───────────────────────────────────────────
 function renderForm(root) {
   const allQuestions = currentQuestionSet();
-  const roleLabel = {sv:"SV",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
+  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
   const nSet = new Set(S.prevNItems);
 
   // 보완점검: N항목만 표시 (A안)
@@ -1876,7 +1876,7 @@ async function submitForm() {
         }
         await updateDoc(doc(db,currentSurveyCollection(),S.loadedDocId), updatePayload);
       } else {
-        alert("연결된 점검 문서를 찾을 수 없습니다.\n보완점검의 경우 SV가 먼저 최초점검을 완료해야 합니다.");
+        alert("연결된 점검 문서를 찾을 수 없습니다.\n보완점검의 경우 AC가 먼저 최초점검을 완료해야 합니다.");
         if(btn){btn.disabled=false;btn.textContent="점검 제출하기";}
         return;
       }
@@ -2067,7 +2067,7 @@ function renderCompare(root) {
   // ── 보완점검 이력 타임라인 (라운드별 제출/반려 기록 전체) ──
   if (Array.isArray(d.followupHistory) && d.followupHistory.length > 0) {
     const eventLabel = {
-      submit_sv: { icon:"📋", text:"SV 보완점검 제출", color:"#2B6CB0" },
+      submit_sv: { icon:"📋", text:"AC 보완점검 제출", color:"#2B6CB0" },
       submit_tl: { icon:"📋", text:"팀장 보완점검 제출", color:"#2B6CB0" },
       reject_tl: { icon:"🚫", text:"팀장 반려", color:"#C53030" },
       reject_gl: { icon:"🚫", text:"그룹장 반려", color:"#C53030" },
@@ -2279,7 +2279,7 @@ function renderCompare(root) {
   if (!isGLDoc) {
   html += `<div class="section-divider divider-first">📋 최초 점검 전체 결과</div>`;
   {
-    html += `<div class="meta-row"><span>SV: ${d.writerName||""}</span><span>${fmtDate(d.visitDate)}</span></div>`;
+    html += `<div class="meta-row"><span>AC: ${d.writerName||""}</span><span>${fmtDate(d.visitDate)}</span></div>`;
     if (d.tlWriterName) html += `<div class="meta-row"><span>팀장: ${d.tlWriterName}</span><span>${fmtDate(d.tlVisitDate)}</span></div>`;
     if (d.glWriterName) html += `<div class="meta-row"><span>그룹장: ${d.glWriterName}</span><span>${fmtDate(d.glVisitDate)}</span></div>`;
   }
@@ -2300,7 +2300,7 @@ function renderCompare(root) {
         <div class="cc-title">Q${q.id} ${q.title} ${isN ? '<span class="change-badge">N</span>' : ""}</div>
         <div class="cc-row">
           <div class="cc-cell">
-            <div class="cc-role">SV</div>
+            <div class="cc-role">AC</div>
             <div class="cc-val ${valClass(svV)}">${svV}</div>
             ${sv?.image ? `<img src="${sv.image}" class="cc-img" onclick="openImageModal('${sv.image}')">` : ""}
           </div>
@@ -2818,11 +2818,11 @@ async function renderPhotoSetting(root) {
       ON: 해당 항목 사진 첨부 필수<br>
       OFF: 사진 첨부 선택사항
     </div>
-    <div style="font-weight:600;font-size:13px;color:var(--sub);margin-bottom:4px">SV / 팀장 항목 (16개)</div>
+    <div style="font-weight:600;font-size:13px;color:var(--sub);margin-bottom:4px">AC / 팀장 항목 (16개)</div>
     ${svItems.map(q => makeToggle(`Q${q.id}`, `Q${q.id}. ${q.title}`)).join("")}
     <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:16px;margin-bottom:4px">그룹장 항목 (11개)</div>
     ${glItems.map(q => makeToggle(`GL_Q${q.id}`, `GL_Q${q.id}. ${q.title}`)).join("")}
-    <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:20px;margin-bottom:4px">⏰ 점검 작성일 제한 (SV/TL 적용, GL/admin 예외)</div>
+    <div style="font-weight:600;font-size:13px;color:var(--sub);margin-top:20px;margin-bottom:4px">⏰ 점검 작성일 제한 (AC/TL 적용, GL/admin 예외)</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
       ${[
         {v:"none", label:"제한해제"},
@@ -3663,7 +3663,7 @@ async function rejectTL() {
     await updateDoc(doc(db,"surveys",S.loadedDocId), updatePayload);
     if (isGLDoc) { S.compareData.glRejected = true; S.compareData.glRejectedReason = reason; }
     else { S.compareData.tlRejected = true; S.compareData.tlRejectedReason = reason; }
-    alert("🚫 반려 처리되었습니다.\nSV/팀장 보완점검 목록에 재노출됩니다.");
+    alert("🚫 반려 처리되었습니다.\nAC/팀장 보완점검 목록에 재노출됩니다.");
     invalidateSurveyCaches();
     window._dashTab = "전체";
     window._dashFilter = null;
@@ -3733,7 +3733,7 @@ async function rejectGL() {
     });
     S.compareData.glRejected = true;
     S.compareData.glRejectedReason = reason;
-    alert("🚫 반려 처리되었습니다.\nSV/팀장 보완점검 목록에 재노출됩니다.");
+    alert("🚫 반려 처리되었습니다.\nAC/팀장 보완점검 목록에 재노출됩니다.");
     invalidateSurveyCaches();
     window._dashTab = "전체";
     window._dashFilter = null;
@@ -3746,7 +3746,7 @@ async function rejectGL() {
 
 
 async function renderRecords(root) {
-  const roleLabel = _authRole==="sv"?"SV/AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":"";
+  const roleLabel = _authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":"";
   const autoDesc  = _authRole==="sv" ? `${_authName} 담당 점포`
                   : _authRole==="tl" ? `${_authName} 담당팀`
                   : "전체";
@@ -4103,7 +4103,7 @@ async function fetchRecords() {
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0">${typeBadge}<span class="si-store">${r.storeName}</span>${transferBadgeR}${closedBadgeR}</div>
           <div style="display:flex;gap:3px;flex-shrink:0">${productBadges((window._activeStores||[]).find(s=>s.code===r.storeCode))}</div>
         </div>
-        <div class="si-meta">${r.role==="gl"?"그룹장":r.role==="tl"?"팀장":"SV"}: ${r.writerName} · ${dt}</div>
+        <div class="si-meta">${r.role==="gl"?"그룹장":r.role==="tl"?"팀장":"AC"}: ${r.writerName} · ${dt}</div>
         <div class="si-tags">${statusBadge}</div>
       </div>`;
     });
@@ -4600,7 +4600,7 @@ function buildDashboard(root, records) {
     <div class="dash-table-wrap">
       <div class="table-count">${dateFiltered.length}건</div>
       <table class="dash-table">
-        <thead><tr><th>매장명</th><th>SV</th><th>최초결과</th><th>상태</th></tr></thead>
+        <thead><tr><th>매장명</th><th>AC</th><th>최초결과</th><th>상태</th></tr></thead>
         <tbody>${rows||'<tr><td colspan="4" style="text-align:center;padding:20px;color:#718096">데이터 없음</td></tr>'}</tbody>
       </table>
     </div>
@@ -4842,7 +4842,7 @@ async function downloadPDF() {
     <div class="stat"><div class="stat-num" style="color:#276749">${finalDone}</div><div class="stat-label">최종확인</div></div>
   </div>
   <table>
-    <thead><tr><th>매장명</th><th>팀</th><th>SV</th><th>점검일</th><th>유형</th><th>최초결과</th><th>진행상태</th></tr></thead>
+    <thead><tr><th>매장명</th><th>팀</th><th>AC</th><th>점검일</th><th>유형</th><th>최초결과</th><th>진행상태</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
   <div class="footer">Moms Touch 신규플랫폼 현장점검 시스템 · ${today}</div>
@@ -4867,7 +4867,7 @@ async function downloadExcel() {
   }
 
   // 헤더: 답변값만 (이미지 제외)
-  const svH  = SV_QUESTIONS.map(q=>`[SV] Q${q.id} ${q.title}`);
+  const svH  = SV_QUESTIONS.map(q=>`[AC] Q${q.id} ${q.title}`);
   const tlH  = SV_QUESTIONS.map(q=>`[팀장] Q${q.id} ${q.title}`);
   const glH  = GL_QUESTIONS.map(q=>`[그룹장] Q${q.id} ${q.title}`);
   const confirmH = ["팀장확인자","팀장확인일시","그룹장확인일시","최종확인여부","반려여부","보완횟수","반려횟수","보완이력요약"];
@@ -4875,8 +4875,8 @@ async function downloadExcel() {
 
   const rows = [["매장코드","매장명","팀","점검유형","역할","점검자","방문일시",...svH,...tlH,...glH,...confirmH,...dateH]];
 
-  const roleLabelMap = { sv:"SV", tl:"팀장", gl:"그룹장" };
-  const historyEventLabelMap = { submit_sv:"제출(SV)", submit_tl:"제출(팀장)", reject_tl:"반려(팀장)", reject_gl:"반려(그룹장)" };
+  const roleLabelMap = { sv:"AC", tl:"팀장", gl:"그룹장" };
+  const historyEventLabelMap = { submit_sv:"제출(AC)", submit_tl:"제출(팀장)", reject_tl:"반려(팀장)", reject_gl:"반려(그룹장)" };
 
   records.forEach(r => {
     const addRow = (type, role, name, date, answers, tla, gla) => {
@@ -4914,7 +4914,7 @@ async function downloadExcel() {
       const dateVals = [firstDate, followupDate];
       rows.push([r.storeCode,r.storeName,r.storeTeam,type,role,name||"",fmtDateExcel(date),...svVals,...tlVals,...glVals,...confirmVals,...dateVals]);
     };
-    const roleLabel = roleLabelMap[r.role] || "SV";
+    const roleLabel = roleLabelMap[r.role] || "AC";
     // GL 자체 최초점검(role==="gl")은 SV 문항과 무관한 별도 11문항 체크리스트이므로
     // SV Q1~Q16 칸에는 값을 넣지 않고(빈칸), 그룹장 Q1~Q11 칸(glAnswers)에만 표시한다.
     const svAnswersForRow = r.role === "gl" ? null : r.answers;
@@ -4924,7 +4924,7 @@ async function downloadExcel() {
     const hasSvFu = r.followupSvAnswers && Object.keys(r.followupSvAnswers).length > 0;
     const hasTlFu = r.followupTlAnswers && Object.keys(r.followupTlAnswers).length > 0;
     if (hasSvFu || hasTlFu) {
-      const fuRole = hasSvFu ? "SV" : "팀장";
+      const fuRole = hasSvFu ? "AC" : "팀장";
       const fuName = hasSvFu ? (r.followupSvWriterName||"") : (r.tlConfirmerName||r.followupTlWriterName||"");
       const fuDate = hasSvFu ? r.followupSvVisitDate : (r.followupTlVisitDate||r.followupSvVisitDate);
       const fuAnswers = hasSvFu ? r.followupSvAnswers : r.followupTlAnswers;
