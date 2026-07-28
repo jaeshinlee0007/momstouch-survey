@@ -3461,6 +3461,11 @@ function _statusNCount(ansObj, exclKeys) {
   return Object.entries(ansObj||{}).filter(([k,v]) => !exclKeys.includes(Number(k)) && v && v.value==="N").length;
 }
 function _statusIsUnresolvedSvtl(d) {
+  // 완전히 종결(그룹장 최종확인까지 완료)된 건은 항상 "해결됨"으로 취급해야 함.
+  // 이 체크가 없으면: 보완이력이 없는 건(=한 번도 반려/보완이 필요없었던 정상 완료건)이
+  // 무조건 "미해결"로 오판되어, 같은 매장에 나중에 새로 시작된 독립 최초점검(예: 팀장
+  // 단독 재점검)이 대표 문서로 절대 선택되지 못하고 예전 완료건에 가려지는 버그가 있었음.
+  if (d.finalConfirmed) return false;
   const fu = d.followupSvAnswers || d.followupTlAnswers || null;
   if (!fu) return true;
   return _statusNCount(fu) > 0;
@@ -3469,9 +3474,15 @@ function _statusByCreatedDesc(a,b) { return (b.createdAt?.seconds||0) - (a.creat
 function pickPrimarySvtlDoc(svDocs, tlDocs) {
   const svFirst = (svDocs||[]).filter(d => d.inspType==="최초" || !d.inspType).slice().sort(_statusByCreatedDesc);
   const tlFirst = (tlDocs||[]).filter(d => d.inspType==="최초" || !d.inspType).slice().sort(_statusByCreatedDesc);
-  let target = svFirst.find(_statusIsUnresolvedSvtl) || svFirst[0] || null;
-  if (!target) target = tlFirst.find(_statusIsUnresolvedSvtl) || tlFirst[0] || null;
-  return target;
+  // SV/TL을 합쳐 최신순으로 정렬한 뒤 "미해결" 건을 우선 탐색한다. 예전엔 SV쪽만 먼저 보고
+  // SV건이 하나라도 있으면(해결여부 무관) 곧장 svFirst[0]로 폴백해버려서, 같은 매장에 나중에
+  // 새로 시작된 TL 독립 최초점검(미해결)이 SV의 완료건에 가려 절대 대표문서로 못 뽑히는
+  // 버그가 있었음 — 반드시 SV/TL 통합 후 "미해결 우선"으로 찾아야 함.
+  const combined = [...svFirst, ...tlFirst].sort(_statusByCreatedDesc);
+  const unresolved = combined.find(_statusIsUnresolvedSvtl);
+  if (unresolved) return unresolved;
+  // 전부 해결됐거나(또는 문서 자체가 없음) → 가장 최근 문서를 대표로
+  return combined[0] || null;
 }
 function getSvtlSetStatus(svDocs, tlDocs) {
   const d = pickPrimarySvtlDoc(svDocs, tlDocs);
