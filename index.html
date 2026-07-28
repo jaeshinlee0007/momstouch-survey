@@ -1046,42 +1046,34 @@ async function loadPrevNItems(storeCode) {
         orderBy("createdAt","desc"))),
     ]);
 
-    // SV 세트 기준: 보완 미완료 최신 최초점검 문서
-    // "보완 미완료" = 보완점검 자체가 없거나, 보완점검을 했어도 아직 N(미개선)이 남아있는 경우.
-    // (보완했지만 여전히 N인 문서를 "종결"로 오판하면 다음 보완점검을 등록할 수 없게 되는 버그가 있었음)
+    // SV/TL 최초점검 문서 중 "보완 미완료"인 것을 우선 선택.
+    // "보완 미완료" = 완전종결(finalConfirmed)이 아니면서, 보완점검 자체가 없거나 보완점검을
+    // 했어도 아직 N(미개선)이 남아있는 경우.
+    // finalConfirmed 체크가 없으면: 예전에 정상 완료된 SV/TL건이 있다는 이유만으로, 같은
+    // 매장에 나중에 새로 시작된 독립 최초점검(미해결)이 절대 선택되지 못하는 버그가 생김
+    // (SV를 먼저 보고 TL은 SV가 아예 없을 때만 보던 예전 구조가 바로 이 버그의 원인이었음
+    //  — pickPrimarySvtlDoc에 있던 것과 동일한 결함이 여기 별도로 구현돼 있었음).
     const _isUnresolved = (data) => {
+      if (data.finalConfirmed) return false; // 완전 종결된 건은 항상 해결됨으로 취급
       const fu = data.followupSvAnswers || data.followupTlAnswers || null;
       if (!fu) return true; // 보완점검 자체가 없으면 당연히 미완료
       const fuN = Object.values(fu).filter(a => a.value === "N").length;
       return fuN > 0; // 보완했어도 N이 남아있으면 여전히 미완료
     };
-    let targetDoc = null;
+    const svFirstDocs = [];
     svSnap.forEach(d => {
       const data = d.data();
-      const isFirst = data.inspType === "최초" || !data.inspType;
-      if (!targetDoc && isFirst && _isUnresolved(data)) {
-        targetDoc = { id: d.id, ...data };
-      }
+      if (data.inspType === "최초" || !data.inspType) svFirstDocs.push({ id: d.id, ...data });
     });
-    // 미완료 세트 없으면 최신 최초점검 (SV)
-    if (!targetDoc) {
-      svSnap.forEach(d => {
-        const data = d.data();
-        if (!targetDoc && (data.inspType === "최초" || !data.inspType)) {
-          targetDoc = { id: d.id, ...data };
-        }
-      });
-    }
-    // SV 문서 없으면 TL 독립 최초점검 문서 사용
-    if (!targetDoc) {
-      tlSnap.forEach(d => {
-        const data = d.data();
-        const isFirst = data.inspType === "최초" || !data.inspType;
-        if (!targetDoc && isFirst && _isUnresolved(data)) {
-          targetDoc = { id: d.id, ...data };
-        }
-      });
-    }
+    const tlFirstDocs = [];
+    tlSnap.forEach(d => {
+      const data = d.data();
+      if (data.inspType === "최초" || !data.inspType) tlFirstDocs.push({ id: d.id, ...data });
+    });
+    // SV/TL을 합쳐 최신순으로 정렬한 뒤 미해결 건을 우선 탐색 (전부 해결됐으면 최신 문서로 폴백)
+    const combinedFirstDocs = [...svFirstDocs, ...tlFirstDocs]
+      .sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+    let targetDoc = combinedFirstDocs.find(_isUnresolved) || combinedFirstDocs[0] || null;
 
     if (targetDoc) {
       // N항목: 이전 보완점검 라운드가 있었다면(아직 N 남은 상태) 그 결과 기준으로,
@@ -1092,15 +1084,9 @@ async function loadPrevNItems(storeCode) {
         .filter(([,v]) => v.value === "N")
         .map(([k]) => Number(k));
 
-      // TL 최초점검 N항목 수집 (같은 매장, 최신 최초점검)
+      // TL 최초점검 N항목 수집 (같은 매장, 최신 최초점검 — 위에서 이미 만든 tlFirstDocs 재사용)
+      const latestTLDoc = tlFirstDocs[0] || null;
       let tlNItems = [];
-      let latestTLDoc = null;
-      tlSnap.forEach(d => {
-        const data = d.data();
-        if (!latestTLDoc && (data.inspType === "최초" || !data.inspType)) {
-          latestTLDoc = data;
-        }
-      });
       if (latestTLDoc) {
         tlNItems = Object.entries(latestTLDoc.tlAnswers || latestTLDoc.answers || {})
           .filter(([,v]) => v.value === "N")
