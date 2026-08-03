@@ -127,6 +127,32 @@ async function _refreshTransferAndClosedMaps() {
       if (!window._transferMap.has(t.newCode)) window._transferMap.set(t.newCode, []);
       window._transferMap.get(t.newCode).push({oldCode: t.oldCode, transferDate: t.transferDate});
     });
+    // 구코드 → 최종 현재코드 완전해석 맵 (여러 번 양도양수된 매장도 지원, 매달 발생 가능한 이벤트라
+    // A→B→C처럼 체인이 길어질 수 있음 — BFS로 체인 끝까지 추적해서 어느 구코드든 항상 "지금
+    // 살아있는 코드"로 귀결시킴). 점검 이력을 매장코드로 그룹핑할 때 이 맵을 거쳐야
+    // 양도양수 이전 이력이 신코드 기준 상태판정에 정상 합산됨.
+    window._oldToCurrentCodeMap = (() => {
+      const tMap = window._transferMap;
+      const allOldCodes = new Set();
+      for (const entries of tMap.values()) entries.forEach(({oldCode}) => { if (oldCode) allOldCodes.add(oldCode); });
+      const result = new Map();
+      for (const currentCode of tMap.keys()) {
+        if (allOldCodes.has(currentCode)) continue; // 이 코드 자체가 나중에 또 양도된 중간코드면 건너뜀(최종코드 쪽에서 처리)
+        const seen = new Set([currentCode]);
+        const queue = [currentCode];
+        while (queue.length) {
+          const code = queue.shift();
+          (tMap.get(code) || []).forEach(({oldCode}) => {
+            if (oldCode && !seen.has(oldCode)) {
+              seen.add(oldCode);
+              result.set(oldCode, currentCode);
+              queue.push(oldCode);
+            }
+          });
+        }
+      }
+      return result;
+    })();
     window._closedMap = new Map();
     (closedSnap.docs||[]).forEach(d => {
       const c = d.data();
@@ -135,8 +161,21 @@ async function _refreshTransferAndClosedMaps() {
     _mapsLoadedAt = Date.now();
   } catch(e) {
     if (!window._transferMap) window._transferMap = new Map();
+    if (!window._oldToCurrentCodeMap) window._oldToCurrentCodeMap = new Map();
     if (!window._closedMap) window._closedMap = new Map();
   }
+}
+
+// 현재(신) 코드를 받아, 이 매장에 해당하는 모든 코드(현재코드 + 과거 양도양수로 거쳐온
+// 구코드 전체)를 배열로 반환. 매장이력 조회 등에서 "이 매장의 모든 점검 기록"을 구코드
+// 시절 것까지 포함해서 찾을 때 사용 (_oldToCurrentCodeMap의 역방향 조회).
+function getStoreCodeChain(currentCode) {
+  const codeMap = window._oldToCurrentCodeMap || new Map();
+  const olds = [];
+  for (const [oldCode, curCode] of codeMap.entries()) {
+    if (curCode === currentCode) olds.push(oldCode);
+  }
+  return [currentCode, ...olds];
 }
 
 async function getActiveStoreData() {
@@ -814,6 +853,7 @@ function buildMatchedStoresDefault(activeStores, name) {
 async function filterMatchedStoresForFollowup(matched) {
   document.getElementById("storeResult").innerHTML = `<p class="loading-text">보완필요 매장 확인 중...</p>`;
   try {
+    await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (groupDocsByStore가 참조함)
     const followupCached = cacheGet("followup");
     let svSnap, tlSnap, glSnap;
     if (followupCached) {
@@ -3575,10 +3615,14 @@ function getStoreActionStatus(storeCode, svDocs, tlDocs, glDocs) {
 // records(sv/tl/gl 문서 배열)를 storeCode별로 그룹핑
 function groupDocsByStore(records) {
   const map = new Map(); // storeCode -> {sv:[],tl:[],gl:[]}
+  // 양도양수로 코드가 바뀐 매장은, 구코드로 저장된 과거 이력도 현재코드 기준으로 합쳐야
+  // 대시보드/보완점검판정 등에서 "미점검"으로 잘못 뜨지 않음 (_oldToCurrentCodeMap 참조)
+  const codeMap = window._oldToCurrentCodeMap || new Map();
   records.forEach(r => {
     if (!r.storeCode) return;
-    if (!map.has(r.storeCode)) map.set(r.storeCode, {sv:[],tl:[],gl:[]});
-    const bucket = map.get(r.storeCode);
+    const key = codeMap.get(r.storeCode) || r.storeCode;
+    if (!map.has(key)) map.set(key, {sv:[],tl:[],gl:[]});
+    const bucket = map.get(key);
     if (r.role === "sv" || r.role === "admin") bucket.sv.push(r); // admin은 effectiveRole상 sv와 동일 취급(안전장치)
     else if (r.role === "tl") bucket.tl.push(r);
     else if (r.role === "gl") bucket.gl.push(r);
@@ -3845,6 +3889,7 @@ async function renderFollowupNeeded(root) {
 async function buildFollowupNeeded() {
   const root = document.getElementById("fnBody");
   if (!root) return;
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (groupDocsByStore가 참조함)
 
   // 데이터 로드 (fetchRecords 캐시 활용)
   let records = cacheGet("records");
@@ -3974,6 +4019,7 @@ async function fnViewRecord(docId) {
 
 async function fnDownloadExcel() {
   // 현재 필터 기준 Excel 다운로드 — 화면(buildFollowupNeeded)과 동일한 매장단위 판정 재사용
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (groupDocsByStore가 참조함)
   let records = cacheGet("records") || [];
   const byStore = groupDocsByStore(records);
   let pending = [];
@@ -5192,6 +5238,8 @@ async function loadNpApprovalBadge() {
   const badgeEl = document.getElementById("npApprovalBadge");
   if (!badgeEl) return;
   try {
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
+
     let records = cacheGet("recordsNP");
     if (!records) {
       const snap = await getDocs(query(collection(db,"surveys_np"), orderBy("createdAt","desc")));
@@ -5199,12 +5247,15 @@ async function loadNpApprovalBadge() {
       snap.forEach(d => records.push({id:d.id, ...d.data()}));
       cacheSet("recordsNP", records);
     }
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     let list = [...latestByStore.values()];
     if (_authRole === "tl") {
@@ -5579,13 +5630,16 @@ async function renderDashboardNP(root) {
 }
 
 function buildDashboardNP(root, records, scopeStores) {
-  // storeCode → 최신 문서 매핑
+  // storeCode → 최신 문서 매핑 (양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드
+  // 기준으로 합쳐야 미점검으로 잘못 뜨지 않음 — _oldToCurrentCodeMap 참조)
+  const _codeMap = window._oldToCurrentCodeMap || new Map();
   const latestByStore = new Map();
   records.forEach(r => {
-    const ex = latestByStore.get(r.storeCode);
+    const key = _codeMap.get(r.storeCode) || r.storeCode;
+    const ex = latestByStore.get(key);
     const t = r.createdAt?.seconds || 0;
     const exT = ex?.createdAt?.seconds || 0;
-    if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    if (!ex || t > exT) latestByStore.set(key, r);
   });
 
   const rowsDataAll = scopeStores.map(s => {
@@ -5711,7 +5765,8 @@ function searchDashNP() {
 // 매장 탭 시 그 매장의 점검 이력 전체를 최신순으로 보여줌 (Firestore 추가 조회 없이 대시보드 캐시 재사용)
 function viewStoreHistoryNP(storeCode) {
   const all = window._dashNpRecords || [];
-  const recs = all.filter(r => r.storeCode === storeCode)
+  const codeChain = getStoreCodeChain(storeCode);
+  const recs = all.filter(r => codeChain.includes(r.storeCode))
                    .sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
   if (recs.length === 0) { alert("점검 이력이 없습니다."); return; }
   window._storeHistoryNP = { storeCode, storeName: recs[0].storeName, records: recs };
@@ -5755,17 +5810,22 @@ async function downloadExcelNP() {
   const records = window._dashNpRecords || [];
   const scopeStores = window._dashNpScope || [];
   try {
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
+
     await loadXLSX();
   } catch(e) {
     alert("엑셀 라이브러리 로드 실패: " + e.message);
     return;
   }
+  // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+  const _codeMap = window._oldToCurrentCodeMap || new Map();
   const latestByStore = new Map();
   records.forEach(r => {
-    const ex = latestByStore.get(r.storeCode);
+    const key = _codeMap.get(r.storeCode) || r.storeCode;
+    const ex = latestByStore.get(key);
     const t = r.createdAt?.seconds || 0;
     const exT = ex?.createdAt?.seconds || 0;
-    if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    if (!ex || t > exT) latestByStore.set(key, r);
   });
 
   const rows = [["매장코드","매장명","팀","상태","교육인원","참석자명단","작성자","역할","점검일시","메모"]];
@@ -5832,6 +5892,7 @@ async function renderRecordsNP(root) {
 
 async function fetchRecordsNP() {
   if (!_npEnabled) return; // 비활성화 상태면 조회 자체를 막음
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
   const searchEl = document.getElementById("recSearchNP");
   const keyword = searchEl ? searchEl.value.trim() : "";
   const recList = document.getElementById("recListNP");
@@ -5860,12 +5921,15 @@ async function fetchRecordsNP() {
     // GL/admin: 전체 표시 (필터 없음)
 
     // 매장별 최신 건만 남김 (반려 후 재점검·승인된 경우 예전 반려 이력이 남아있지 않도록)
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
@@ -5958,6 +6022,7 @@ async function renderApprovalNP(root) {
     return;
   }
   if (!["tl","gl","admin"].includes(_authRole)) { go("homeNP"); return; }
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
   const scopeDesc = _authRole === "tl" ? `${_authName} 담당팀` : "전체";
   root.innerHTML = `
     <div class="page-header">
@@ -5976,12 +6041,15 @@ async function renderApprovalNP(root) {
       cacheSet("recordsNP", records);
     }
     // storeCode별 최신 건만 대상으로 함 (오래된 이력이 승인대기로 잘못 뜨는 것 방지)
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     let pending = [...latestByStore.values()].filter(r => npStatus(r) === "pending");
 
@@ -6220,6 +6288,8 @@ async function loadSpacoolApprovalBadge() {
   const badgeEl = document.getElementById("spacoolApprovalBadge");
   if (!badgeEl) return;
   try {
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
+
     let records = cacheGet("recordsSpacool");
     if (!records) {
       const snap = await getDocs(query(collection(db,"surveys_spacool"), orderBy("createdAt","desc")));
@@ -6227,12 +6297,15 @@ async function loadSpacoolApprovalBadge() {
       snap.forEach(d => records.push({id:d.id, ...d.data()}));
       cacheSet("recordsSpacool", records);
     }
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     let list = [...latestByStore.values()];
     if (_authRole === "tl") {
@@ -6571,12 +6644,15 @@ async function renderDashboardSpacool(root) {
 }
 
 function buildDashboardSpacool(root, records, scopeStores) {
+  // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+  const _codeMap = window._oldToCurrentCodeMap || new Map();
   const latestByStore = new Map();
   records.forEach(r => {
-    const ex = latestByStore.get(r.storeCode);
+    const key = _codeMap.get(r.storeCode) || r.storeCode;
+    const ex = latestByStore.get(key);
     const t = r.createdAt?.seconds || 0;
     const exT = ex?.createdAt?.seconds || 0;
-    if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    if (!ex || t > exT) latestByStore.set(key, r);
   });
 
   const rowsDataAll = scopeStores.map(s => {
@@ -6703,7 +6779,8 @@ function searchDashSpacool() {
 
 function viewStoreHistorySpacool(storeCode) {
   const all = window._dashSpacoolRecords || [];
-  const recs = all.filter(r => r.storeCode === storeCode)
+  const codeChain = getStoreCodeChain(storeCode);
+  const recs = all.filter(r => codeChain.includes(r.storeCode))
                    .sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
   if (recs.length === 0) { alert("점검 이력이 없습니다."); return; }
   window._storeHistorySpacool = { storeCode, storeName: recs[0].storeName, records: recs };
@@ -6748,17 +6825,22 @@ async function downloadExcelSpacool() {
   const records = window._dashSpacoolRecords || [];
   const scopeStores = window._dashSpacoolScope || [];
   try {
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
+
     await loadXLSX();
   } catch(e) {
     alert("엑셀 라이브러리 로드 실패: " + e.message);
     return;
   }
+  // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+  const _codeMap = window._oldToCurrentCodeMap || new Map();
   const latestByStore = new Map();
   records.forEach(r => {
-    const ex = latestByStore.get(r.storeCode);
+    const key = _codeMap.get(r.storeCode) || r.storeCode;
+    const ex = latestByStore.get(key);
     const t = r.createdAt?.seconds || 0;
     const exT = ex?.createdAt?.seconds || 0;
-    if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    if (!ex || t > exT) latestByStore.set(key, r);
   });
 
   const rows = [["매장코드","매장명","팀","상태","Q0(입고여부)","Q1","Q2","작성자","역할","점검일시","팀장승인","그룹장승인","메모"]];
@@ -6829,6 +6911,7 @@ async function renderRecordsSpacool(root) {
 
 async function fetchRecordsSpacool() {
   if (!_spacoolEnabled) return;
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
   const searchEl = document.getElementById("recSearchSpacool");
   const keyword = searchEl ? searchEl.value.trim() : "";
   const recList = document.getElementById("recListSpacool");
@@ -6856,12 +6939,15 @@ async function fetchRecordsSpacool() {
     }
     // GL/admin: 전체 표시 (필터 없음)
 
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
@@ -6955,6 +7041,7 @@ async function renderApprovalSpacool(root) {
     return;
   }
   if (!["tl","gl","admin"].includes(_authRole)) { go("homeSpacool"); return; }
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
   // TL: 팀장단계 고정(본인 큐만). GL/admin: 탭으로 팀장단계/그룹장단계 조회 전환 가능
   // (GL이 팀장단계를 봐도 승인/반려 버튼은 canDecideTl 권한 체크로 그대로 숨겨짐 — 조회만 가능)
   window._spacoolApprovalStage = _authRole === "tl" ? "tl" : (window._spacoolApprovalStage || "gl");
@@ -6979,12 +7066,15 @@ async function renderApprovalSpacool(root) {
       snap.forEach(d => records.push({id:d.id, ...d.data()}));
       cacheSet("recordsSpacool", records);
     }
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     const targetStatus = window._spacoolApprovalStage === "tl" ? "pending_tl" : "pending_gl";
     let pending = [...latestByStore.values()].filter(r => spacoolStatus(r) === targetStatus);
@@ -7249,6 +7339,8 @@ async function loadGbchickenApprovalBadge() {
   const badgeEl = document.getElementById("gbchickenApprovalBadge");
   if (!badgeEl) return;
   try {
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
+
     let records = cacheGet("recordsGbchicken");
     if (!records) {
       const snap = await getDocs(query(collection(db,"surveys_gbchicken"), orderBy("createdAt","desc")));
@@ -7256,12 +7348,15 @@ async function loadGbchickenApprovalBadge() {
       snap.forEach(d => records.push({id:d.id, ...d.data()}));
       cacheSet("recordsGbchicken", records);
     }
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     let list = [...latestByStore.values()];
     if (_authRole === "tl") {
@@ -7550,6 +7645,7 @@ async function renderRecordsGbchicken(root) {
 
 async function fetchRecordsGbchicken() {
   if (!_gbchickenEnabled) return;
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
   const searchEl = document.getElementById("recSearchGbchicken");
   const keyword = searchEl ? searchEl.value.trim() : "";
   const recList = document.getElementById("recListGbchicken");
@@ -7575,12 +7671,15 @@ async function fetchRecordsGbchicken() {
       records = records.filter(r => teamCodes.has(r.storeCode));
     }
 
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
@@ -7673,6 +7772,7 @@ async function renderApprovalGbchicken(root) {
     return;
   }
   if (!["tl","gl","admin"].includes(_authRole)) { go("homeGbchicken"); return; }
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
   const scopeDesc = _authRole === "tl" ? `${_authName} 담당팀` : "전체";
   root.innerHTML = `
     <div class="page-header">
@@ -7690,12 +7790,15 @@ async function renderApprovalGbchicken(root) {
       snap.forEach(d => records.push({id:d.id, ...d.data()}));
       cacheSet("recordsGbchicken", records);
     }
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     let pending = [...latestByStore.values()].filter(r => gbchickenStatus(r) === "pending");
 
@@ -7876,12 +7979,15 @@ async function renderDashboardGbchicken(root) {
 }
 
 function buildDashboardGbchicken(root, records, scopeStores) {
+  // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+  const _codeMap = window._oldToCurrentCodeMap || new Map();
   const latestByStore = new Map();
   records.forEach(r => {
-    const ex = latestByStore.get(r.storeCode);
+    const key = _codeMap.get(r.storeCode) || r.storeCode;
+    const ex = latestByStore.get(key);
     const t = r.createdAt?.seconds || 0;
     const exT = ex?.createdAt?.seconds || 0;
-    if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    if (!ex || t > exT) latestByStore.set(key, r);
   });
 
   const rowsDataAll = scopeStores.map(s => {
@@ -8002,7 +8108,8 @@ function searchDashGbchicken() {
 
 function viewStoreHistoryGbchicken(storeCode) {
   const all = window._dashGbchickenRecords || [];
-  const recs = all.filter(r => r.storeCode === storeCode)
+  const codeChain = getStoreCodeChain(storeCode);
+  const recs = all.filter(r => codeChain.includes(r.storeCode))
                    .sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
   if (recs.length === 0) { alert("점검 이력이 없습니다."); return; }
   window._storeHistoryGbchicken = { storeCode, storeName: recs[0].storeName, records: recs };
@@ -8045,17 +8152,22 @@ async function downloadExcelGbchicken() {
   const records = window._dashGbchickenRecords || [];
   const scopeStores = window._dashGbchickenScope || [];
   try {
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
+
     await loadXLSX();
   } catch(e) {
     alert("엑셀 라이브러리 로드 실패: " + e.message);
     return;
   }
+  // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+  const _codeMap = window._oldToCurrentCodeMap || new Map();
   const latestByStore = new Map();
   records.forEach(r => {
-    const ex = latestByStore.get(r.storeCode);
+    const key = _codeMap.get(r.storeCode) || r.storeCode;
+    const ex = latestByStore.get(key);
     const t = r.createdAt?.seconds || 0;
     const exT = ex?.createdAt?.seconds || 0;
-    if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    if (!ex || t > exT) latestByStore.set(key, r);
   });
 
   const rows = [["매장코드","매장명","팀","상태","Q1","Q2","Q3","Q4","작성자","역할","점검일시","메모"]];
@@ -8160,6 +8272,8 @@ async function loadNashvilleApprovalBadge() {
   const badgeEl = document.getElementById("nashvilleApprovalBadge");
   if (!badgeEl) return;
   try {
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
+
     let records = cacheGet("recordsNashville");
     if (!records) {
       const snap = await getDocs(query(collection(db,"surveys_nashville"), orderBy("createdAt","desc")));
@@ -8167,12 +8281,15 @@ async function loadNashvilleApprovalBadge() {
       snap.forEach(d => records.push({id:d.id, ...d.data()}));
       cacheSet("recordsNashville", records);
     }
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     let list = [...latestByStore.values()];
     if (_authRole === "tl") {
@@ -8458,6 +8575,7 @@ async function renderRecordsNashville(root) {
 
 async function fetchRecordsNashville() {
   if (!_nashvilleEnabled) return;
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
   const searchEl = document.getElementById("recSearchNashville");
   const keyword = searchEl ? searchEl.value.trim() : "";
   const recList = document.getElementById("recListNashville");
@@ -8483,12 +8601,15 @@ async function fetchRecordsNashville() {
       records = records.filter(r => teamCodes.has(r.storeCode));
     }
 
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
@@ -8580,6 +8701,7 @@ async function renderApprovalNashville(root) {
     return;
   }
   if (!["tl","gl","admin"].includes(_authRole)) { go("homeNashville"); return; }
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
   const scopeDesc = _authRole === "tl" ? `${_authName} 담당팀` : "전체";
   root.innerHTML = `
     <div class="page-header">
@@ -8597,12 +8719,15 @@ async function renderApprovalNashville(root) {
       snap.forEach(d => records.push({id:d.id, ...d.data()}));
       cacheSet("recordsNashville", records);
     }
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
     const latestByStore = new Map();
     records.forEach(r => {
-      const ex = latestByStore.get(r.storeCode);
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
       const t = r.createdAt?.seconds || 0;
       const exT = ex?.createdAt?.seconds || 0;
-      if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+      if (!ex || t > exT) latestByStore.set(key, r);
     });
     let pending = [...latestByStore.values()].filter(r => nashvilleStatus(r) === "pending");
 
@@ -8783,12 +8908,15 @@ async function renderDashboardNashville(root) {
 }
 
 function buildDashboardNashville(root, records, scopeStores) {
+  // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+  const _codeMap = window._oldToCurrentCodeMap || new Map();
   const latestByStore = new Map();
   records.forEach(r => {
-    const ex = latestByStore.get(r.storeCode);
+    const key = _codeMap.get(r.storeCode) || r.storeCode;
+    const ex = latestByStore.get(key);
     const t = r.createdAt?.seconds || 0;
     const exT = ex?.createdAt?.seconds || 0;
-    if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    if (!ex || t > exT) latestByStore.set(key, r);
   });
 
   const rowsDataAll = scopeStores.map(s => {
@@ -8909,7 +9037,8 @@ function searchDashNashville() {
 
 function viewStoreHistoryNashville(storeCode) {
   const all = window._dashNashvilleRecords || [];
-  const recs = all.filter(r => r.storeCode === storeCode)
+  const codeChain = getStoreCodeChain(storeCode);
+  const recs = all.filter(r => codeChain.includes(r.storeCode))
                    .sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
   if (recs.length === 0) { alert("점검 이력이 없습니다."); return; }
   window._storeHistoryNashville = { storeCode, storeName: recs[0].storeName, records: recs };
@@ -8952,17 +9081,22 @@ async function downloadExcelNashville() {
   const records = window._dashNashvilleRecords || [];
   const scopeStores = window._dashNashvilleScope || [];
   try {
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
+
     await loadXLSX();
   } catch(e) {
     alert("엑셀 라이브러리 로드 실패: " + e.message);
     return;
   }
+  // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+  const _codeMap = window._oldToCurrentCodeMap || new Map();
   const latestByStore = new Map();
   records.forEach(r => {
-    const ex = latestByStore.get(r.storeCode);
+    const key = _codeMap.get(r.storeCode) || r.storeCode;
+    const ex = latestByStore.get(key);
     const t = r.createdAt?.seconds || 0;
     const exT = ex?.createdAt?.seconds || 0;
-    if (!ex || t > exT) latestByStore.set(r.storeCode, r);
+    if (!ex || t > exT) latestByStore.set(key, r);
   });
 
   const rows = [["매장코드","매장명","팀","상태","Q1","작성자","역할","점검일시","메모"]];
