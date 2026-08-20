@@ -454,7 +454,7 @@ const GK_FORM = {
   questions: [
     { key:"q1", label:"[귀멸의칼날] 홍보물(메인포스터, 키오스크속지, 와블러)은 정위치에 부착되어 있는가?", hasPhoto:true },
     { key:"q2", label:"[갓빠삭] 할인 포스터는 정위치에 부착되어 있는가?", hasPhoto:true },
-    { key:"q3", label:"제거 필요 홍보물(모코코, 르세라핌)은 사전 제거되어 있는가?", hasPhoto:true },
+    { key:"q3", label:"제거 필요 홍보물(모코코, 르세라핌)은 사전 제거되어 있는가?", hasPhoto:false },
   ],
   maxPhotos: 3,
   memoMaxLen: 100,
@@ -1264,7 +1264,7 @@ function startForm() {
   } else if (S.category === "nashville") {
     S.nashvilleAnswers = { q1:null, photos:{q1:[]}, memoQ1:"", memo:"" };
   } else if (S.category === "gk") {
-    S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+    S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
   } else if (S.category === "spacool") {
     S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
   } else {
@@ -3327,7 +3327,7 @@ function sessionRestore() {
     S.nashvilleAnswers = data.nashvilleAnswers ||
       (data.category === "nashville" ? { q1:null, photos:{q1:[]}, memoQ1:"", memo:"" } : null);
     S.gkAnswers = data.gkAnswers ||
-      (data.category === "gk" ? { q1:null, q2:null, q3:null, photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" } : null);
+      (data.category === "gk" ? { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" } : null);
     S.loadedDocId= data.loadedDocId;
     S.prevNItems = data.prevNItems || [];
     S.storeObj   = data.storeObj || null;
@@ -9324,7 +9324,7 @@ function startGkInspection() {
   }
   S.category = "gk";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+  S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
   go("storeSel");
 }
 
@@ -9687,7 +9687,7 @@ async function fetchRecordsGk() {
 function startInspectionForStoreGk(code, name, team) {
   S.category = "gk";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+  S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
   selectStore(code, name, team);
 }
 
