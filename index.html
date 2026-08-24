@@ -460,7 +460,7 @@ const GK_FORM = {
   memoMaxLen: 100,
 };
 
-// ── 귀멸의칼날 사전 준비 긴급 대응 문항 구성 (작업지시서 기준) ──
+// ── 귀멸의칼날 사전 체크리스트 문항 구성 (작업지시서 기준) ──
 // 기존 6개 점검과 달리 사진첨부가 없고, Y/N 외에 단일선택·다중선택 답변타입과 조건부 분기가 있음.
 // - type "yn": Y/N 버튼(기존 패턴과 동일)
 // - type "single": options 중 하나만 선택하는 버튼열
@@ -471,7 +471,7 @@ const GKPRE_FORM = {
   questions: [
     { key:"q1", category:"진행률", label:"가맹점 사전 안내문을 기반으로 점주에게 안내를 완료하였는가?", type:"yn" },
     { key:"q2", category:"배달채널", label:"해당 매장은 전체 주문 채널을 운영중인가?", type:"yn" },
-    { key:"q2_1", category:"배달채널", label:"미가입 채널 종류는 무엇인가?", type:"multi", options:["배민1","쿠팡이츠","모두"], showIf: a => a.q2 === "N" },
+    { key:"q2_1", category:"배달채널", label:"미가입 채널 종류는 무엇인가?", type:"single", options:["배민1","쿠팡이츠","모두"], showIf: a => a.q2 === "N" },
     { key:"q2_2", category:"배달채널", label:"미가입 채널에 대하여 해당 프로모션 기간 운영 제안/협의 되었는가?", type:"yn", showIf: a => a.q2 === "N" },
     { key:"q3", category:"프랩", label:"사전 프랩 준비 관련 가맹점주에게 권장 및 준비에 대한 협의가 되었는가?", type:"single", options:["모두","런치만","디너만","N"] },
     { key:"q4", category:"근무인원", label:"근무인원은 권장인력만큼을 운영중인가?", type:"single", options:["Y","1명부족","2명부족","3명이상부족"] },
@@ -654,7 +654,7 @@ function renderHub(root) {
     { key:"gbchicken", enabled:_gbchickenEnabled, screen:"homeGbchicken", cls:"np", icon:"G", bg:"#FFF0E6", fg:"#C2410C", title:"갓빠삭치킨 홍보물 부착 현장점검" },
     { key:"nashville", enabled:_nashvilleEnabled, screen:"homeNashville", cls:"np", icon:"H", bg:"#FDEBEB", fg:"#9B2C2C", title:"내슈빌 핫치킨버거 홍보물 부착 현장점검" },
     { key:"gk", enabled:_gkEnabled, screen:"homeGk", cls:"np", icon:"⚔", bg:"#E6FFFA", fg:"#285E61", title:"귀멸의칼날 홍보물 부착 현장점검" },
-    { key:"gkpre", enabled:_gkpreEnabled, screen:"homeGkpre", cls:"np", icon:"⚡", bg:"#FEFCBF", fg:"#744210", title:"귀멸의칼날 사전 준비 긴급 대응" },
+    { key:"gkpre", enabled:_gkpreEnabled, screen:"homeGkpre", cls:"np", icon:"⚡", bg:"#FEFCBF", fg:"#744210", title:"귀멸의칼날 사전 체크리스트" },
   ];
 
   const cardHtml = (c, isOn) => `
@@ -1296,7 +1296,7 @@ function startForm() {
   } else if (S.category === "gk") {
     S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
   } else if (S.category === "gkpre") {
-    S.gkpreAnswers = { q1:null, q2:null, q2_1:[], q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
+    S.gkpreAnswers = { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
       memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" };
   } else if (S.category === "spacool") {
     S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
@@ -3060,7 +3060,7 @@ async function renderPhotoSetting(root) {
 
   const gkpreCategoryHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:14px">귀멸의칼날 사전 준비 긴급 대응 사용</span>
+      <span style="font-size:14px">귀멸의칼날 사전 체크리스트 사용</span>
       <div id="toggle_wrap_gkpreEnabled"
         onclick="toggleGkpreEnabled()"
         style="width:44px;height:24px;border-radius:12px;background:${_gkpreEnabled?"#744210":"#CBD5E0"};
@@ -3070,7 +3070,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_gkpreEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
-    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 귀멸의칼날 사전 준비 긴급 대응 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
+    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 귀멸의칼날 사전 체크리스트 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   root.innerHTML = `
     <div class="page-header">
@@ -3087,7 +3087,7 @@ async function renderPhotoSetting(root) {
       ${section("🍗", "갓빠삭치킨 홍보물 부착 현장점검", gbchickenCategoryHtml, false)}
       ${section("🌶️", "내슈빌 핫치킨버거 홍보물 부착 현장점검", nashvilleCategoryHtml, false)}
       ${section("⚔️", "귀멸의칼날 홍보물 부착 현장점검", gkCategoryHtml, false)}
-      ${section("⚡", "귀멸의칼날 사전 준비 긴급 대응", gkpreCategoryHtml, false)}
+      ${section("⚡", "귀멸의칼날 사전 체크리스트", gkpreCategoryHtml, false)}
 
       <button class="btn-primary" onclick="applyAdminSettings()" style="margin-top:8px">저장하기</button>
       <button class="btn-ghost" onclick="goBack()" style="margin-top:8px">취소</button>
@@ -3381,7 +3381,7 @@ function sessionRestore() {
     S.gkAnswers = data.gkAnswers ||
       (data.category === "gk" ? { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" } : null);
     S.gkpreAnswers = data.gkpreAnswers ||
-      (data.category === "gkpre" ? { q1:null, q2:null, q2_1:[], q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
+      (data.category === "gkpre" ? { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
         memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" } : null);
     S.loadedDocId= data.loadedDocId;
     S.prevNItems = data.prevNItems || [];
@@ -3597,7 +3597,7 @@ const _cache = {
   recordsNashville:   { data: null, ts: 0, ttl: 480 }, // 8분
   dashboardGk: { data: null, ts: 0, ttl: 600 }, // 10분 (귀멸의칼날 홍보물 부착 현장점검, surveys_gk 별도 컬렉션)
   recordsGk:   { data: null, ts: 0, ttl: 480 }, // 8분
-  dashboardGkpre: { data: null, ts: 0, ttl: 600 }, // 10분 (귀멸의칼날 사전 준비 긴급 대응, surveys_gkpre 별도 컬렉션)
+  dashboardGkpre: { data: null, ts: 0, ttl: 600 }, // 10분 (귀멸의칼날 사전 체크리스트, surveys_gkpre 별도 컬렉션)
   recordsGkpre:   { data: null, ts: 0, ttl: 480 }, // 8분
 };
 // 방법3: 점검결과 문서 ID 기반 캐시 (세션 내 중복 읽기 방지)
@@ -9270,7 +9270,7 @@ function gkStatus(rec) {
 }
 
 // ════════════════════════════════════════════════════════════
-// 귀멸의칼날 사전 준비 긴급 대응 전용 코드 — surveys_gkpre 컬렉션
+// 귀멸의칼날 사전 체크리스트 전용 코드 — surveys_gkpre 컬렉션
 // (매장범위는 귀멸의칼날 홍보물 부착 현장점검과 동일한 buildMatchedStoresGk 재사용 — 같은
 //  "신제품-귀멸의칼날" 플래그 대상이라 별도 함수 불필요)
 // ════════════════════════════════════════════════════════════
@@ -9289,7 +9289,7 @@ function _gkpreAllAnswered(a) {
   }
   return true;
 }
-// 귀멸의칼날 사전 준비 긴급 대응 건의 상태 계산: "none"|"needs"|"pending"|"done"
+// 귀멸의칼날 사전 체크리스트 건의 상태 계산: "none"|"needs"|"pending"|"done"
 // - Q1=N이면 즉시 재점검(설문종료·Fail, 작업지시서 4항).
 // - Q1=Y이면서 노출대상 문항 전부 응답 완료해야 정상(값의 옳고그름이 아니라 "응답완료 여부"만 봄).
 // - 조건 만족 + SV(AC) 점검 → 팀장승인대기(단일 단계, 그룹장 승인 없음).
@@ -9321,7 +9321,7 @@ async function loadGkpreEnabled() {
 
 function renderHomeGkpre(root) {
   if (!_gkpreEnabled) {
-    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 있습니다.");
+    alert("현재 귀멸의칼날 사전 체크리스트 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -9333,14 +9333,14 @@ function renderHomeGkpre(root) {
       <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
       <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
-      <h1 class="hero-title">귀멸의칼날<br>사전 준비 긴급 대응</h1>
-      <p class="hero-sub">귀멸의칼날 사전 준비 체크리스트</p>
+      <h1 class="hero-title">귀멸의칼날<br>사전 체크리스트</h1>
+      <p class="hero-sub">귀멸의칼날 사전 체크리스트</p>
     </div>
     <div class="card-section">
       <button class="btn-primary-np" onclick="startGkpreInspection()">📋 점검 시작하기</button>
       <button class="btn-ghost" onclick="go('recordsGkpre')">📂 점검 내역 조회</button>
       ${canDash ? `<button class="btn-ghost" id="gkpreApprovalBtn" onclick="go('approvalGkpre')" style="color:#B7791F;border-color:#F6D384;background:#FFFBEB">✅ 승인대기<span id="gkpreApprovalBadge"></span></button>` : ""}
-      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminGkpre()">📊 관리자 대시보드 (귀멸의칼날 사전 준비)</button>` : ""}
+      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminGkpre()">📊 관리자 대시보드 (귀멸의칼날 사전 체크리스트)</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
@@ -9402,22 +9402,22 @@ function goAdminGkpre() {
   go("dashboardGkpre");
 }
 
-// 귀멸의칼날 사전 준비 긴급 대응 시작: 최초/보완 구분 없음, 대상매장은 귀멸의칼날 홍보물
+// 귀멸의칼날 사전 체크리스트 시작: 최초/보완 구분 없음, 대상매장은 귀멸의칼날 홍보물
 // 부착 현장점검과 동일한 "신제품-귀멸의칼날" 플래그(작업지시서 3항, buildMatchedStoresGk 재사용).
 function startGkpreInspection() {
   if (!_gkpreEnabled) {
-    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 있습니다.");
+    alert("현재 귀멸의칼날 사전 체크리스트 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
   S.category = "gkpre";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.gkpreAnswers = { q1:null, q2:null, q2_1:[], q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
+  S.gkpreAnswers = { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
     memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" };
   go("storeSel");
 }
 
-// ── FORM (귀멸의칼날 사전 준비 긴급 대응) — 조건부분기·다지선다 있는 체크리스트 ──
+// ── FORM (귀멸의칼날 사전 체크리스트) — 조건부분기·다지선다 있는 체크리스트 ──
 function renderFormGkpre(root) {
   const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
   const a = S.gkpreAnswers;
@@ -9431,12 +9431,12 @@ function renderFormGkpre(root) {
     }
     if (q.type === "single") {
       return `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
-        ${q.options.map(opt => `<button class="ans-btn ${val===opt?'selected':''}" style="flex:1 1 auto;min-width:64px" onclick="setGkpreAnswer('${q.key}','${opt}')">${opt}</button>`).join("")}
+        ${q.options.map(opt => `<button class="ans-btn ans-choice ${val===opt?'selected':''}" style="flex:1 1 auto;min-width:64px" onclick="setGkpreAnswer('${q.key}','${opt}')">${opt}</button>`).join("")}
       </div>`;
     }
     const sel = Array.isArray(val) ? val : [];
     return `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
-      ${q.options.map(opt => `<button class="ans-btn ${sel.includes(opt)?'selected':''}" style="flex:1 1 auto;min-width:64px" onclick="toggleGkpreMultiAnswer('${q.key}','${opt}')">${opt}</button>`).join("")}
+      ${q.options.map(opt => `<button class="ans-btn ans-choice ${sel.includes(opt)?'selected':''}" style="flex:1 1 auto;min-width:64px" onclick="toggleGkpreMultiAnswer('${q.key}','${opt}')">${opt}</button>`).join("")}
     </div>
     <div style="font-size:11px;color:var(--sub);margin-top:4px">여러 개 선택 가능</div>`;
   };
@@ -9474,7 +9474,7 @@ function renderFormGkpre(root) {
       <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
       <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
         <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
-        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">귀멸의칼날 사전 준비 긴급 대응 · ${roleLabel}</span>
+        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">귀멸의칼날 사전 체크리스트 · ${roleLabel}</span>
       </div>
     </div>
     <div class="form-body">
@@ -9527,7 +9527,7 @@ function updateGkpreMemo(val) {
 
 async function submitFormGkpre() {
   if (!_gkpreEnabled) {
-    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
+    alert("현재 귀멸의칼날 사전 체크리스트 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
   }
   const a = S.gkpreAnswers;
@@ -9564,7 +9564,7 @@ async function submitFormGkpre() {
       gkpreAnswers: {
         q1: a.q1,
         q2: a.q1 === "Y" ? a.q2 : null,
-        q2_1: a.q1 === "Y" && a.q2 === "N" ? a.q2_1 : [],
+        q2_1: a.q1 === "Y" && a.q2 === "N" ? a.q2_1 : null,
         q2_2: a.q1 === "Y" && a.q2 === "N" ? a.q2_2 : null,
         q3: a.q1 === "Y" ? a.q3 : null,
         q4: a.q1 === "Y" ? a.q4 : null,
@@ -10520,7 +10520,7 @@ async function downloadExcelGk() {
 
 async function renderRecordsGkpre(root) {
   if (!_gkpreEnabled) {
-    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 있습니다.");
+    alert("현재 귀멸의칼날 사전 체크리스트 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -10530,7 +10530,7 @@ async function renderRecordsGkpre(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>점검 내역 조회 (귀멸의칼날 사전준비)</h2>
+      <h2>점검 내역 조회 (귀멸의칼날 사전 체크리스트)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
@@ -10674,10 +10674,10 @@ function setRecGkpreFilter(val) {
   fetchRecordsGkpre();
 }
 
-// ── 승인대기 (귀멸의칼날 사전준비, SV의 정상조건 만족 건 중 담당 팀장 승인 전 — 단일단계) ──
+// ── 승인대기 (귀멸의칼날 사전 체크리스트, SV의 정상조건 만족 건 중 담당 팀장 승인 전 — 단일단계) ──
 async function renderApprovalGkpre(root) {
   if (!_gkpreEnabled) {
-    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 있습니다.");
+    alert("현재 귀멸의칼날 사전 체크리스트 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -10687,7 +10687,7 @@ async function renderApprovalGkpre(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>승인대기 (귀멸의칼날 사전준비)</h2>
+      <h2>승인대기 (귀멸의칼날 사전 체크리스트)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div style="padding:8px 16px 0;font-size:12px;color:#718096">${scopeDesc} 기준</div>
@@ -10762,7 +10762,7 @@ function renderRecordDetailGkpre(root) {
   const status = gkpreStatus(r);
   const statusText = { done:"✅ 완료", pending:"🟡 승인대기 (담당 팀장 승인 필요)", needs: r.tlRejected ? "❌ 재점검필요 (팀장 반려)" : "❌ 재점검필요", none:"-" }[status];
   const a = r.gkpreAnswers || {};
-  // 귀멸의칼날 사전 준비는 조건부 분기·다중선택이 있어 일반 flat 루프로는 못 그림 —
+  // 귀멸의칼날 사전 체크리스트는 조건부 분기·다중선택이 있어 일반 flat 루프로는 못 그림 —
   // Q1=N이면 Q1만, Q1=Y면 그 시점 답변 기준으로 "노출됐어야 할" 문항만 순서대로 표시.
   let qHtml = "";
   if (a.q1 != null) {
@@ -10791,7 +10791,7 @@ function renderRecordDetailGkpre(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>점검 상세 (귀멸의칼날 사전준비)</h2>
+      <h2>점검 상세 (귀멸의칼날 사전 체크리스트)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
@@ -10855,10 +10855,10 @@ async function rejectGkpreRecord(docId) {
   }
 }
 
-// ── DASHBOARD (귀멸의칼날 사전 준비 긴급 대응, surveys_gkpre 전용) ──
+// ── DASHBOARD (귀멸의칼날 사전 체크리스트, surveys_gkpre 전용) ──
 async function renderDashboardGkpre(root) {
   if (!_gkpreEnabled) {
-    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 있습니다.");
+    alert("현재 귀멸의칼날 사전 체크리스트 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -10872,7 +10872,7 @@ async function renderDashboardGkpre(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>관리자 대시보드 (귀멸의칼날 사전준비)</h2>
+      <h2>관리자 대시보드 (귀멸의칼날 사전 체크리스트)</h2>
       <button class="btn-home-dash" onclick="go('homeGkpre')" style="margin-left:auto">🏠 Home</button>
     </div>
     <div style="padding:20px;text-align:center;color:#718096">데이터 불러오는 중...</div>`;
@@ -10989,7 +10989,7 @@ function buildDashboardGkpre(root, records, scopeStores) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>관리자 대시보드 (귀멸의칼날 사전준비)</h2>
+      <h2>관리자 대시보드 (귀멸의칼날 사전 체크리스트)</h2>
       <button class="btn-home-dash" onclick="go('homeGkpre')" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="dash-stats">
@@ -11102,7 +11102,7 @@ async function downloadExcelGkpre() {
     rows.push([
       s.code, s.name, s.team||"",
       statusLabel[gkpreStatus(rec)],
-      a.q1||"", a.q2||"", (Array.isArray(a.q2_1)?a.q2_1.join(", "):"")||"", a.q2_2||"", a.q3||"", a.q4||"", a.q4_1||"", a.q5||"", a.q6||"",
+      a.q1||"", a.q2||"", a.q2_1||"", a.q2_2||"", a.q3||"", a.q4||"", a.q4_1||"", a.q5||"", a.q6||"",
       rec?.writerName || "",
       roleLabel[rec?.role] || rec?.role || "",
       dt ? dt.toLocaleString("ko-KR") : "",
@@ -11262,6 +11262,7 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .ans-btn.ans-yes.selected{background:#38A169;border-color:#38A169;color:white}
 .ans-btn.ans-no.selected{background:var(--red);border-color:var(--red);color:white}
 .ans-btn.ans-na.selected{background:#718096;border-color:#718096;color:white}
+.ans-btn.ans-choice.selected{background:#2B6CB0;border-color:#2B6CB0;color:white;box-shadow:0 1px 4px rgba(43,108,176,0.35)}
 [id$="-Y"].selected{border-color:#38A169;background:#F0FFF4;color:#276749}
 [id$="-N"].selected{border-color:var(--red);background:#FFF5F5;color:#C53030}
 [id$="-미취급"].selected{border-color:#718096;background:#EDF2F7;color:#4A5568}
