@@ -75,7 +75,7 @@ onAuthStateChanged(auth, async user => {
       _photoSettingsLoaded = false;
       _npEnabledLoaded = false;
       _spacoolEnabledLoaded = false;
-      await Promise.all([loadPhotoSettings(), loadDateLimitSetting(), loadNpEnabled(), loadSpacoolEnabled(), loadGbchickenEnabled(), loadNashvilleEnabled(), loadGkEnabled()]);
+      await Promise.all([loadPhotoSettings(), loadDateLimitSetting(), loadNpEnabled(), loadSpacoolEnabled(), loadGbchickenEnabled(), loadNashvilleEnabled(), loadGkEnabled(), loadGkpreEnabled()]);
       // sessionStorage에 점검 중 데이터가 있으면 home으로 이동하지 않음
       // (이어서 점검하기 팝업이 뜰 것이므로)
       const _hasPendingSession = (() => {
@@ -460,6 +460,28 @@ const GK_FORM = {
   memoMaxLen: 100,
 };
 
+// ── 귀멸의칼날 사전 준비 긴급 대응 문항 구성 (작업지시서 기준) ──
+// 기존 6개 점검과 달리 사진첨부가 없고, Y/N 외에 단일선택·다중선택 답변타입과 조건부 분기가 있음.
+// - type "yn": Y/N 버튼(기존 패턴과 동일)
+// - type "single": options 중 하나만 선택하는 버튼열
+// - type "multi": options 중 여러 개 선택 가능한 버튼열(배열로 저장)
+// - showIf(a): 현재까지의 답변(a)을 받아 이 문항을 노출할지 결정. 없으면 항상 노출.
+// - Q1=N이면 나머지 문항 전부 건너뛰고 바로 제출 가능(설문종료) — renderFormGkpre에서 처리.
+const GKPRE_FORM = {
+  questions: [
+    { key:"q1", category:"진행률", label:"가맹점 사전 안내문을 기반으로 점주에게 안내를 완료하였는가?", type:"yn" },
+    { key:"q2", category:"배달채널", label:"해당 매장은 전체 주문 채널을 운영중인가?", type:"yn" },
+    { key:"q2_1", category:"배달채널", label:"미가입 채널 종류는 무엇인가?", type:"multi", options:["배민1","쿠팡이츠","모두"], showIf: a => a.q2 === "N" },
+    { key:"q2_2", category:"배달채널", label:"미가입 채널에 대하여 해당 프로모션 기간 운영 제안/협의 되었는가?", type:"yn", showIf: a => a.q2 === "N" },
+    { key:"q3", category:"프랩", label:"사전 프랩 준비 관련 가맹점주에게 권장 및 준비에 대한 협의가 되었는가?", type:"single", options:["모두","런치만","디너만","N"] },
+    { key:"q4", category:"근무인원", label:"근무인원은 권장인력만큼을 운영중인가?", type:"single", options:["Y","1명부족","2명부족","3명이상부족"] },
+    { key:"q4_1", category:"근무인원", label:"주말 근무인원 추가 출근을 제안/협의 되었는가?", type:"single", options:["~1명","~2명","~3명","거부"], showIf: a => a.q4 != null && a.q4 !== "Y" },
+    { key:"q5", category:"연장영업", label:"행사기간 연장영업(조기오픈/마감연장)의 필요성을 안내 및 협의하였는가?", type:"single", options:["기존유지","+1시간","+2시간","+3시간 이상"] },
+    { key:"q6", category:"굿즈발주", label:"굿즈관련 초도수량 및 점주발주사항 관련 안내는 완료되었는가?", type:"yn" },
+  ],
+  memoMaxLen: 100,
+};
+
 // 맘스터치 BI 로고 (흰색/#FDC838 조합, 원본 viewBox 유지 후 CSS로 크기 제어)
 const LOGO_SVG = `<svg viewBox="0 0 299 35" xmlns="http://www.w3.org/2000/svg" style="height:20px;width:auto;display:block">
 <path d="M97.1976 5.06852C95.9038 4.74494 94.5777 5.32738 93.9631 6.45989L84.0654 24.483L74.1678 6.45989C73.5209 5.29502 72.1947 4.71258 70.9332 5.06852C69.6718 5.39209 68.7661 6.55696 68.7661 7.85126V31.181C68.7661 32.7665 70.0599 34.0608 71.6448 34.0608C73.2298 34.0608 74.5236 32.7665 74.5236 31.181V19.1117L81.5102 31.8929C82.0277 32.8312 82.998 33.3813 84.0331 33.3813C85.1005 33.3813 86.0709 32.7989 86.556 31.8929L93.575 19.144V31.2134C93.575 32.7989 94.8688 34.0932 96.4537 34.0932C98.0386 34.0932 99.3324 32.7989 99.3324 31.2134V7.88362C99.3648 6.55696 98.4591 5.39209 97.1976 5.06852Z" fill="white"/>
@@ -564,7 +586,7 @@ function render() {
   root.innerHTML = ""; window.scrollTo(0,0);
   const scr = S.screen;
   // 미로그인 상태에서 보호 화면 접근 시 로그인으로 리디렉션
-  const protectedScreens = ["hub","home","homeNP","homeSpacool","homeGbchicken","homeNashville","homeGk","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP","approvalNP","dashboardSpacool","recordsSpacool","recordDetailSpacool","storeHistorySpacool","approvalSpacool","dashboardGbchicken","recordsGbchicken","recordDetailGbchicken","storeHistoryGbchicken","approvalGbchicken","dashboardNashville","recordsNashville","recordDetailNashville","storeHistoryNashville","approvalNashville","dashboardGk","recordsGk","recordDetailGk","storeHistoryGk","approvalGk"];
+  const protectedScreens = ["hub","home","homeNP","homeSpacool","homeGbchicken","homeNashville","homeGk","homeGkpre","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP","approvalNP","dashboardSpacool","recordsSpacool","recordDetailSpacool","storeHistorySpacool","approvalSpacool","dashboardGbchicken","recordsGbchicken","recordDetailGbchicken","storeHistoryGbchicken","approvalGbchicken","dashboardNashville","recordsNashville","recordDetailNashville","storeHistoryNashville","approvalNashville","dashboardGk","recordsGk","recordDetailGk","storeHistoryGk","approvalGk","dashboardGkpre","recordsGkpre","recordDetailGkpre","storeHistoryGkpre","approvalGkpre"];
   if (!_currentUser && protectedScreens.includes(scr)) {
     renderLogin(root);
     return;
@@ -575,6 +597,7 @@ function render() {
   else if (scr==="homeGbchicken") renderHomeGbchicken(root);
   else if (scr==="homeNashville") renderHomeNashville(root);
   else if (scr==="homeGk") renderHomeGk(root);
+  else if (scr==="homeGkpre") renderHomeGkpre(root);
   else if (scr==="login")      renderLogin(root);
   else if (scr==="changePw")   renderChangePw(root);
   else if (scr==="photoSetting") renderPhotoSetting(root); // async
@@ -582,7 +605,7 @@ function render() {
   else if (scr==="role")       renderRole(root);
   else if (scr==="storeSel")   renderStoreSel(root);
   else if (scr==="info")       renderInfo(root);
-  else if (scr==="form")       (S.category==="np" ? renderFormNP(root) : S.category==="spacool" ? renderFormSpacool(root) : S.category==="gbchicken" ? renderFormGbchicken(root) : S.category==="nashville" ? renderFormNashville(root) : S.category==="gk" ? renderFormGk(root) : renderForm(root));
+  else if (scr==="form")       (S.category==="np" ? renderFormNP(root) : S.category==="spacool" ? renderFormSpacool(root) : S.category==="gbchicken" ? renderFormGbchicken(root) : S.category==="nashville" ? renderFormNashville(root) : S.category==="gk" ? renderFormGk(root) : S.category==="gkpre" ? renderFormGkpre(root) : renderForm(root));
   else if (scr==="compare")    renderCompare(root);
   else if (scr==="followupNeeded") renderFollowupNeeded(root);
   else if (scr==="records")    renderRecords(root);
@@ -614,6 +637,11 @@ function render() {
   else if (scr==="recordDetailGk") renderRecordDetailGk(root);
   else if (scr==="approvalGk")     renderApprovalGk(root); // async
   else if (scr==="storeHistoryGk") renderStoreHistoryGk(root);
+  else if (scr==="dashboardGkpre") renderDashboardGkpre(root); // async
+  else if (scr==="recordsGkpre")   renderRecordsGkpre(root); // async
+  else if (scr==="recordDetailGkpre") renderRecordDetailGkpre(root);
+  else if (scr==="approvalGkpre")     renderApprovalGkpre(root); // async
+  else if (scr==="storeHistoryGkpre") renderStoreHistoryGkpre(root);
 }
 
 // ── HUB (신규플랫폼/신제품 선택 진입화면) ──────────
@@ -626,6 +654,7 @@ function renderHub(root) {
     { key:"gbchicken", enabled:_gbchickenEnabled, screen:"homeGbchicken", cls:"np", icon:"G", bg:"#FFF0E6", fg:"#C2410C", title:"갓빠삭치킨 홍보물 부착 현장점검" },
     { key:"nashville", enabled:_nashvilleEnabled, screen:"homeNashville", cls:"np", icon:"H", bg:"#FDEBEB", fg:"#9B2C2C", title:"내슈빌 핫치킨버거 홍보물 부착 현장점검" },
     { key:"gk", enabled:_gkEnabled, screen:"homeGk", cls:"np", icon:"⚔", bg:"#E6FFFA", fg:"#285E61", title:"귀멸의칼날 홍보물 부착 현장점검" },
+    { key:"gkpre", enabled:_gkpreEnabled, screen:"homeGkpre", cls:"np", icon:"⚡", bg:"#FEFCBF", fg:"#744210", title:"귀멸의칼날 사전 준비 긴급 대응" },
   ];
 
   const cardHtml = (c, isOn) => `
@@ -843,6 +872,7 @@ async function searchStores() {
   else if (S.category === "gbchicken") matched = buildMatchedStoresNP(activeStores, name); // 신제품과 동일한 npEligible 기준 재사용 (작업지시서 3항)
   else if (S.category === "nashville") matched = buildMatchedStoresNashville(activeStores, name);
   else if (S.category === "gk") matched = buildMatchedStoresGk(activeStores, name);
+  else if (S.category === "gkpre") matched = buildMatchedStoresGk(activeStores, name); // 귀멸의칼날 홍보물점검과 동일 대상매장 재사용
   else if (S.category === "spacool") matched = buildMatchedStoresSpacool(activeStores, name);
   else matched = buildMatchedStoresDefault(activeStores, name);
 
@@ -1033,7 +1063,7 @@ async function selectStore(code, name, team) {
   S.storeCode = code; S.storeName = name; S.storeTeam = team;
   S.storeObj = (window._activeStores||[]).find(s => s.code === code) || null;
 
-  if (S.category === "np" || S.category === "spacool" || S.category === "gbchicken" || S.category === "nashville" || S.category === "gk") {
+  if (S.category === "np" || S.category === "spacool" || S.category === "gbchicken" || S.category === "nashville" || S.category === "gk" || S.category === "gkpre") {
     // 신제품/스파쿨: 보완점검 개념 자체가 없음(둘 다 최초점검만 존재) — 항상 바로 진행
     go("info");
     return;
@@ -1265,6 +1295,9 @@ function startForm() {
     S.nashvilleAnswers = { q1:null, photos:{q1:[]}, memoQ1:"", memo:"" };
   } else if (S.category === "gk") {
     S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+  } else if (S.category === "gkpre") {
+    S.gkpreAnswers = { q1:null, q2:null, q2_1:[], q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
+      memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" };
   } else if (S.category === "spacool") {
     S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
   } else {
@@ -2813,6 +2846,8 @@ async function renderPhotoSetting(root) {
   await loadNashvilleEnabled();
   _gkEnabledLoaded = false;
   await loadGkEnabled();
+  _gkpreEnabledLoaded = false;
+  await loadGkpreEnabled();
 
   // 마지막 저장 정보 로드
   let lastSavedText = "저장 이력 없음";
@@ -3023,6 +3058,20 @@ async function renderPhotoSetting(root) {
     </div>
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 귀멸의칼날 홍보물 부착 현장점검 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
+  const gkpreCategoryHtml = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">귀멸의칼날 사전 준비 긴급 대응 사용</span>
+      <div id="toggle_wrap_gkpreEnabled"
+        onclick="toggleGkpreEnabled()"
+        style="width:44px;height:24px;border-radius:12px;background:${_gkpreEnabled?"#744210":"#CBD5E0"};
+               position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+        <div id="toggle_thumb_gkpreEnabled"
+          style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
+                 top:3px;left:${_gkpreEnabled?"23px":"3px"};transition:left .2s"></div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 귀멸의칼날 사전 준비 긴급 대응 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
+
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
@@ -3038,6 +3087,7 @@ async function renderPhotoSetting(root) {
       ${section("🍗", "갓빠삭치킨 홍보물 부착 현장점검", gbchickenCategoryHtml, false)}
       ${section("🌶️", "내슈빌 핫치킨버거 홍보물 부착 현장점검", nashvilleCategoryHtml, false)}
       ${section("⚔️", "귀멸의칼날 홍보물 부착 현장점검", gkCategoryHtml, false)}
+      ${section("⚡", "귀멸의칼날 사전 준비 긴급 대응", gkpreCategoryHtml, false)}
 
       <button class="btn-primary" onclick="applyAdminSettings()" style="margin-top:8px">저장하기</button>
       <button class="btn-ghost" onclick="goBack()" style="margin-top:8px">취소</button>
@@ -3187,6 +3237,7 @@ async function applyAdminSettings() {
     await setDoc(doc(db, "settings", "gbchickenEnabled"), { value: _gbchickenEnabled });
     await setDoc(doc(db, "settings", "nashvilleEnabled"), { value: _nashvilleEnabled });
     await setDoc(doc(db, "settings", "gkEnabled"), { value: _gkEnabled });
+    await setDoc(doc(db, "settings", "gkpreEnabled"), { value: _gkpreEnabled });
     await setDoc(doc(db, "settings", "adminMeta"), { lastSavedAt: new Date(), lastSavedBy: _authName || "" });
     _dateLimitSetting = _dateLimitUIValue;
     alert("✅ 설정이 저장되었습니다.");
@@ -3289,6 +3340,7 @@ function sessionSave() {
       gbchickenAnswers: S.gbchickenAnswers,
       nashvilleAnswers: S.nashvilleAnswers,
       gkAnswers: S.gkAnswers,
+      gkpreAnswers: S.gkpreAnswers,
       loadedDocId: S.loadedDocId,
       prevNItems:  S.prevNItems,
       storeObj:    S.storeObj,
@@ -3328,6 +3380,9 @@ function sessionRestore() {
       (data.category === "nashville" ? { q1:null, photos:{q1:[]}, memoQ1:"", memo:"" } : null);
     S.gkAnswers = data.gkAnswers ||
       (data.category === "gk" ? { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" } : null);
+    S.gkpreAnswers = data.gkpreAnswers ||
+      (data.category === "gkpre" ? { q1:null, q2:null, q2_1:[], q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
+        memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" } : null);
     S.loadedDocId= data.loadedDocId;
     S.prevNItems = data.prevNItems || [];
     S.storeObj   = data.storeObj || null;
@@ -3542,6 +3597,8 @@ const _cache = {
   recordsNashville:   { data: null, ts: 0, ttl: 480 }, // 8분
   dashboardGk: { data: null, ts: 0, ttl: 600 }, // 10분 (귀멸의칼날 홍보물 부착 현장점검, surveys_gk 별도 컬렉션)
   recordsGk:   { data: null, ts: 0, ttl: 480 }, // 8분
+  dashboardGkpre: { data: null, ts: 0, ttl: 600 }, // 10분 (귀멸의칼날 사전 준비 긴급 대응, surveys_gkpre 별도 컬렉션)
+  recordsGkpre:   { data: null, ts: 0, ttl: 480 }, // 8분
 };
 // 방법3: 점검결과 문서 ID 기반 캐시 (세션 내 중복 읽기 방지)
 const _compareCache = new Map();
@@ -5150,7 +5207,7 @@ function enterCategory(category, screen) {
 }
 
 function goCategoryHome() {
-  go(S.category === "np" ? "homeNP" : S.category === "spacool" ? "homeSpacool" : S.category === "gbchicken" ? "homeGbchicken" : S.category === "nashville" ? "homeNashville" : S.category === "gk" ? "homeGk" : "home");
+  go(S.category === "np" ? "homeNP" : S.category === "spacool" ? "homeSpacool" : S.category === "gbchicken" ? "homeGbchicken" : S.category === "nashville" ? "homeNashville" : S.category === "gk" ? "homeGk" : S.category === "gkpre" ? "homeGkpre" : "home");
 }
 function confirmBack() { if(confirm("작성 중인 내용이 사라집니다. 돌아가시겠습니까?")) { S.history = []; goCategoryHome(); } }
 function nowDTL() {
@@ -9212,6 +9269,333 @@ function gkStatus(rec) {
   return "done";
 }
 
+// ════════════════════════════════════════════════════════════
+// 귀멸의칼날 사전 준비 긴급 대응 전용 코드 — surveys_gkpre 컬렉션
+// (매장범위는 귀멸의칼날 홍보물 부착 현장점검과 동일한 buildMatchedStoresGk 재사용 — 같은
+//  "신제품-귀멸의칼날" 플래그 대상이라 별도 함수 불필요)
+// ════════════════════════════════════════════════════════════
+// 이 문항이 현재 답변(a) 기준으로 노출 대상인지 판정(showIf 없으면 항상 노출)
+function _gkpreQVisible(q, a) {
+  return !q.showIf || q.showIf(a);
+}
+// Q1=Y일 때, 노출 대상인 문항이 전부 응답됐는지 확인(다중선택은 배열 비어있지 않아야 함)
+function _gkpreAllAnswered(a) {
+  for (const q of GKPRE_FORM.questions) {
+    if (q.key === "q1") continue;
+    if (!_gkpreQVisible(q, a)) continue;
+    const v = a[q.key];
+    if (q.type === "multi") { if (!Array.isArray(v) || v.length === 0) return false; }
+    else { if (v == null) return false; }
+  }
+  return true;
+}
+// 귀멸의칼날 사전 준비 긴급 대응 건의 상태 계산: "none"|"needs"|"pending"|"done"
+// - Q1=N이면 즉시 재점검(설문종료·Fail, 작업지시서 4항).
+// - Q1=Y이면서 노출대상 문항 전부 응답 완료해야 정상(값의 옳고그름이 아니라 "응답완료 여부"만 봄).
+// - 조건 만족 + SV(AC) 점검 → 팀장승인대기(단일 단계, 그룹장 승인 없음).
+// - 조건 만족 + TL/GL/관리자 본인점검 → 즉시 완료.
+function gkpreStatus(rec) {
+  if (!rec) return "none";
+  if (rec.tlRejected) return "needs";
+  const a = rec.gkpreAnswers;
+  if (!a || a.q1 == null) return "none";
+  if (a.q1 === "N") return "needs";
+  if (!_gkpreAllAnswered(a)) return "needs";
+  if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
+  return "done";
+}
+
+let _gkpreEnabled = false;
+let _gkpreEnabledLoaded = false;
+
+async function loadGkpreEnabled() {
+  if (_gkpreEnabledLoaded) return;
+  try {
+    const snap = await getDoc(doc(db, "settings", "gkpreEnabled"));
+    _gkpreEnabled = snap.exists() ? !!snap.data().value : false;
+  } catch(e) {
+    _gkpreEnabled = false;
+  }
+  _gkpreEnabledLoaded = true;
+}
+
+function renderHomeGkpre(root) {
+  if (!_gkpreEnabled) {
+    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 있습니다.");
+    go("hub");
+    return;
+  }
+  const roleLabel = _authRole==="sv"?"AC":_authRole==="tl"?"팀장":_authRole==="gl"?"그룹장":_authRole==="admin"?"관리자":"";
+  const canDash = ["tl","gl","admin"].includes(_authRole);
+
+  root.innerHTML = `
+    <div class="hero-np" style="padding-bottom:16px;position:relative">
+      <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
+      <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
+      <div class="logo-wrap">${LOGO_SVG}</div>
+      <h1 class="hero-title">귀멸의칼날<br>사전 준비 긴급 대응</h1>
+      <p class="hero-sub">귀멸의칼날 사전 준비 체크리스트</p>
+    </div>
+    <div class="card-section">
+      <button class="btn-primary-np" onclick="startGkpreInspection()">📋 점검 시작하기</button>
+      <button class="btn-ghost" onclick="go('recordsGkpre')">📂 점검 내역 조회</button>
+      ${canDash ? `<button class="btn-ghost" id="gkpreApprovalBtn" onclick="go('approvalGkpre')" style="color:#B7791F;border-color:#F6D384;background:#FFFBEB">✅ 승인대기<span id="gkpreApprovalBadge"></span></button>` : ""}
+      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminGkpre()">📊 관리자 대시보드 (귀멸의칼날 사전 준비)</button>` : ""}
+      <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
+            ${_authName ? _authName.slice(0,1) : "?"}
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:500;color:#2D3748;">${_authName}</div>
+            <div style="font-size:11px;color:#718096;">${roleLabel}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="go('changePw')" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">PW 변경</button>
+          <button onclick="authLogout()" style="font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #E2E8F0;background:#F7FAFC;color:#4A5568;cursor:pointer;">로그아웃</button>
+        </div>
+      </div>
+    </div>`;
+  if (canDash) loadGkpreApprovalBadge();
+}
+
+async function loadGkpreApprovalBadge() {
+  const badgeEl = document.getElementById("gkpreApprovalBadge");
+  if (!badgeEl) return;
+  try {
+    await _refreshTransferAndClosedMaps();
+    let records = cacheGet("recordsGkpre");
+    if (!records) {
+      const snap = await getDocs(query(collection(db,"surveys_gkpre"), orderBy("createdAt","desc")));
+      records = [];
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("recordsGkpre", records);
+    }
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
+    const latestByStore = new Map();
+    records.forEach(r => {
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
+      const t = r.createdAt?.seconds || 0;
+      const exT = ex?.createdAt?.seconds || 0;
+      if (!ex || t > exT) latestByStore.set(key, r);
+    });
+    let list = [...latestByStore.values()];
+    if (_authRole === "tl") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
+      list = list.filter(r => teamCodes.has(r.storeCode));
+    }
+    const count = list.filter(r => gkpreStatus(r) === "pending").length;
+    if (count > 0) {
+      badgeEl.outerHTML = ` <span id="gkpreApprovalBadge" style="background:#E53E3E;color:white;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:4px">${count}</span>`;
+    }
+  } catch(e) { /* 배지 실패는 조용히 무시 */ }
+}
+
+function goAdminGkpre() {
+  if (_authRole === "sv") {
+    alert("대시보드 접근 권한이 없습니다.");
+    return;
+  }
+  go("dashboardGkpre");
+}
+
+// 귀멸의칼날 사전 준비 긴급 대응 시작: 최초/보완 구분 없음, 대상매장은 귀멸의칼날 홍보물
+// 부착 현장점검과 동일한 "신제품-귀멸의칼날" 플래그(작업지시서 3항, buildMatchedStoresGk 재사용).
+function startGkpreInspection() {
+  if (!_gkpreEnabled) {
+    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 있습니다.");
+    go("hub");
+    return;
+  }
+  S.category = "gkpre";
+  S.role = _authRole; S.inspType = "최초"; S.answers = {};
+  S.gkpreAnswers = { q1:null, q2:null, q2_1:[], q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
+    memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" };
+  go("storeSel");
+}
+
+// ── FORM (귀멸의칼날 사전 준비 긴급 대응) — 조건부분기·다지선다 있는 체크리스트 ──
+function renderFormGkpre(root) {
+  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
+  const a = S.gkpreAnswers;
+
+  const renderAnswerRow = (q, val) => {
+    if (q.type === "yn") {
+      return `<div class="answer-row" style="margin-top:10px">
+        <button class="ans-btn ans-yes ${val==='Y'?'selected':''}" onclick="setGkpreAnswer('${q.key}','Y')">✅ Y</button>
+        <button class="ans-btn ans-no ${val==='N'?'selected':''}" onclick="setGkpreAnswer('${q.key}','N')">❌ N</button>
+      </div>`;
+    }
+    if (q.type === "single") {
+      return `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+        ${q.options.map(opt => `<button class="ans-btn ${val===opt?'selected':''}" style="flex:1 1 auto;min-width:64px" onclick="setGkpreAnswer('${q.key}','${opt}')">${opt}</button>`).join("")}
+      </div>`;
+    }
+    const sel = Array.isArray(val) ? val : [];
+    return `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+      ${q.options.map(opt => `<button class="ans-btn ${sel.includes(opt)?'selected':''}" style="flex:1 1 auto;min-width:64px" onclick="toggleGkpreMultiAnswer('${q.key}','${opt}')">${opt}</button>`).join("")}
+    </div>
+    <div style="font-size:11px;color:var(--sub);margin-top:4px">여러 개 선택 가능</div>`;
+  };
+
+  const renderQCard = (q) => {
+    const val = a[q.key];
+    return `
+      <div class="question-card">
+        <span class="q-title">[${q.category}] ${q.label}</span>
+        ${renderAnswerRow(q, val)}
+        <div class="memo-wrap" style="margin-top:12px">
+          <input type="text" class="memo-input"
+            placeholder="관련 메모 (선택, 최대 ${GKPRE_FORM.memoMaxLen}자)"
+            maxlength="${GKPRE_FORM.memoMaxLen}"
+            oninput="updateGkpreQMemo('memo_${q.key}',this.value)"
+            value="${escapeHtml(a['memo_'+q.key] || "")}" />
+        </div>
+      </div>`;
+  };
+
+  const q1 = GKPRE_FORM.questions[0];
+  let bodyHtml = renderQCard(q1);
+
+  if (a.q1 === "Y") {
+    GKPRE_FORM.questions.slice(1).forEach(q => {
+      if (!_gkpreQVisible(q, a)) return;
+      bodyHtml += renderQCard(q);
+    });
+  } else if (a.q1 === "N") {
+    bodyHtml += `<div class="notice-box" style="margin:0 16px 16px">⚠️ Q1에서 N을 선택하셨습니다. 설문이 여기서 종료되며, 바로 제출 가능합니다.</div>`;
+  }
+
+  root.innerHTML = `
+    <div class="sticky-header" style="display:flex;align-items:center;gap:8px;padding:16px;background:white;border-bottom:1px solid var(--border)">
+      <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
+      <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
+        <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
+        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">귀멸의칼날 사전 준비 긴급 대응 · ${roleLabel}</span>
+      </div>
+    </div>
+    <div class="form-body">
+      ${bodyHtml}
+      ${a.q1 != null ? `
+      <div class="question-card">
+        <span class="q-title">전체 메모 (선택)</span>
+        <div class="memo-wrap" style="margin-top:10px">
+          <input type="text" id="gkpreMemo" class="memo-input"
+            placeholder="점검 간 특이사항 (선택, 최대 ${GKPRE_FORM.memoMaxLen}자)"
+            maxlength="${GKPRE_FORM.memoMaxLen}"
+            oninput="updateGkpreMemo(this.value)"
+            value="${escapeHtml(a.memo || "")}" />
+          <span class="memo-counter" id="gkpreMemoCnt">${(a.memo||"").length}/${GKPRE_FORM.memoMaxLen}</span>
+        </div>
+      </div>
+      <div class="submit-section">
+        <div id="submitWarning" class="submit-warning" style="display:none">⚠️ 필수 항목을 확인해주세요.</div>
+        <button class="btn-submit" onclick="submitFormGkpre()">점검 제출하기</button>
+      </div>` : `
+      <div style="text-align:center;padding:20px;color:var(--sub);font-size:13px">Q1을 먼저 선택해주세요.</div>`}
+    </div>`;
+}
+
+function setGkpreAnswer(qKey, val) {
+  S.gkpreAnswers[qKey] = val;
+  sessionSave();
+  renderFormGkpre(document.getElementById("app"));
+}
+
+function toggleGkpreMultiAnswer(qKey, opt) {
+  const cur = Array.isArray(S.gkpreAnswers[qKey]) ? S.gkpreAnswers[qKey].slice() : [];
+  const idx = cur.indexOf(opt);
+  if (idx >= 0) cur.splice(idx, 1); else cur.push(opt);
+  S.gkpreAnswers[qKey] = cur;
+  sessionSave();
+  renderFormGkpre(document.getElementById("app"));
+}
+
+function updateGkpreQMemo(memoKey, val) {
+  S.gkpreAnswers[memoKey] = val;
+  sessionSave();
+}
+
+function updateGkpreMemo(val) {
+  S.gkpreAnswers.memo = val;
+  const cnt = document.getElementById("gkpreMemoCnt");
+  if (cnt) cnt.textContent = `${val.length}/${GKPRE_FORM.memoMaxLen}`;
+}
+
+async function submitFormGkpre() {
+  if (!_gkpreEnabled) {
+    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
+    return;
+  }
+  const a = S.gkpreAnswers;
+  const warnEl = document.getElementById("submitWarning");
+  const showWarn = (msg) => {
+    if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; }
+    alert("⚠️ " + msg + "\n제출되지 않았습니다.");
+  };
+
+  if (a.q1 !== "Y" && a.q1 !== "N") { showWarn("Q1을 선택해주세요."); return; }
+
+  if (a.q1 === "Y") {
+    for (const q of GKPRE_FORM.questions.slice(1)) {
+      if (!_gkpreQVisible(q, a)) continue;
+      const val = a[q.key];
+      if (q.type === "multi") {
+        if (!Array.isArray(val) || val.length === 0) { showWarn(`[${q.category}] ${q.label}에 응답해주세요.`); return; }
+      } else if (val == null) {
+        showWarn(`[${q.category}] ${q.label}에 응답해주세요.`);
+        return;
+      }
+    }
+  }
+
+  if (warnEl) warnEl.style.display = "none";
+
+  try {
+    const trimMemo = v => (v || "").slice(0, GKPRE_FORM.memoMaxLen);
+    const payload = {
+      storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
+      writerName: S.writerName, role: S.role,
+      inspType: "최초",
+      visitDate: S.visitDate,
+      gkpreAnswers: {
+        q1: a.q1,
+        q2: a.q1 === "Y" ? a.q2 : null,
+        q2_1: a.q1 === "Y" && a.q2 === "N" ? a.q2_1 : [],
+        q2_2: a.q1 === "Y" && a.q2 === "N" ? a.q2_2 : null,
+        q3: a.q1 === "Y" ? a.q3 : null,
+        q4: a.q1 === "Y" ? a.q4 : null,
+        q4_1: a.q1 === "Y" && a.q4 != null && a.q4 !== "Y" ? a.q4_1 : null,
+        q5: a.q1 === "Y" ? a.q5 : null,
+        q6: a.q1 === "Y" ? a.q6 : null,
+        memo_q1: trimMemo(a.memo_q1), memo_q2: trimMemo(a.memo_q2),
+        memo_q2_1: trimMemo(a.memo_q2_1), memo_q2_2: trimMemo(a.memo_q2_2),
+        memo_q3: trimMemo(a.memo_q3), memo_q4: trimMemo(a.memo_q4), memo_q4_1: trimMemo(a.memo_q4_1),
+        memo_q5: trimMemo(a.memo_q5), memo_q6: trimMemo(a.memo_q6),
+        memo: trimMemo(a.memo),
+      },
+      needsFollowup: a.q1 !== "Y",
+      createdAt: new Date(),
+    };
+    if (S.role === "sv" && !payload.needsFollowup) {
+      payload.tlApproved = false;
+    }
+    await addDoc(collection(db, "surveys_gkpre"), payload);
+
+    sessionClear();
+    cacheInvalidate("dashboardGkpre");
+    cacheInvalidate("recordsGkpre");
+    S.history = [];
+    alert("✅ 점검이 제출되었습니다.");
+    go("homeGkpre");
+  } catch(e) {
+    alert("제출 중 오류가 발생했습니다: " + e.message);
+  }
+}
+
 let _gkEnabled = false;
 let _gkEnabledLoaded = false;
 
@@ -9537,6 +9921,14 @@ function toggleGkEnabled() {
   const thumb = document.getElementById("toggle_thumb_gkEnabled");
   if (wrap)  wrap.style.background = _gkEnabled ? "#285E61" : "#CBD5E0";
   if (thumb) thumb.style.left      = _gkEnabled ? "23px" : "3px";
+}
+
+function toggleGkpreEnabled() {
+  _gkpreEnabled = !_gkpreEnabled;
+  const wrap  = document.getElementById("toggle_wrap_gkpreEnabled");
+  const thumb = document.getElementById("toggle_thumb_gkpreEnabled");
+  if (wrap)  wrap.style.background = _gkpreEnabled ? "#744210" : "#CBD5E0";
+  if (thumb) thumb.style.left      = _gkpreEnabled ? "23px" : "3px";
 }
 
 // ── 점검 내역 조회 (귀멸의칼날 홍보물 부착 현장점검) ────────────────
@@ -10126,6 +10518,605 @@ async function downloadExcelGk() {
   XLSX.writeFile(wb, `귀멸의칼날홍보물부착점검_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
+async function renderRecordsGkpre(root) {
+  if (!_gkpreEnabled) {
+    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 있습니다.");
+    go("hub");
+    return;
+  }
+  const autoDesc = _authRole==="sv" ? `${_authName} 담당 점포`
+                 : _authRole==="tl" ? `${_authName} 담당팀`
+                 : "전체";
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>점검 내역 조회 (귀멸의칼날 사전준비)</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
+    </div>
+    <div class="card-section">
+      <div style="background:#FFFBEB;border:1px solid #F6AD55;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#744210;">
+        📋 <b>${autoDesc}</b> 점검 내역을 표시합니다
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:2px">
+        <input id="recSearchGkpre" class="input-field" type="text" placeholder="매장명으로 검색" style="flex:1;margin:0;width:auto"/>
+        <button onclick="fetchRecordsGkpre()" style="flex-shrink:0;padding:12px 20px;background:var(--amber);color:white;border:none;border-radius:var(--radius);font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap">검색</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px">
+        <button id="rgf_all" onclick="setRecGkpreFilter('')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid var(--amber);background:var(--amber);color:white;cursor:pointer;font-weight:600">전체</button>
+        <button id="rgf_done" onclick="setRecGkpreFilter('done')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #9AE6B4;background:white;color:#276749;cursor:pointer">완료</button>
+        <button id="rgf_pending" onclick="setRecGkpreFilter('pending')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #F6D384;background:white;color:#B7791F;cursor:pointer">승인대기</button>
+        <button id="rgf_needs" onclick="setRecGkpreFilter('needs')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #FEB2B2;background:white;color:#C53030;cursor:pointer">재점검필요</button>
+        <button id="rgf_none" onclick="setRecGkpreFilter('none')" style="padding:5px 12px;font-size:12px;border-radius:20px;border:1.5px solid #CBD5E0;background:white;color:#4A5568;cursor:pointer">미점검</button>
+      </div>
+      <div id="recListGkpre"></div>
+    </div>`;
+  window._recGkpreFilter = "";
+  fetchRecordsGkpre();
+}
+
+async function fetchRecordsGkpre() {
+  if (!_gkpreEnabled) return;
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
+  const searchEl = document.getElementById("recSearchGkpre");
+  const keyword = searchEl ? searchEl.value.trim() : "";
+  const recList = document.getElementById("recListGkpre");
+  if (!recList) return;
+  recList.innerHTML = `<p class="loading-text">불러오는 중...</p>`;
+  try {
+    let records = cacheGet("recordsGkpre");
+    if (!records) {
+      const snap = await getDocs(query(collection(db,"surveys_gkpre"), orderBy("createdAt","desc")));
+      records = [];
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("recordsGkpre", records);
+    }
+    window._recordsGkpreAll = records;
+
+    if (_authRole === "sv" && _authName) {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const myCodes = new Set(activeStores.filter(s => s.sv === _authName).map(s => s.code));
+      records = records.filter(r => myCodes.has(r.storeCode));
+    } else if (_authRole === "tl" && _authName) {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
+      records = records.filter(r => teamCodes.has(r.storeCode));
+    }
+
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
+    const latestByStore = new Map();
+    records.forEach(r => {
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
+      const t = r.createdAt?.seconds || 0;
+      const exT = ex?.createdAt?.seconds || 0;
+      if (!ex || t > exT) latestByStore.set(key, r);
+    });
+    records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+
+    const filter = window._recGkpreFilter || "";
+
+    const activeStyle = { all:"var(--amber)", done:"#9AE6B4", pending:"#F6D384", needs:"#FEB2B2", none:"#CBD5E0" };
+    const activeText  = { all:"white", done:"#276749", pending:"#B7791F", needs:"#C53030", none:"#2D3748" };
+    ["all","done","pending","needs","none"].forEach(k => {
+      const btn = document.getElementById("rgf_"+k);
+      if (!btn) return;
+      const map = {all:"", done:"done", pending:"pending", needs:"needs", none:"none"};
+      const isActive = map[k] === filter;
+      btn.style.background = isActive ? activeStyle[k] : "white";
+      btn.style.color = isActive ? activeText[k] : (k==="all"?"#4A5568":activeText[k]);
+      btn.style.fontWeight = isActive ? "600" : "400";
+    });
+
+    // 미점검: 문서 자체가 없는 매장 — 담당범위(buildMatchedStoresGkpre, "신제품-귀멸의칼날" 플래그
+    // 전용) 중 위에서 만든 latestByStore(문서 있는 매장 집합)에 없는 매장만 골라서 별도로 렌더링
+    if (filter === "none") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      let notInspected = buildMatchedStoresGkpre(activeStores, _authName)
+        .filter(s => !latestByStore.has(s.code));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      notInspected.sort((a,b) => a.name.localeCompare(b.name));
+
+      if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
+      let html = `<div class="store-count" style="padding:8px 2px">${notInspected.length}개 매장</div><div class="search-list">`;
+      notInspected.forEach(s => {
+        html += `<div class="search-item" onclick="startInspectionForStoreGkpre('${s.code}','${escapeHtml(s.name)}','${escapeHtml(s.team||"")}')">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <span class="si-store">${escapeHtml(s.name)}</span>
+            <span class="insp-badge badge-sm">미점검</span>
+          </div>
+          <div class="si-meta">${escapeHtml(s.code)} · ${escapeHtml(s.team||"-")} · 탭하여 점검 시작</div>
+        </div>`;
+      });
+      recList.innerHTML = html + `</div>`;
+      return;
+    }
+
+    if (filter) records = records.filter(r => gkpreStatus(r) === filter);
+
+    if (records.length === 0) { recList.innerHTML = `<p class="error-text">검색 결과가 없습니다.</p>`; return; }
+    let html = `<div class="store-count" style="padding:8px 2px">${records.length}건</div><div class="search-list">`;
+    records.forEach(r => {
+      const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
+      const status = gkpreStatus(r);
+      const statusBadge = status === "done" ? `<span class="insp-badge badge-first badge-sm">완료</span>`
+        : status === "pending" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">승인대기</span>`
+        : status === "needs" ? `<span class="insp-badge badge-follow badge-sm">재점검필요</span>`
+        : `<span class="insp-badge badge-sm">-</span>`;
+      const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
+      html += `<div class="search-item" onclick="viewRecordGkpre('${r.id}')">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span class="si-store">${escapeHtml(r.storeName)}</span>
+          ${statusBadge}
+        </div>
+        <div class="si-meta">${roleLabel}: ${escapeHtml(r.writerName)} · ${dt}</div>
+      </div>`;
+    });
+    recList.innerHTML = html + `</div>`;
+  } catch(e) {
+    recList.innerHTML = `<p class="error-text">오류: ${e.message}</p>`;
+  }
+}
+
+// 미점검 매장 목록(점검내역조회)에서 클릭 시 바로 점검 시작 — startGkpreInspection()과
+// 동일한 초기화 후 selectStore()로 이어서, 기존 매장선택 로직을 그대로 재사용
+function startInspectionForStoreGkpre(code, name, team) {
+  S.category = "gkpre";
+  S.role = _authRole; S.inspType = "최초"; S.answers = {};
+  S.gkpreAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+  selectStore(code, name, team);
+}
+
+function setRecGkpreFilter(val) {
+  window._recGkpreFilter = val;
+  fetchRecordsGkpre();
+}
+
+// ── 승인대기 (귀멸의칼날 사전준비, SV의 정상조건 만족 건 중 담당 팀장 승인 전 — 단일단계) ──
+async function renderApprovalGkpre(root) {
+  if (!_gkpreEnabled) {
+    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 있습니다.");
+    go("hub");
+    return;
+  }
+  if (!["tl","gl","admin"].includes(_authRole)) { go("homeGkpre"); return; }
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
+  const scopeDesc = _authRole === "tl" ? `${_authName} 담당팀` : "전체";
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>승인대기 (귀멸의칼날 사전준비)</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
+    </div>
+    <div style="padding:8px 16px 0;font-size:12px;color:#718096">${scopeDesc} 기준</div>
+    <div id="approvalListGkpre" style="padding:12px 16px">불러오는 중...</div>`;
+  try {
+    let records = cacheGet("recordsGkpre");
+    if (!records) {
+      const snap = await getDocs(query(collection(db,"surveys_gkpre"), orderBy("createdAt","desc")));
+      records = [];
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("recordsGkpre", records);
+    }
+    // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+    const _codeMap = window._oldToCurrentCodeMap || new Map();
+    const latestByStore = new Map();
+    records.forEach(r => {
+      const key = _codeMap.get(r.storeCode) || r.storeCode;
+      const ex = latestByStore.get(key);
+      const t = r.createdAt?.seconds || 0;
+      const exT = ex?.createdAt?.seconds || 0;
+      if (!ex || t > exT) latestByStore.set(key, r);
+    });
+    let pending = [...latestByStore.values()].filter(r => gkpreStatus(r) === "pending");
+
+    if (_authRole === "tl") {
+      const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+      const teamCodes = new Set(activeStores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
+      pending = pending.filter(r => teamCodes.has(r.storeCode));
+    }
+    pending.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+
+    window._recordsGkpreAll = records;
+    const listEl = document.getElementById("approvalListGkpre");
+    if (!listEl) return;
+    if (pending.length === 0) { listEl.innerHTML = `<p class="error-text">승인 대기 중인 건이 없습니다.</p>`; return; }
+
+    listEl.innerHTML = `<div class="store-count" style="padding:0 2px 8px">${pending.length}건</div><div class="search-list">` + pending.map(r => {
+      const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
+      const roleLabel = {sv:"AC"}[r.role] || r.role || "";
+      return `<div class="search-item" onclick="viewRecordGkpre('${r.id}')">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span class="si-store">${escapeHtml(r.storeName)}</span>
+          <span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">승인대기</span>
+        </div>
+        <div class="si-meta">${escapeHtml(r.writerName||"-")}(${roleLabel}) · ${dt}</div>
+      </div>`;
+    }).join("") + `</div>`;
+  } catch(e) {
+    const listEl = document.getElementById("approvalListGkpre");
+    if (listEl) listEl.innerHTML = `<p class="error-text">오류: ${e.message}</p>`;
+  }
+}
+
+async function viewRecordGkpre(docId) {
+  let rec = (window._recordsGkpreAll || []).find(r => r.id === docId);
+  if (!rec) {
+    try {
+      const snap = await getDoc(doc(db, "surveys_gkpre", docId));
+      if (snap.exists()) rec = { id: docId, ...snap.data() };
+    } catch(e) { /* ignore, handled below */ }
+  }
+  if (!rec) { alert("데이터를 찾을 수 없습니다."); return; }
+  window._recordDetailGkpre = rec;
+  go("recordDetailGkpre");
+}
+
+function renderRecordDetailGkpre(root) {
+  const r = window._recordDetailGkpre;
+  if (!r) { go("recordsGkpre"); return; }
+  const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
+  const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
+  const status = gkpreStatus(r);
+  const statusText = { done:"✅ 완료", pending:"🟡 승인대기 (담당 팀장 승인 필요)", needs: r.tlRejected ? "❌ 재점검필요 (팀장 반려)" : "❌ 재점검필요", none:"-" }[status];
+  const a = r.gkpreAnswers || {};
+  // 귀멸의칼날 사전 준비는 조건부 분기·다중선택이 있어 일반 flat 루프로는 못 그림 —
+  // Q1=N이면 Q1만, Q1=Y면 그 시점 답변 기준으로 "노출됐어야 할" 문항만 순서대로 표시.
+  let qHtml = "";
+  if (a.q1 != null) {
+    const renderVal = (val) => {
+      if (val == null || (Array.isArray(val) && val.length === 0)) return "-";
+      return Array.isArray(val) ? val.join(", ") : val;
+    };
+    const renderOne = (q) => {
+      const memo = a["memo_"+q.key];
+      return `
+        <label class="field-label">[${q.category}] ${q.label}</label>
+        <div class="info-box">${escapeHtml(String(renderVal(a[q.key])))}</div>
+        ${memo ? `<div style="font-size:12px;color:#4A5568;margin:4px 0 8px">메모: ${escapeHtml(memo)}</div>` : ""}
+      `;
+    };
+    qHtml = renderOne(GKPRE_FORM.questions[0]);
+    if (a.q1 === "Y") {
+      GKPRE_FORM.questions.slice(1).forEach(q => {
+        if (q.showIf && !q.showIf(a)) return;
+        qHtml += renderOne(q);
+      });
+    }
+  }
+  const canDecide = status === "pending" && ["tl","gl","admin"].includes(_authRole);
+
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>점검 상세 (귀멸의칼날 사전준비)</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
+    </div>
+    <div class="card-section">
+      <label class="field-label">매장</label>
+      <div class="info-box">${escapeHtml(r.storeName)} <span style="color:#718096;font-size:13px">${escapeHtml(r.storeCode||"")} · ${escapeHtml(r.storeTeam||"")}</span></div>
+      <label class="field-label">작성자</label>
+      <div class="info-box">${escapeHtml(r.writerName||"-")} (${roleLabel})</div>
+      <label class="field-label">점검일시</label>
+      <div class="info-box">${dt}</div>
+      <label class="field-label">상태</label>
+      <div class="info-box">${statusText}</div>
+      ${qHtml}
+      ${a.memo ? `<label class="field-label">전체 메모</label><div class="info-box">${escapeHtml(a.memo)}</div>` : ""}
+      ${r.tlComment ? `<label class="field-label">팀장 코멘트</label><div class="info-box">${escapeHtml(r.tlComment)}</div>` : ""}
+      ${canDecide ? `
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+        <div style="text-align:center;font-size:12px;color:#B7791F;margin-bottom:10px">이 건은 담당 팀장 승인이 필요합니다</div>
+        <label class="field-label">팀장 코멘트 (선택)</label>
+        <textarea id="tlCommentInputGkpre" class="memo-input" style="width:100%;min-height:64px;margin-bottom:10px" placeholder="승인/반려 시 함께 저장됩니다"></textarea>
+        <div style="display:flex;gap:8px">
+          <button class="btn-ghost" style="color:#C53030;border-color:#FEB2B2;flex:1" onclick="rejectGkpreRecord('${r.id}')">반려</button>
+          <button class="btn-primary-np" style="flex:1" onclick="approveGkpreRecord('${r.id}')">승인</button>
+        </div>
+      </div>` : ""}
+    </div>`;
+}
+
+async function approveGkpreRecord(docId) {
+  const comment = (document.getElementById("tlCommentInputGkpre")?.value || "").trim();
+  if (!confirm("이 점검을 승인하시겠습니까?")) return;
+  try {
+    const payload = { tlApproved: true, tlApprovedBy: _authName, tlApprovedAt: new Date() };
+    if (comment) payload.tlComment = comment;
+    await updateDoc(doc(db, "surveys_gkpre", docId), payload);
+    cacheInvalidate("dashboardGkpre");
+    cacheInvalidate("recordsGkpre");
+    const r = window._recordDetailGkpre;
+    if (r && r.id === docId) { r.tlApproved = true; if (comment) r.tlComment = comment; }
+    alert("✅ 승인 처리되었습니다.");
+    goBack();
+  } catch(e) {
+    alert("승인 처리 중 오류가 발생했습니다: " + e.message);
+  }
+}
+
+async function rejectGkpreRecord(docId) {
+  const comment = (document.getElementById("tlCommentInputGkpre")?.value || "").trim();
+  if (!confirm("이 점검을 반려하시겠습니까?\n반려 시 해당 매장은 재점검필요 상태로 표시됩니다.")) return;
+  try {
+    const payload = { tlRejected: true, tlRejectedBy: _authName, tlRejectedAt: new Date() };
+    if (comment) payload.tlComment = comment;
+    await updateDoc(doc(db, "surveys_gkpre", docId), payload);
+    cacheInvalidate("dashboardGkpre");
+    cacheInvalidate("recordsGkpre");
+    const r = window._recordDetailGkpre;
+    if (r && r.id === docId) { r.tlRejected = true; if (comment) r.tlComment = comment; }
+    alert("🚫 반려 처리되었습니다.");
+    goBack();
+  } catch(e) {
+    alert("반려 처리 중 오류가 발생했습니다: " + e.message);
+  }
+}
+
+// ── DASHBOARD (귀멸의칼날 사전 준비 긴급 대응, surveys_gkpre 전용) ──
+async function renderDashboardGkpre(root) {
+  if (!_gkpreEnabled) {
+    alert("현재 귀멸의칼날 사전 준비 긴급 대응 기능이 비활성화되어 있습니다.");
+    go("hub");
+    return;
+  }
+  if (_authRole === "sv") {
+    alert("대시보드 접근 권한이 없습니다.");
+    go("homeGkpre");
+    return;
+  }
+  window._dashGkpreStatusFilter = "";
+  window._dashGkpreKeyword = "";
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>관리자 대시보드 (귀멸의칼날 사전준비)</h2>
+      <button class="btn-home-dash" onclick="go('homeGkpre')" style="margin-left:auto">🏠 Home</button>
+    </div>
+    <div style="padding:20px;text-align:center;color:#718096">데이터 불러오는 중...</div>`;
+  try {
+    let records = cacheGet("dashboardGkpre");
+    if (!records) {
+      const snap = await getDocs(query(collection(db,"surveys_gkpre"), orderBy("createdAt","desc")));
+      records = [];
+      snap.forEach(d => records.push({id:d.id, ...d.data()}));
+      cacheSet("dashboardGkpre", records);
+    }
+    const activeStores = await getActiveStoreData();
+
+    // "신제품-귀멸의칼날" 플래그 기준 (작업지시서 3항)
+    let scopeStores = activeStores.filter(s => s.gkpreEligible);
+    if (_authRole === "tl") {
+      scopeStores = scopeStores.filter(s => s.tl === _authName || s.sv === _authName);
+    }
+
+    window._dashGkpreRecords = records;
+    window._dashGkpreScope = scopeStores;
+    buildDashboardGkpre(root, records, scopeStores);
+  } catch(e) {
+    root.innerHTML += `<p style="padding:20px;color:#E53E3E">오류: ${e.message}</p>`;
+  }
+}
+
+function buildDashboardGkpre(root, records, scopeStores) {
+  // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+  const _codeMap = window._oldToCurrentCodeMap || new Map();
+  const latestByStore = new Map();
+  records.forEach(r => {
+    const key = _codeMap.get(r.storeCode) || r.storeCode;
+    const ex = latestByStore.get(key);
+    const t = r.createdAt?.seconds || 0;
+    const exT = ex?.createdAt?.seconds || 0;
+    if (!ex || t > exT) latestByStore.set(key, r);
+  });
+
+  const rowsDataAll = scopeStores.map(s => {
+    const rec = latestByStore.get(s.code) || null;
+    return { store: s, rec, status: gkpreStatus(rec) };
+  });
+
+  const doneCount    = rowsDataAll.filter(r => r.status === "done").length;
+  const pendingCount = rowsDataAll.filter(r => r.status === "pending").length;
+  const needCount    = rowsDataAll.filter(r => r.status === "needs").length;
+  const notYetCount  = rowsDataAll.filter(r => r.status === "none").length;
+
+  const statFilter = window._dashGkpreStatusFilter || "";
+  let rowsData = !statFilter ? rowsDataAll : rowsDataAll.filter(r => r.status === statFilter);
+
+  const keyword = (window._dashGkpreKeyword || "").trim().toLowerCase();
+  if (keyword) rowsData = rowsData.filter(r =>
+    r.store.name.toLowerCase().includes(keyword) ||
+    (r.store.code||"").toLowerCase().includes(keyword) ||
+    (r.rec?.writerName||"").toLowerCase().includes(keyword)
+  );
+
+  const cardStyle = (key, activeColor) => {
+    const isActive = statFilter === key;
+    return isActive
+      ? `cursor:pointer;border-radius:10px;border:2px solid ${activeColor};box-shadow:0 0 0 3px ${activeColor}26`
+      : `cursor:pointer`;
+  };
+
+  const statusBadge = (status) => ({
+    done:    `<span style="color:#276749;font-weight:700">완료</span>`,
+    pending: `<span style="color:#B7791F;font-weight:700">승인대기</span>`,
+    needs:   `<span style="color:#C53030;font-weight:700">재점검필요</span>`,
+    none:    `<span style="color:#A0AEC0">미점검</span>`,
+  }[status]);
+
+  const rows = rowsData.map(({store, rec, status}) => {
+    const dt = rec?.createdAt ? new Date(rec.createdAt.seconds*1000) : null;
+    const dtStr = dt ? `${dt.getMonth()+1}/${dt.getDate()}` : "-";
+    const memo = rec?.gkpreAnswers?.memo || "";
+    const memoShort = memo.length > 16 ? memo.slice(0,16) + "…" : (memo || "-");
+    const clickAttr = rec ? ` onclick="viewStoreHistoryGkpre('${store.code}')" style="cursor:pointer"` : "";
+    return `<tr${clickAttr}>
+      <td>${escapeHtml(store.name)}</td>
+      <td style="color:#718096;font-size:12px">${escapeHtml(store.team||"-")}</td>
+      <td>${statusBadge(status)}</td>
+      <td style="font-size:13px">${escapeHtml(rec?.writerName || "-")}</td>
+      <td style="color:#718096;font-size:12px">${dtStr}</td>
+      <td style="color:#718096;font-size:12px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(memo)}">${escapeHtml(memoShort)}</td>
+    </tr>`;
+  }).join("");
+
+  // GL/관리자 전용: 팀별 진행률 (TL은 이미 단일 팀만 보이므로 불필요)
+  let teamBreakdownHtml = "";
+  if (_authRole !== "tl") {
+    const teamMap = new Map();
+    rowsDataAll.forEach(({store, status}) => {
+      const t = store.team || "미지정";
+      if (!teamMap.has(t)) teamMap.set(t, {total:0, done:0});
+      const e = teamMap.get(t);
+      e.total++; if (status === "done") e.done++;
+    });
+    const teamRows = [...teamMap.entries()].sort((a,b) => a[0].localeCompare(b[0])).map(([team, e]) => {
+      const pct = e.total ? Math.round(e.done/e.total*100) : 0;
+      return `<div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>${team}</span><span style="color:#718096">${e.done}/${e.total}</span></div>
+        <div style="height:6px;background:#EDF2F7;border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--amber)"></div></div>
+      </div>`;
+    }).join("");
+    teamBreakdownHtml = `
+    <div style="padding:12px 16px;border-bottom:1px solid #E2E8F0">
+      <div style="font-size:12px;color:#718096;margin-bottom:8px">팀별 진행률</div>
+      ${teamRows}
+    </div>`;
+  }
+
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>관리자 대시보드 (귀멸의칼날 사전준비)</h2>
+      <button class="btn-home-dash" onclick="go('homeGkpre')" style="margin-left:auto">🏠 Home</button>
+    </div>
+    <div class="dash-stats">
+      <div style="${cardStyle('', '#4A5568')}" onclick="setDashGkpreFilter('')"><div class="stat-num">${scopeStores.length}</div><div class="stat-label">대상 매장</div></div>
+      <div style="${cardStyle('done', '#276749')}" onclick="setDashGkpreFilter('done')"><div class="stat-num" style="color:#276749">${doneCount}</div><div class="stat-label">완료</div></div>
+      <div style="${cardStyle('pending', '#B7791F')}" onclick="setDashGkpreFilter('pending')"><div class="stat-num" style="color:#B7791F">${pendingCount}</div><div class="stat-label">승인대기</div></div>
+      <div style="${cardStyle('needs', '#C53030')}" onclick="setDashGkpreFilter('needs')"><div class="stat-num" style="color:#C53030">${needCount}</div><div class="stat-label">재점검필요</div></div>
+      <div style="${cardStyle('none', '#A0AEC0')}" onclick="setDashGkpreFilter('none')"><div class="stat-num" style="color:#A0AEC0">${notYetCount}</div><div class="stat-label">미점검</div></div>
+    </div>
+    ${teamBreakdownHtml}
+    <div style="display:flex;gap:6px;padding:10px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0">
+      <input type="text" id="dashSearchGkpre" value="${escapeHtml(window._dashGkpreKeyword||"")}" placeholder="매장명/점검자명 검색" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px" onkeydown="if(event.key==='Enter')searchDashGkpre()">
+      <button onclick="searchDashGkpre()" style="flex-shrink:0;padding:8px 16px;background:var(--amber);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">검색</button>
+    </div>
+    <div style="padding:8px 12px;background:#FAFAFA;border-bottom:1px solid #E2E8F0;font-size:12px;color:#718096;display:flex;justify-content:space-between;align-items:center">
+      <span>${_authRole==="tl" ? "담당팀" : "전체"} 매장 기준 · 매장별 최신 점검 결과${statFilter || keyword ? " · 필터 적용중" : ""}</span>
+      <button class="btn-ghost" onclick="downloadExcelGkpre()" style="padding:6px 12px;font-size:12px;width:auto">📥 엑셀 다운로드</button>
+    </div>
+    <div class="dash-table-wrap">
+      <div class="table-count">${rowsData.length}개 매장${(statFilter || keyword) ? ` (전체 ${scopeStores.length}개 중)` : ""}</div>
+      <table class="dash-table">
+        <thead><tr><th>매장명</th><th>팀</th><th>상태</th><th>점검자명</th><th>최근점검일</th><th>메모</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:20px;color:#718096">해당 조건의 매장이 없습니다</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
+function setDashGkpreFilter(val) {
+  window._dashGkpreStatusFilter = val;
+  buildDashboardGkpre(document.getElementById("app"), window._dashGkpreRecords || [], window._dashGkpreScope || []);
+}
+
+function searchDashGkpre() {
+  const input = document.getElementById("dashSearchGkpre");
+  window._dashGkpreKeyword = input ? input.value : "";
+  buildDashboardGkpre(document.getElementById("app"), window._dashGkpreRecords || [], window._dashGkpreScope || []);
+}
+
+function viewStoreHistoryGkpre(storeCode) {
+  const all = window._dashGkpreRecords || [];
+  const codeChain = getStoreCodeChain(storeCode);
+  const recs = all.filter(r => codeChain.includes(r.storeCode))
+                   .sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+  if (recs.length === 0) { alert("점검 이력이 없습니다."); return; }
+  window._storeHistoryGkpre = { storeCode, storeName: recs[0].storeName, records: recs };
+  go("storeHistoryGkpre");
+}
+
+function renderStoreHistoryGkpre(root) {
+  const h = window._storeHistoryGkpre;
+  if (!h) { go("dashboardGkpre"); return; }
+  const rows = h.records.map(r => {
+    const dt = r.createdAt ? new Date(r.createdAt.seconds*1000).toLocaleString("ko-KR") : "-";
+    const status = gkpreStatus(r);
+    const statusBadge = status === "done" ? `<span class="insp-badge badge-first badge-sm">완료</span>`
+      : status === "pending" ? `<span class="insp-badge badge-sm" style="background:#FFFBEB;color:#B7791F;border-color:#F6D384">승인대기</span>`
+      : status === "needs" ? `<span class="insp-badge badge-follow badge-sm">재점검필요</span>`
+      : `<span class="insp-badge badge-sm">-</span>`;
+    const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[r.role] || r.role || "";
+    return `<div class="search-item" onclick="viewRecordGkpre('${r.id}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span class="si-store">${dt}</span>
+        ${statusBadge}
+      </div>
+      <div class="si-meta">${roleLabel}: ${escapeHtml(r.writerName||"-")}</div>
+    </div>`;
+  }).join("");
+
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>${h.storeName} 점검 이력</h2>
+      <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
+    </div>
+    <div class="card-section">
+      <div class="store-count" style="padding:0 2px 8px">${h.records.length}건 · 최신순</div>
+      <div class="search-list">${rows}</div>
+    </div>`;
+}
+
+async function downloadExcelGkpre() {
+  const records = window._dashGkpreRecords || [];
+  const scopeStores = window._dashGkpreScope || [];
+  try {
+  await _refreshTransferAndClosedMaps(); // 양도양수 맵 로딩 보장 (latestByStore가 참조함)
+
+    await loadXLSX();
+  } catch(e) {
+    alert("엑셀 라이브러리 로드 실패: " + e.message);
+    return;
+  }
+  // 양도양수로 코드가 바뀐 매장은 구코드 이력도 현재코드 기준으로 합침 (_oldToCurrentCodeMap 참조)
+  const _codeMap = window._oldToCurrentCodeMap || new Map();
+  const latestByStore = new Map();
+  records.forEach(r => {
+    const key = _codeMap.get(r.storeCode) || r.storeCode;
+    const ex = latestByStore.get(key);
+    const t = r.createdAt?.seconds || 0;
+    const exT = ex?.createdAt?.seconds || 0;
+    if (!ex || t > exT) latestByStore.set(key, r);
+  });
+
+  const rows = [["매장코드","매장명","팀","상태","Q1(진행률)","Q2(배달채널)","Q2-1(미가입채널)","Q2-2(협의)","Q3(프랩)","Q4(근무인원)","Q4-1(추가출근)","Q5(연장영업)","Q6(굿즈발주)","작성자","역할","점검일시","메모"]];
+  const statusLabel = { done:"완료", pending:"승인대기", needs:"재점검필요", none:"미점검" };
+  scopeStores.forEach(s => {
+    const rec = latestByStore.get(s.code);
+    const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"};
+    const dt = rec?.createdAt ? new Date(rec.createdAt.seconds*1000) : null;
+    const a = rec?.gkpreAnswers || {};
+    rows.push([
+      s.code, s.name, s.team||"",
+      statusLabel[gkpreStatus(rec)],
+      a.q1||"", a.q2||"", (Array.isArray(a.q2_1)?a.q2_1.join(", "):"")||"", a.q2_2||"", a.q3||"", a.q4||"", a.q4_1||"", a.q5||"", a.q6||"",
+      rec?.writerName || "",
+      roleLabel[rec?.role] || rec?.role || "",
+      dt ? dt.toLocaleString("ko-KR") : "",
+      a.memo || "",
+    ]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, "귀멸의칼날사전준비긴급대응");
+  XLSX.writeFile(wb, `귀멸의칼날사전준비긴급대응_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+
 
 
 Object.assign(window, {
@@ -10151,6 +11142,9 @@ Object.assign(window, {
   startGkInspection, goAdminGk, toggleGkEnabled,
   setGkAnswer, updateGkQMemo, updateGkMemo, handleGkImage, removeGkImage, submitFormGk, downloadExcelGk,
   fetchRecordsGk, setRecGkFilter, viewRecordGk, setDashGkFilter, viewStoreHistoryGk, approveGkRecord, rejectGkRecord, searchDashGk, startInspectionForStoreGk,
+  startGkpreInspection, goAdminGkpre, toggleGkpreEnabled,
+  setGkpreAnswer, toggleGkpreMultiAnswer, updateGkpreQMemo, updateGkpreMemo, submitFormGkpre, downloadExcelGkpre,
+  fetchRecordsGkpre, setRecGkpreFilter, viewRecordGkpre, setDashGkpreFilter, viewStoreHistoryGkpre, approveGkpreRecord, rejectGkpreRecord, searchDashGkpre, startInspectionForStoreGkpre,
 });
 // 앱 시작 시 세션 복원
 (async () => {
@@ -10170,7 +11164,7 @@ Object.assign(window, {
     } else {
       sessionClear();
       S.role = null; S.answers = {}; S.storeCode = "";
-      go(S.category === "np" ? "homeNP" : S.category === "spacool" ? "homeSpacool" : S.category === "gbchicken" ? "homeGbchicken" : S.category === "nashville" ? "homeNashville" : S.category === "gk" ? "homeGk" : "home");
+      go(S.category === "np" ? "homeNP" : S.category === "spacool" ? "homeSpacool" : S.category === "gbchicken" ? "homeGbchicken" : S.category === "nashville" ? "homeNashville" : S.category === "gk" ? "homeGk" : S.category === "gkpre" ? "homeGkpre" : "home");
       return;
     }
   }
