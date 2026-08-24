@@ -469,7 +469,7 @@ const GK_FORM = {
 // - Q1=N이면 나머지 문항 전부 건너뛰고 바로 제출 가능(설문종료) — renderFormGkpre에서 처리.
 const GKPRE_FORM = {
   questions: [
-    { key:"q1", category:"진행률", label:"가맹점 사전 안내문을 기반으로 점주에게 안내를 완료하였는가?", type:"yn" },
+    { key:"q1", category:"진행률", label:"가맹점 사전 안내문을 기반으로 점주에게 안내를 완료하였는가?", hint:"(카카오톡 대화내역 등)", type:"yn", hasPhoto:true },
     { key:"q2", category:"배달채널", label:"해당 매장은 전체 주문 채널을 운영중인가?", type:"yn" },
     { key:"q2_1", category:"배달채널", label:"미가입 채널 종류는 무엇인가?", type:"single", options:["배민1","쿠팡이츠","모두"], showIf: a => a.q2 === "N" },
     { key:"q2_2", category:"배달채널", label:"미가입 채널에 대하여 해당 프로모션 기간 운영 제안/협의 되었는가?", type:"yn", showIf: a => a.q2 === "N" },
@@ -479,6 +479,7 @@ const GKPRE_FORM = {
     { key:"q5", category:"연장영업", label:"행사기간 연장영업(조기오픈/마감연장)의 필요성을 안내 및 협의하였는가?", type:"single", options:["기존유지","+1시간","+2시간","+3시간 이상"] },
     { key:"q6", category:"굿즈발주", label:"굿즈관련 초도수량 및 점주발주사항 관련 안내는 완료되었는가?", type:"yn" },
   ],
+  maxPhotos: 3,
   memoMaxLen: 100,
 };
 
@@ -1296,7 +1297,7 @@ function startForm() {
   } else if (S.category === "gk") {
     S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
   } else if (S.category === "gkpre") {
-    S.gkpreAnswers = { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
+    S.gkpreAnswers = { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null, photos:{q1:[]},
       memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" };
   } else if (S.category === "spacool") {
     S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
@@ -3381,7 +3382,7 @@ function sessionRestore() {
     S.gkAnswers = data.gkAnswers ||
       (data.category === "gk" ? { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" } : null);
     S.gkpreAnswers = data.gkpreAnswers ||
-      (data.category === "gkpre" ? { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
+      (data.category === "gkpre" ? { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null, photos:{q1:[]},
         memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" } : null);
     S.loadedDocId= data.loadedDocId;
     S.prevNItems = data.prevNItems || [];
@@ -9412,7 +9413,7 @@ function startGkpreInspection() {
   }
   S.category = "gkpre";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.gkpreAnswers = { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null,
+  S.gkpreAnswers = { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null, photos:{q1:[]},
     memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" };
   go("storeSel");
 }
@@ -9441,12 +9442,35 @@ function renderFormGkpre(root) {
     <div style="font-size:11px;color:var(--sub);margin-top:4px">여러 개 선택 가능</div>`;
   };
 
+  const renderPhotoBlock = (q, val) => {
+    if (!q.hasPhoto) return "";
+    const photos = a.photos?.[q.key] || [];
+    const canAddMore = photos.length < GKPRE_FORM.maxPhotos;
+    const photoThumbs = photos.map((p, pi) => `
+      <div class="preview-container" style="display:inline-block;margin-right:6px">
+        <img src="${p.image}" class="preview-img" onclick="openImageModal('${p.image}')">
+        <button class="remove-img" onclick="removeGkpreImage('${q.key}',${pi})">✕</button>
+      </div>`).join("");
+    return `
+      <div style="margin-top:12px">
+        <div style="font-size:12px;color:var(--sub);margin-bottom:6px">사진 첨부 (최대 ${GKPRE_FORM.maxPhotos}장${val==='Y' ? ', 최소 1장 필수' : ', 선택'})</div>
+        <div id="gkpreimg-preview-${q.key}">${photoThumbs}</div>
+        ${canAddMore ? `
+        <label class="img-upload-btn" for="gkpreimg-${q.key}">📷 사진 첨부
+          <input type="file" id="gkpreimg-${q.key}" accept="image/*" style="display:none" onchange="handleGkpreImage('${q.key}',this)">
+        </label>
+        <span id="gkpreimg-status-${q.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>` : ""}
+      </div>`;
+  };
+
   const renderQCard = (q) => {
     const val = a[q.key];
     return `
       <div class="question-card">
         <span class="q-title">[${q.category}] ${q.label}</span>
+        ${q.hint ? `<div style="font-size:12px;color:var(--sub);margin-top:4px">${q.hint}</div>` : ""}
         ${renderAnswerRow(q, val)}
+        ${renderPhotoBlock(q, val)}
         <div class="memo-wrap" style="margin-top:12px">
           <input type="text" class="memo-input"
             placeholder="관련 메모 (선택, 최대 ${GKPRE_FORM.memoMaxLen}자)"
@@ -9514,6 +9538,48 @@ function toggleGkpreMultiAnswer(qKey, opt) {
   renderFormGkpre(document.getElementById("app"));
 }
 
+async function handleGkpreImage(qKey, input) {
+  const file = input.files[0]; if (!file) return;
+  const existing = S.gkpreAnswers.photos[qKey] || [];
+  if (existing.length >= GKPRE_FORM.maxPhotos) {
+    alert(`사진은 최대 ${GKPRE_FORM.maxPhotos}장까지 첨부할 수 있습니다.`);
+    input.value = "";
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    alert("파일 크기가 너무 큽니다. (20MB 이하만 가능)\n더 낮은 화질로 촬영하거나 갤러리에서 다른 사진을 선택해주세요.");
+    input.value = "";
+    return;
+  }
+  const statusEl = document.getElementById(`gkpreimg-status-${qKey}`);
+  if (statusEl) statusEl.textContent = "⏳ 처리 중...";
+  let compressed;
+  try {
+    compressed = await compressImage(file, 400, 0.35);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = "";
+    alert("⚠️ 사진 처리에 실패했습니다: " + e.message + "\n다른 사진으로 다시 시도해주세요.");
+    input.value = "";
+    return;
+  }
+  if (statusEl) statusEl.textContent = "⏳ 업로드 중...";
+  const path = `inspections_gkpre/${S.storeCode}/${Date.now()}_${qKey}_${existing.length}.jpg`;
+  const { ok, url } = await uploadImageToStorage(compressed, path);
+  existing.push({ image: ok ? url : compressed });
+  S.gkpreAnswers.photos[qKey] = existing;
+  sessionSave();
+  input.value = "";
+  renderFormGkpre(document.getElementById("app"));
+}
+
+function removeGkpreImage(qKey, idx) {
+  const arr = S.gkpreAnswers.photos[qKey] || [];
+  arr.splice(idx, 1);
+  S.gkpreAnswers.photos[qKey] = arr;
+  sessionSave();
+  renderFormGkpre(document.getElementById("app"));
+}
+
 function updateGkpreQMemo(memoKey, val) {
   S.gkpreAnswers[memoKey] = val;
   sessionSave();
@@ -9538,6 +9604,10 @@ async function submitFormGkpre() {
   };
 
   if (a.q1 !== "Y" && a.q1 !== "N") { showWarn("Q1을 선택해주세요."); return; }
+  if (a.q1 === "Y" && (a.photos?.q1 || []).length === 0) {
+    showWarn("Q1에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.");
+    return;
+  }
 
   if (a.q1 === "Y") {
     for (const q of GKPRE_FORM.questions.slice(1)) {
@@ -9552,6 +9622,13 @@ async function submitFormGkpre() {
     }
   }
 
+  // 첨부 이미지 총 용량 체크 (Firestore 1MB 문서 한도 고려)
+  const gkpreTotalSize = (a.photos?.q1 || []).reduce((s,p) => s + (p?.image ? Math.round(p.image.length*0.75) : 0), 0);
+  if (gkpreTotalSize > 900 * 1024) {
+    showWarn(`첨부 이미지 총 용량이 너무 큽니다. (현재 ${Math.round(gkpreTotalSize/1024)}KB / 한도 900KB) 일부 사진을 제거하거나 더 낮은 화질로 다시 촬영해주세요.`);
+    return;
+  }
+
   if (warnEl) warnEl.style.display = "none";
 
   try {
@@ -9563,6 +9640,7 @@ async function submitFormGkpre() {
       visitDate: S.visitDate,
       gkpreAnswers: {
         q1: a.q1,
+        photos: { q1: a.photos?.q1 || [] },
         q2: a.q1 === "Y" ? a.q2 : null,
         q2_1: a.q1 === "Y" && a.q2 === "N" ? a.q2_1 : null,
         q2_2: a.q1 === "Y" && a.q2 === "N" ? a.q2_2 : null,
@@ -10772,9 +10850,11 @@ function renderRecordDetailGkpre(root) {
     };
     const renderOne = (q) => {
       const memo = a["memo_"+q.key];
+      const photos = q.hasPhoto ? (a.photos?.[q.key] || []) : [];
       return `
         <label class="field-label">[${q.category}] ${q.label}</label>
         <div class="info-box">${escapeHtml(String(renderVal(a[q.key])))}</div>
+        ${photos.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">${photos.map(p => `<img src="${p.image}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer" onclick="openImageModal('${p.image}')">`).join("")}</div>` : ""}
         ${memo ? `<div style="font-size:12px;color:#4A5568;margin:4px 0 8px">메모: ${escapeHtml(memo)}</div>` : ""}
       `;
     };
@@ -11143,7 +11223,7 @@ Object.assign(window, {
   setGkAnswer, updateGkQMemo, updateGkMemo, handleGkImage, removeGkImage, submitFormGk, downloadExcelGk,
   fetchRecordsGk, setRecGkFilter, viewRecordGk, setDashGkFilter, viewStoreHistoryGk, approveGkRecord, rejectGkRecord, searchDashGk, startInspectionForStoreGk,
   startGkpreInspection, goAdminGkpre, toggleGkpreEnabled,
-  setGkpreAnswer, toggleGkpreMultiAnswer, updateGkpreQMemo, updateGkpreMemo, submitFormGkpre, downloadExcelGkpre,
+  setGkpreAnswer, toggleGkpreMultiAnswer, handleGkpreImage, removeGkpreImage, updateGkpreQMemo, updateGkpreMemo, submitFormGkpre, downloadExcelGkpre,
   fetchRecordsGkpre, setRecGkpreFilter, viewRecordGkpre, setDashGkpreFilter, viewStoreHistoryGkpre, approveGkpreRecord, rejectGkpreRecord, searchDashGkpre, startInspectionForStoreGkpre,
 });
 // 앱 시작 시 세션 복원
