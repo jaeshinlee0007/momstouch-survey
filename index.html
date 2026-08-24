@@ -10886,8 +10886,8 @@ async function renderDashboardGkpre(root) {
     }
     const activeStores = await getActiveStoreData();
 
-    // "신제품-귀멸의칼날" 플래그 기준 (작업지시서 3항)
-    let scopeStores = activeStores.filter(s => s.gkpreEligible);
+    // "신제품-귀멸의칼날" 플래그 기준 (작업지시서 3항, 귀멸의칼날 홍보물 부착 현장점검과 동일 플래그 재사용)
+    let scopeStores = activeStores.filter(s => s.gkEligible);
     if (_authRole === "tl") {
       scopeStores = scopeStores.filter(s => s.tl === _authName || s.sv === _authName);
     }
