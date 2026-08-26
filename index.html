@@ -828,7 +828,10 @@ async function renderReportDetail(root) {
       return;
     }
     const fmtDate2 = v => v ? String(v).slice(0,10) : "-";
-    const fmtMoney = v => (v == null || v === "") ? "-" : Number(v).toLocaleString();
+    const fmtMoney = v => (v == null || v === "") ? "-" : (() => {
+      const n = Number(String(v).replace(/,/g, "")); // "7,000" 같은 콤마 포함 문자열도 처리
+      return Number.isNaN(n) ? String(v) : n.toLocaleString();
+    })();
 
     bodyEl.innerHTML = `
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;padding:0 2px">
@@ -839,7 +842,10 @@ async function renderReportDetail(root) {
       <div class="question-card">
         <span class="q-title">매장 기본정보</span>
         <table style="width:100%;margin-top:8px">
-          ${_reportInfoRow("점주명", data.owner_name ? `${escapeHtml(data.owner_name)}${data.owner_birth_year ? ` (${new Date().getFullYear()-data.owner_birth_year}세)` : ""}` : null)}
+          ${_reportInfoRow("점주명", data.owner_name ? `${escapeHtml(data.owner_name)} (${(() => {
+            const y = Number(data.owner_birth_year);
+            return Number.isFinite(y) && y > 0 ? `${new Date().getFullYear()-y}세` : "연령정보 없음";
+          })()})` : null)}
           ${_reportInfoRow("최초 오픈일", fmtDate2(data.first_open_date))}
           ${_reportInfoRow("현재점 오픈일", fmtDate2(data.open_date))}
           ${_reportInfoRow("영업시간", escapeHtml(data.biz_hours||""))}
