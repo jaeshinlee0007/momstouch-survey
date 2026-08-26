@@ -13,7 +13,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, memoryLocalCache, terminate, collection, addDoc, getDocs, getDoc, query, where, orderBy, updateDoc, deleteDoc, setDoc, doc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, memoryLocalCache, terminate, collection, addDoc, getDocs, getDoc, query, where, orderBy, updateDoc, deleteDoc, setDoc, doc, arrayUnion, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
@@ -890,7 +890,7 @@ async function renderReportDetail(root) {
       </div>
     `;
 
-    _drawReportChart("reportPosChart", data.pos_sales || {}, v => v?.total?.실매출액 ?? v?.total ?? 0);
+    _drawReportChart("reportPosChart", data.pos_sales || {}, v => v?.["전체"]?.실매출액 ?? 0);
     _drawReportChart("reportWaterChart", data.water_sales || {}, v => v ?? 0);
   } catch(e) {
     document.getElementById("reportBody").innerHTML = `<p class="error-text">오류: ${e.message}</p>`;
@@ -3220,6 +3220,25 @@ async function renderPhotoSetting(root) {
       </div>
     </div>`;
 
+  const reportDataHtml = `
+    <div class="store-upload-section">
+      <div class="store-upload-header">
+        <div>
+          <div class="store-upload-title">📊 매장 컨설팅 리포트 데이터</div>
+          <div class="store-upload-sub">매장현황·매출·물대 시트가 포함된 엑셀 1개를 업로드합니다</div>
+        </div>
+        <label class="btn-upload" for="reportFileInput">
+          📤 Excel 업로드
+          <input type="file" id="reportFileInput" accept=".xlsx,.xls" style="display:none"
+            onchange="handleReportDataUpload(this)">
+        </label>
+      </div>
+      <div id="reportUploadProgress" style="display:none" class="upload-progress">
+        <span id="reportUploadProgressText">업로드 중...</span>
+      </div>
+      <div style="font-size:12px;color:#718096;margin-top:8px">E코드로 시작하는 매장만 반영되며(다른 브랜드·테스트 계정 자동 제외), 양도양수된 매장은 구코드 이력도 현재코드에 자동 합산됩니다.</div>
+    </div>`;
+
   const defaultCategoryHtml = `
     <div style="background:#EBF8FF;border:1px solid #90CDF4;border-radius:8px;padding:10px 12px;font-size:12px;color:#2C5282;margin-bottom:16px">
       ON: 해당 항목 사진 첨부 필수<br>
@@ -3364,6 +3383,7 @@ async function renderPhotoSetting(root) {
       <div style="font-size:11px;color:#A0AEC0;margin-bottom:14px">마지막 저장: ${lastSavedText}</div>
 
       ${section("📋", "매장 데이터 관리", storeDataHtml, true)}
+      ${section("📊", "매장 컨설팅 리포트 데이터", reportDataHtml, false)}
       ${section("🍔", "신규플랫폼 현장점검", defaultCategoryHtml, false)}
       ${section("🆕", "갓빠삭치킨 출시 교육점검", npCategoryHtml, false)}
       ${section("🧊", "스파쿨 프로모션 현장점검", spacoolCategoryHtml, false)}
@@ -5171,6 +5191,135 @@ async function updateStoreDataStatus() {
     statusEl.textContent = "매장 데이터 상태 확인 실패";
     statusEl.style.color = "#E53E3E";
   }
+}
+
+// 매장 컨설팅 리포트 원본 엑셀(매장현황/매출/물대 시트)을 파싱해서 store_reports/{현재코드}
+// 문서로 저장. E코드로 시작하는 행만 채택(D/C/숫자 등 타 브랜드·테스트 코드는 제외), 양도양수로
+// 코드가 바뀐 매장은 구코드 데이터도 _oldToCurrentCodeMap을 거쳐 현재코드로 합쳐서 저장.
+async function uploadReportData(file) {
+  await loadXLSX();
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array", cellDates: true });
+
+  await _refreshTransferAndClosedMaps();
+  const codeMap = window._oldToCurrentCodeMap || new Map();
+  const resolveCode = code => codeMap.get(code) || code;
+  const isEcode = code => typeof code === "string" && /^E\d/.test(code.trim());
+  const toDateStr = v => v instanceof Date ? v.toISOString().slice(0,10) : (v || null);
+
+  const reports = new Map(); // 현재코드 -> report 객체
+  const getRep = code => {
+    if (!reports.has(code)) reports.set(code, { pos_sales:{}, water_sales:{} });
+    return reports.get(code);
+  };
+
+  // ── 1. 매장현황 시트 (5번째 줄부터 데이터, E점포코드는 C열=인덱스2) ──
+  const wsStore = wb.Sheets["매장현황"];
+  if (wsStore) {
+    const rows = XLSX.utils.sheet_to_json(wsStore, { header: 1, range: 4, defval: null });
+    rows.forEach(r => {
+      const raw = r[2];
+      if (!isEcode(raw)) return;
+      const code = resolveCode(String(raw).trim());
+      const rep = getRep(code);
+      Object.assign(rep, {
+        beef_intro_date: toDateStr(r[3]),
+        pizza_intro_date: toDateStr(r[4]),
+        biz_number: r[6], team: r[7], ac_name: r[8],
+        region_large: r[9], region_small: r[10],
+        open_date: toDateStr(r[11]), first_open_date: toDateStr(r[12]),
+        biz_type: r[13], size_pyeong: r[14], floor: r[15],
+        deposit: r[16], rent: r[17], premium: r[18],
+        owner_name: r[19], owner_birth_year: r[20], phone: r[21], email: r[22],
+        seats: r[23], staff_count: r[24], biz_hours: r[25],
+        pos_count: r[26], kiosk_yn: r[27], did_yn: r[28], digital_menu_count: r[29],
+        fryer2_count: r[30], fryer3_count: r[31], patty_warmer: r[32], sealer: r[33], ice_maker: r[34],
+        baemin_delivery: r[35], baemin1: r[36], coupangeats: r[37],
+        bangje_yn: r[38], nomu_yn: r[39], semu_yn: r[40],
+      });
+    });
+  }
+
+  // ── 2. 매출 시트 (4번째 줄부터, 매출월/매장코드/매장명 + 8채널x3지표) ──
+  const wsSales = wb.Sheets["매출"];
+  if (wsSales) {
+    const rows = XLSX.utils.sheet_to_json(wsSales, { header: 1, range: 3, defval: null });
+    const channels = ["전체","내점","배달","포장","배민","요기요","쿠팡이츠","기타"];
+    rows.forEach(r => {
+      const raw = r[1];
+      if (!isEcode(raw)) return;
+      const code = resolveCode(String(raw).trim());
+      const ymRaw = r[0];
+      const ymKey = ymRaw instanceof Date
+        ? `${ymRaw.getFullYear()}-${String(ymRaw.getMonth()+1).padStart(2,"0")}`
+        : String(ymRaw||"").slice(0,7);
+      if (!/^\d{4}-\d{2}$/.test(ymKey)) return;
+      const rep = getRep(code);
+      const monthData = {};
+      channels.forEach((ch, ci) => {
+        const base = 3 + ci*3;
+        monthData[ch] = { 총매출액: r[base]||0, 실매출액: r[base+1]||0, 영수건수: r[base+2]||0 };
+      });
+      rep.pos_sales[ymKey] = monthData;
+    });
+  }
+
+  // ── 3. 물대 시트 (1번째 줄=헤더(거래처코드/주문거래처/YYYY-MM...), 2번째 줄부터 데이터) ──
+  const wsWater = wb.Sheets["물대"];
+  if (wsWater) {
+    const allRows = XLSX.utils.sheet_to_json(wsWater, { header: 1, defval: null });
+    const headerRow = allRows[0] || [];
+    allRows.slice(1).forEach(r => {
+      const raw = r[0];
+      if (!isEcode(raw)) return;
+      const code = resolveCode(String(raw).trim());
+      const rep = getRep(code);
+      for (let i = 2; i < headerRow.length; i++) {
+        const ymKey = String(headerRow[i] || "");
+        if (!/^\d{4}-\d{2}$/.test(ymKey)) continue;
+        const val = r[i];
+        if (val != null && val !== "") rep.water_sales[ymKey] = val;
+      }
+    });
+  }
+
+  // ── Firestore 배치 저장 (한도 500건 고려해서 400건씩 청크) ──
+  const entries = [...reports.entries()];
+  const CHUNK = 400;
+  for (let i = 0; i < entries.length; i += CHUNK) {
+    const batch = writeBatch(db);
+    entries.slice(i, i + CHUNK).forEach(([code, rep]) => {
+      batch.set(doc(db, "store_reports", code), { ...rep, updatedAt: new Date() }, { merge: true });
+    });
+    await batch.commit();
+  }
+
+  return entries.length;
+}
+
+async function handleReportDataUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const confirmed = confirm(
+    `매장 컨설팅 리포트 데이터를 업로드합니다.\n파일: ${file.name}\n\n계속하시겠습니까?`
+  );
+  if (!confirmed) { input.value = ""; return; }
+
+  const progress = document.getElementById("reportUploadProgress");
+  const text = document.getElementById("reportUploadProgressText");
+  if (progress) progress.style.display = "block";
+  if (text) text.textContent = "파일 분석 및 업로드 중...";
+
+  try {
+    const count = await uploadReportData(file);
+    if (text) text.textContent = `완료! ${count}개 매장 리포트 데이터 반영됨`;
+    setTimeout(() => { if (progress) progress.style.display = "none"; }, 2500);
+    alert(`✅ 매장 컨설팅 리포트 데이터 업로드 완료!\n${count}개 매장이 반영되었습니다.`);
+  } catch(e) {
+    if (text) text.textContent = `오류: ${e.message}`;
+    alert(`업로드 실패: ${e.message}`);
+  }
+  input.value = "";
 }
 
 async function handleStoreUpload(input) {
@@ -11497,7 +11646,7 @@ async function downloadExcelGkpre() {
 
 
 Object.assign(window, {
-  go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
+  go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, handleReportDataUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
   removeImage, submitForm, fetchRecords, viewRecord, viewRecordDash,
   confirmBack, openImageModal, downloadExcel, handleMemo,
