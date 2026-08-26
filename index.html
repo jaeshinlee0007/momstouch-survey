@@ -5196,7 +5196,7 @@ async function updateStoreDataStatus() {
 // 매장 컨설팅 리포트 원본 엑셀(매장현황/매출/물대 시트)을 파싱해서 store_reports/{현재코드}
 // 문서로 저장. E코드로 시작하는 행만 채택(D/C/숫자 등 타 브랜드·테스트 코드는 제외), 양도양수로
 // 코드가 바뀐 매장은 구코드 데이터도 _oldToCurrentCodeMap을 거쳐 현재코드로 합쳐서 저장.
-async function uploadReportData(file) {
+async function uploadReportData(file, onProgress) {
   await loadXLSX();
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
@@ -5285,13 +5285,17 @@ async function uploadReportData(file) {
 
   // ── Firestore 배치 저장 (한도 500건 고려해서 400건씩 청크) ──
   const entries = [...reports.entries()];
-  const CHUNK = 400;
+  // Firestore 배치 쓰기는 요청 1건당 총 용량이 약 10MB로 제한됨 — 매장당 매출·물대 이력이
+  // 생각보다 커서(실측 시 매장당 최대 약 14KB, 배치 프로토콜 오버헤드까지 감안하면 400개
+  // 묶었을 때 한도 초과 발생) 청크를 훨씬 작게 잡아 안전마진을 확보함.
+  const CHUNK = 150;
   for (let i = 0; i < entries.length; i += CHUNK) {
     const batch = writeBatch(db);
     entries.slice(i, i + CHUNK).forEach(([code, rep]) => {
       batch.set(doc(db, "store_reports", code), { ...rep, updatedAt: new Date() }, { merge: true });
     });
     await batch.commit();
+    if (typeof onProgress === "function") onProgress(Math.min(i + CHUNK, entries.length), entries.length);
   }
 
   return entries.length;
@@ -5311,7 +5315,9 @@ async function handleReportDataUpload(input) {
   if (text) text.textContent = "파일 분석 및 업로드 중...";
 
   try {
-    const count = await uploadReportData(file);
+    const count = await uploadReportData(file, (done, total) => {
+      if (text) text.textContent = `업로드 중... (${done}/${total} 매장)`;
+    });
     if (text) text.textContent = `완료! ${count}개 매장 리포트 데이터 반영됨`;
     setTimeout(() => { if (progress) progress.style.display = "none"; }, 2500);
     alert(`✅ 매장 컨설팅 리포트 데이터 업로드 완료!\n${count}개 매장이 반영되었습니다.`);
