@@ -743,7 +743,10 @@ async function renderReportStoreSel(root) {
       <button class="btn-home-dash" onclick="go('homeReport')" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
-      <input type="text" id="reportStoreSearch" class="input-field" placeholder="매장명으로 검색" oninput="searchReportStores()" />
+      <div style="display:flex;gap:6px;margin-bottom:2px">
+        <input type="text" id="reportStoreSearch" class="input-field" placeholder="매장명으로 검색 (비워두고 검색하면 전체 노출)" style="flex:1;margin:0;width:auto" onkeydown="if(event.key==='Enter')searchReportStores()" />
+        <button onclick="searchReportStores()" style="flex-shrink:0;padding:12px 20px;background:var(--amber);color:white;border:none;border-radius:var(--radius);font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap">검색</button>
+      </div>
       <div id="reportStoreList" style="margin-top:8px"></div>
     </div>`;
   window._reportStoresScope = null;
@@ -753,16 +756,18 @@ async function renderReportStoreSel(root) {
 async function searchReportStores() {
   const kw = document.getElementById("reportStoreSearch").value.trim();
   const listEl = document.getElementById("reportStoreList");
-  if (!kw) { listEl.innerHTML = ""; return; }
-  listEl.innerHTML = `<p class="loading-text">검색 중...</p>`;
+  listEl.innerHTML = `<p class="loading-text">불러오는 중...</p>`;
   try {
     if (!window._reportStoresScope) {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       window._reportStoresScope = buildMatchedStoresReport(activeStores, _authName);
     }
-    const matched = window._reportStoresScope.filter(s => s.name && s.name.includes(kw));
+    // 검색어가 비어있으면 권한범위 내 전체 매장을 보여줌
+    const matched = kw
+      ? window._reportStoresScope.filter(s => s.name && s.name.includes(kw))
+      : window._reportStoresScope.slice().sort((a,b) => (a.name||"").localeCompare(b.name||""));
     if (matched.length === 0) { listEl.innerHTML = `<p class="error-text">검색 결과가 없습니다.</p>`; return; }
-    listEl.innerHTML = `<div class="search-list">` + matched.map(s => `
+    listEl.innerHTML = `<div class="store-count" style="padding:0 2px 8px">${matched.length}개 매장</div><div class="search-list">` + matched.map(s => `
       <div class="search-item" onclick="viewReportDetail('${s.code}')">
         <span class="si-store">${escapeHtml(s.name)}</span>
         <div class="si-meta">${escapeHtml(s.code)} · ${escapeHtml(s.team||"-")}</div>
@@ -836,6 +841,7 @@ async function renderReportDetail(root) {
         <table style="width:100%;margin-top:8px">
           ${_reportInfoRow("점주명", data.owner_name ? `${escapeHtml(data.owner_name)}${data.owner_birth_year ? ` (${new Date().getFullYear()-data.owner_birth_year}세)` : ""}` : null)}
           ${_reportInfoRow("연락처", escapeHtml(data.phone||""))}
+          ${_reportInfoRow("최초 오픈일", fmtDate2(data.first_open_date))}
           ${_reportInfoRow("현재점 오픈일", fmtDate2(data.open_date))}
           ${_reportInfoRow("영업시간", escapeHtml(data.biz_hours||""))}
           ${_reportInfoRow("담당 AC / 팀", `${escapeHtml(data.ac_name||"-")} / ${escapeHtml(data.team||"-")}`)}
