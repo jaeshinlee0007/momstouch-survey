@@ -5288,15 +5288,31 @@ async function uploadReportData(file, onProgress) {
   // Firestore 배치 쓰기는 요청 1건당 총 용량이 약 10MB로 제한됨 — 매장당 매출·물대 이력이
   // 생각보다 커서(실측 시 매장당 최대 약 14KB, 배치 프로토콜 오버헤드까지 감안하면 400개
   // 묶었을 때 한도 초과 발생) 청크를 훨씬 작게 잡아 안전마진을 확보함.
-  const CHUNK = 150;
-  for (let i = 0; i < entries.length; i += CHUNK) {
-    const batch = writeBatch(db);
-    entries.slice(i, i + CHUNK).forEach(([code, rep]) => {
-      batch.set(doc(db, "store_reports", code), { ...rep, updatedAt: new Date() }, { merge: true });
-    });
-    await batch.commit();
-    if (typeof onProgress === "function") onProgress(Math.min(i + CHUNK, entries.length), entries.length);
+  // 고정 개수로 나누면(이전엔 400개→150개로도 시도) 매장마다 매출·물대 이력 분량이 달라서
+  // 어떤 배치는 안전하고 어떤 배치는 한도(약 10MB)를 넘는 문제가 있었음. 매장별 실제 직렬화
+  // 크기를 재서, 배치 하나가 안전 한도(2MB — 실제 한도 10MB 대비 충분한 여유)를 넘지 않을
+  // 만큼만 채우는 동적 방식으로 전환.
+  const SAFE_BATCH_BYTES = 1 * 1024 * 1024;
+  let batch = writeBatch(db);
+  let batchBytes = 0;
+  let batchCount = 0;
+  let done = 0;
+  for (const [code, rep] of entries) {
+    const payload = { ...rep, updatedAt: new Date() };
+    const approxBytes = JSON.stringify(payload).length * 3; // Firestore 중첩맵 인코딩 오버헤드 감안 3배 마진
+    if (batchCount > 0 && batchBytes + approxBytes > SAFE_BATCH_BYTES) {
+      await batch.commit();
+      batch = writeBatch(db);
+      batchBytes = 0;
+      batchCount = 0;
+    }
+    batch.set(doc(db, "store_reports", code), payload, { merge: true });
+    batchBytes += approxBytes;
+    batchCount++;
+    done++;
+    if (typeof onProgress === "function") onProgress(done, entries.length);
   }
+  if (batchCount > 0) await batch.commit();
 
   return entries.length;
 }
