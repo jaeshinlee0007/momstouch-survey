@@ -840,7 +840,6 @@ async function renderReportDetail(root) {
         <span class="q-title">매장 기본정보</span>
         <table style="width:100%;margin-top:8px">
           ${_reportInfoRow("점주명", data.owner_name ? `${escapeHtml(data.owner_name)}${data.owner_birth_year ? ` (${new Date().getFullYear()-data.owner_birth_year}세)` : ""}` : null)}
-          ${_reportInfoRow("연락처", escapeHtml(data.phone||""))}
           ${_reportInfoRow("최초 오픈일", fmtDate2(data.first_open_date))}
           ${_reportInfoRow("현재점 오픈일", fmtDate2(data.open_date))}
           ${_reportInfoRow("영업시간", escapeHtml(data.biz_hours||""))}
@@ -886,6 +885,20 @@ async function renderReportDetail(root) {
       </div>
 
       <div class="question-card">
+        <span class="q-title">배달앱 가입현황</span>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+          <div style="background:${data.baemin1==='O'?'#EAF3DE':'#F7FAFC'};border-radius:8px;padding:10px">
+            <div style="font-size:12px;font-weight:700;color:${data.baemin1==='O'?'#3B6D11':'#A0AEC0'}">배민1</div>
+            <div style="font-size:12px;color:${data.baemin1==='O'?'#3B6D11':'#A0AEC0'};margin-top:2px">${data.baemin1==='O' ? '가입' : '미가입'}</div>
+          </div>
+          <div style="background:${data.coupangeats==='O'?'#EAF3DE':'#F7FAFC'};border-radius:8px;padding:10px">
+            <div style="font-size:12px;font-weight:700;color:${data.coupangeats==='O'?'#3B6D11':'#A0AEC0'}">쿠팡이츠</div>
+            <div style="font-size:12px;color:${data.coupangeats==='O'?'#3B6D11':'#A0AEC0'};margin-top:2px">${data.coupangeats==='O' ? '가입' : '미가입'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="question-card">
         <span class="q-title">3개년 POS매출 (월별)</span>
         <div style="position:relative;height:220px;margin-top:8px"><canvas id="reportPosChart" role="img" aria-label="연도별 월간 POS매출 추이">연도별 월간 매출 추이</canvas></div>
       </div>
@@ -914,7 +927,8 @@ function _drawReportChart(canvasId, monthMap, extractVal) {
   const datasets = years.map(y => ({
     label: y,
     data: months.map(m => { const v = monthMap[`${y}-${m}`]; return v == null ? null : extractVal(v); }),
-    borderColor: colors[y], backgroundColor: "transparent", borderWidth: 2, pointRadius: 0, tension: 0.3,
+    borderColor: colors[y], backgroundColor: colors[y], borderWidth: 2, tension: 0.3,
+    pointRadius: 3, pointHoverRadius: 6, pointBorderWidth: 2, pointBorderColor: "#fff",
     borderDash: y === "2026" ? [5,3] : [],
     spanGaps: true,
   }));
@@ -923,6 +937,7 @@ function _drawReportChart(canvasId, monthMap, extractVal) {
     data: { labels: months.map(m => m+"월"), datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false }, // 점을 정확히 안 짚어도 가까이 대면(PC 마우스오버/모바일 터치) 반응
       plugins: {
         legend: { display: true, position: "top", labels: { boxWidth: 10, font: { size: 11 } } },
         tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y == null ? "-" : ctx.parsed.y.toLocaleString()+"원"}` } },
@@ -5220,6 +5235,9 @@ async function uploadReportData(file, onProgress) {
   };
 
   // ── 1. 매장현황 시트 (5번째 줄부터 데이터, E점포코드는 C열=인덱스2) ──
+  // 2026-08-26 RAW 기준: 사업자번호/핸드폰 컬럼이 삭제되면서 그 뒤 전체가 당겨짐
+  // (담당팀=idx6, ..., 세무가입=idx38). 이전 버전(41열) 인덱스와 다르니 혼동 주의.
+  const maskName = s => (s == null || s === "") ? null : (String(s)[0] + "*".repeat(String(s).length - 1));
   const wsStore = wb.Sheets["매장현황"];
   if (wsStore) {
     const rows = XLSX.utils.sheet_to_json(wsStore, { header: 1, range: 4, defval: null });
@@ -5231,17 +5249,17 @@ async function uploadReportData(file, onProgress) {
       Object.assign(rep, {
         beef_intro_date: toDateStr(r[3]),
         pizza_intro_date: toDateStr(r[4]),
-        biz_number: r[6], team: r[7], ac_name: r[8],
-        region_large: r[9], region_small: r[10],
-        open_date: toDateStr(r[11]), first_open_date: toDateStr(r[12]),
-        biz_type: r[13], size_pyeong: r[14], floor: r[15],
-        deposit: r[16], rent: r[17], premium: r[18],
-        owner_name: r[19], owner_birth_year: r[20], phone: r[21], email: r[22],
-        seats: r[23], staff_count: r[24], biz_hours: r[25],
-        pos_count: r[26], kiosk_yn: r[27], did_yn: r[28], digital_menu_count: r[29],
-        fryer2_count: r[30], fryer3_count: r[31], patty_warmer: r[32], sealer: r[33], ice_maker: r[34],
-        baemin_delivery: r[35], baemin1: r[36], coupangeats: r[37],
-        bangje_yn: r[38], nomu_yn: r[39], semu_yn: r[40],
+        team: r[6], ac_name: r[7],
+        region_large: r[8], region_small: r[9],
+        open_date: toDateStr(r[10]), first_open_date: toDateStr(r[11]),
+        biz_type: r[12], size_pyeong: r[13], floor: r[14],
+        deposit: r[15], rent: r[16], premium: r[17],
+        owner_name: maskName(r[18]), owner_birth_year: r[19], email: r[20], // 점주명은 저장 시점에 마스킹(개인정보), 연락처는 필드 자체 미저장
+        seats: r[21], staff_count: r[22], biz_hours: r[23],
+        pos_count: r[24], kiosk_yn: r[25], did_yn: r[26], digital_menu_count: r[27],
+        fryer2_count: r[28], fryer3_count: r[29], patty_warmer: r[30], sealer: r[31], ice_maker: r[32],
+        baemin_delivery: r[33], baemin1: r[34], coupangeats: r[35],
+        bangje_yn: r[36], nomu_yn: r[37], semu_yn: r[38],
       });
     });
   }
