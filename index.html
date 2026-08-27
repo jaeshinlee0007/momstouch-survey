@@ -257,7 +257,7 @@ async function uploadStoreData(file) {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const wb = XLSX.read(e.target.result, { type: "binary", cellDates: true });
+        const wb = XLSX.read(e.target.result, { type: "binary" });
 
         // ── 양도양수 시트 파싱 (upsert: oldCode+newCode를 문서ID로 고정해서 재업로드 시
         //    항상 최신값으로 덮어씀. 예전엔 "이미 있으면 건너뛰기" 방식이라, 한 번 잘못
@@ -282,9 +282,7 @@ async function uploadStoreData(file) {
               const oldCode = String(r[0]).trim();
               const newCode = String(r[1]).trim();
               const key = `${oldCode}__${newCode}`;
-              const transferDate = r[2] instanceof Date
-                ? `${r[2].getFullYear()}-${String(r[2].getMonth()+1).padStart(2,"0")}-${String(r[2].getDate()).padStart(2,"0")}`
-                : String(r[2]).trim();
+              const transferDate = typeof r[2] === "number" ? excelSerialToYMD(r[2]) : String(r[2]).trim();
               // 예전 랜덤ID 문서(같은 조합)는 지우고, 고정ID 문서 하나로 정리
               (existingByKey.get(key) || []).forEach(id => {
                 if (id !== key) ops.push(deleteDoc(doc(db,"store_transfer", id)));
@@ -3908,6 +3906,19 @@ function stripImages(records) {
 // ── SheetJS 지연 로딩 ──────────────────────────────
 let _xlsxLoaded = false;
 let _xlsxLoading = null;
+// Excel 날짜 일련번호(정수, 1899-12-30 기준)를 "YYYY-MM-DD"로 직접 변환.
+// SheetJS의 cellDates:true 옵션이 내부적으로 Date 객체로 변환하는 과정에서 미세한 오차가
+// 생기는 버그가 있어서(예: 45474 → 2024-06-30 23:59:08로 잘못 변환됨), 그 경로를 아예
+// 안 타고 원본 정수값으로 직접 계산함 — Date 객체 왕복이 없어 오차가 생길 여지가 없음.
+function excelSerialToYMD(serial) {
+  if (serial == null || serial === "") return null;
+  const n = Math.round(Number(serial));
+  if (!Number.isFinite(n)) return null;
+  const epochMs = Date.UTC(1899, 11, 30); // 계산용 기준점(정수) — "시간대"가 아니라 순수 0점
+  const d = new Date(epochMs + n * 86400000); // 정수 곱셈+덧셈이라 부동소수점 오차 없음
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
+}
+
 function loadXLSX() {
   if (_xlsxLoaded && window.XLSX) return Promise.resolve();
   if (_xlsxLoading) return _xlsxLoading;
@@ -5236,20 +5247,16 @@ async function updateStoreDataStatus() {
 async function uploadReportData(file, onProgress) {
   await loadXLSX();
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array", cellDates: true });
+  const wb = XLSX.read(buf, { type: "array" });
 
   await _refreshTransferAndClosedMaps();
   const codeMap = window._oldToCurrentCodeMap || new Map();
   const resolveCode = code => codeMap.get(code) || code;
   const isEcode = code => typeof code === "string" && /^E\d/.test(code.trim());
-  // .toISOString()은 UTC 기준으로 변환하는데, 브라우저가 로컬시간(한국 UTC+9)으로 날짜를
-  // 만들면 자정 날짜가 전날 오후로 밀려서 항상 하루 이르게(예: 7/1 오픈일이 6/30으로) 나오는
-  // 문제가 있었음 — UTC 변환 없이 로컬 날짜 구성요소를 그대로 조합해서 이 문제를 피함.
-  const toDateStr = v => {
-    if (!(v instanceof Date)) return v || null;
-    const y = v.getFullYear(), m = String(v.getMonth()+1).padStart(2,"0"), d = String(v.getDate()).padStart(2,"0");
-    return `${y}-${m}-${d}`;
-  };
+  // cellDates:true(SheetJS의 Date객체 자동변환)를 아예 안 씀 — 그 변환 경로 자체에 미세한
+  // 오차가 있어(예: 정수 45474를 2024-06-30 23:59:08로 잘못 변환) 날짜가 하루 밀리는 버그가
+  // 있었음. 원본 정수 일련번호를 그대로 받아 excelSerialToYMD로 직접 계산해서 이 문제를 피함.
+  const toDateStr = v => typeof v === "number" ? excelSerialToYMD(v) : (v || null);
 
   const reports = new Map(); // 현재코드 -> report 객체
   const getRep = code => {
@@ -5299,8 +5306,8 @@ async function uploadReportData(file, onProgress) {
       if (!isEcode(raw)) return;
       const code = resolveCode(String(raw).trim());
       const ymRaw = r[0];
-      const ymKey = ymRaw instanceof Date
-        ? `${ymRaw.getFullYear()}-${String(ymRaw.getMonth()+1).padStart(2,"0")}`
+      const ymKey = typeof ymRaw === "number"
+        ? (excelSerialToYMD(ymRaw) || "").slice(0,7)
         : String(ymRaw||"").slice(0,7);
       if (!/^\d{4}-\d{2}$/.test(ymKey)) return;
       const rep = getRep(code);
