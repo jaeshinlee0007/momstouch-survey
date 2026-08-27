@@ -5261,6 +5261,7 @@ async function uploadReportData(file, onProgress) {
   // 2026-08-26 RAW 기준: 사업자번호/핸드폰 컬럼이 삭제되면서 그 뒤 전체가 당겨짐
   // (담당팀=idx6, ..., 세무가입=idx38). 이전 버전(41열) 인덱스와 다르니 혼동 주의.
   const maskName = s => (s == null || s === "") ? null : (String(s)[0] + "*".repeat(String(s).length - 1));
+  const activeStoreCodes = new Set(); // 매장현황 시트에 실제 등장하는(=현재 조회 가능한) 매장코드만 최종 저장 대상으로 제한
   const wsStore = wb.Sheets["매장현황"];
   if (wsStore) {
     const rows = XLSX.utils.sheet_to_json(wsStore, { header: 1, range: 4, defval: null });
@@ -5268,6 +5269,7 @@ async function uploadReportData(file, onProgress) {
       const raw = r[2];
       if (!isEcode(raw)) return;
       const code = resolveCode(String(raw).trim());
+      activeStoreCodes.add(code);
       const rep = getRep(code);
       Object.assign(rep, {
         beef_intro_date: toDateStr(r[3]),
@@ -5331,7 +5333,10 @@ async function uploadReportData(file, onProgress) {
   }
 
   // ── Firestore 배치 저장 (한도 500건 고려해서 400건씩 청크) ──
-  const entries = [...reports.entries()];
+  // 매출/물대에만 있고 매장현황엔 없는 코드(주로 매핑 없는 폐점 매장)는 어차피 매장선택
+  // 화면에서 검색이 안 돼 조회 불가능하므로 최종 저장에서 제외 — 양도양수된 매장의 과거
+  // 이력은 위에서 이미 resolveCode로 신코드에 합쳐진 뒤라 이 필터로 인한 데이터 손실은 없음.
+  const entries = [...reports.entries()].filter(([code]) => activeStoreCodes.has(code));
   // Firestore 배치 쓰기는 요청 1건당 총 용량이 약 10MB로 제한됨 — 매장당 매출·물대 이력이
   // 생각보다 커서(실측 시 매장당 최대 약 14KB, 배치 프로토콜 오버헤드까지 감안하면 400개
   // 묶었을 때 한도 초과 발생) 청크를 훨씬 작게 잡아 안전마진을 확보함.
