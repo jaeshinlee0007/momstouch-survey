@@ -5352,15 +5352,16 @@ async function uploadReportData(file, onProgress) {
   // 크기를 재서, 배치 하나가 안전 한도(2MB — 실제 한도 10MB 대비 충분한 여유)를 넘지 않을
   // 만큼만 채우는 동적 방식으로 전환.
   const SAFE_BATCH_BYTES = 1 * 1024 * 1024;
+  // 1) 먼저 배치들을 전부 나눠서 만들어둠(용량 한도 계산은 이전과 동일 — 안전마진 그대로)
+  const batches = [];
   let batch = writeBatch(db);
   let batchBytes = 0;
   let batchCount = 0;
-  let done = 0;
-  for (const [code, rep] of entries) {
+  entries.forEach(([code, rep]) => {
     const payload = { ...rep, updatedAt: new Date() };
     const approxBytes = JSON.stringify(payload).length * 3; // Firestore 중첩맵 인코딩 오버헤드 감안 3배 마진
     if (batchCount > 0 && batchBytes + approxBytes > SAFE_BATCH_BYTES) {
-      await batch.commit();
+      batches.push(batch);
       batch = writeBatch(db);
       batchBytes = 0;
       batchCount = 0;
@@ -5368,10 +5369,27 @@ async function uploadReportData(file, onProgress) {
     batch.set(doc(db, "store_reports", code), payload, { merge: true });
     batchBytes += approxBytes;
     batchCount++;
-    done++;
-    if (typeof onProgress === "function") onProgress(done, entries.length);
+  });
+  if (batchCount > 0) batches.push(batch);
+
+  // 2) 배치를 3개씩 묶어 동시 전송(순차 처리보다 빠름). 문서ID가 매장코드라 순차증가
+  //    패턴이 아니어서 Firestore 핫스팟 우려 없음 — 3개 동시는 충분히 안전한 수준.
+  //    upsert(merge:true) 방식이라 일부 배치가 실패해도 재업로드 시 그 부분만 자연스럽게 채워짐.
+  const CONCURRENCY = 3;
+  let done = 0;
+  const failedBatchIndexes = [];
+  for (let i = 0; i < batches.length; i += CONCURRENCY) {
+    const group = batches.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(group.map(b => b.commit()));
+    results.forEach((r, gi) => {
+      if (r.status === "rejected") failedBatchIndexes.push(i + gi);
+    });
+    done = Math.min(i + group.length, batches.length);
+    if (typeof onProgress === "function") onProgress(done, batches.length);
   }
-  if (batchCount > 0) await batch.commit();
+  if (failedBatchIndexes.length > 0) {
+    throw new Error(`${failedBatchIndexes.length}개 배치 전송 실패(전체 ${batches.length}개 중). 같은 파일을 다시 업로드하면 실패한 부분만 자동으로 채워집니다.`);
+  }
 
   return entries.length;
 }
@@ -5391,7 +5409,7 @@ async function handleReportDataUpload(input) {
 
   try {
     const count = await uploadReportData(file, (done, total) => {
-      if (text) text.textContent = `업로드 중... (${done}/${total} 매장)`;
+      if (text) text.textContent = `업로드 중... (${done}/${total} 배치, 3개씩 동시전송)`;
     });
     if (text) text.textContent = `완료! ${count}개 매장 리포트 데이터 반영됨`;
     setTimeout(() => { if (progress) progress.style.display = "none"; }, 2500);
