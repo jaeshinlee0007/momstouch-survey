@@ -257,33 +257,43 @@ async function uploadStoreData(file) {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const wb = XLSX.read(e.target.result, { type: "binary" });
+        const wb = XLSX.read(e.target.result, { type: "binary", cellDates: true });
 
-        // ── 양도양수 시트 파싱 (누적 저장: 기존 유지 + 신규만 추가, 중복 방지) ──
+        // ── 양도양수 시트 파싱 (upsert: oldCode+newCode를 문서ID로 고정해서 재업로드 시
+        //    항상 최신값으로 덮어씀. 예전엔 "이미 있으면 건너뛰기" 방식이라, 한 번 잘못
+        //    저장된 값(예: 날짜 파싱 버그)이 재업로드로도 안 고쳐지는 문제가 있었음) ──
         const transferSheetName = wb.SheetNames.find(n => n.includes("양도양수") || n.toLowerCase().includes("transfer"));
         if (transferSheetName) {
           const wsT = wb.Sheets[transferSheetName];
           const transferData = XLSX.utils.sheet_to_json(wsT, {header:1});
           const transferRows = transferData.slice(1).filter(r => r[0] && r[1] && r[2]);
           if (transferRows.length > 0) {
-            // 기존 누적 데이터 조회 (중복 방지용: oldCode+newCode 키)
+            // 과거에 랜덤ID로 저장된 같은 조합의 문서가 있으면(중복) 정리 대상으로 같이 모아둠
             const tSnap = await getDocs(collection(db,"store_transfer"));
-            const existingKeys = new Set(tSnap.docs.map(d => {
+            const existingByKey = new Map();
+            tSnap.docs.forEach(d => {
               const t = d.data();
-              return `${t.oldCode}__${t.newCode}`;
-            }));
-            const newTransferRows = transferRows.filter(r => {
-              const key = `${String(r[0]).trim()}__${String(r[1]).trim()}`;
-              return !existingKeys.has(key);
+              const key = `${t.oldCode}__${t.newCode}`;
+              if (!existingByKey.has(key)) existingByKey.set(key, []);
+              existingByKey.get(key).push(d.id);
             });
-            if (newTransferRows.length > 0) {
-              await Promise.all(newTransferRows.map(r => addDoc(collection(db,"store_transfer"), {
-                oldCode: String(r[0]).trim(),
-                newCode: String(r[1]).trim(),
-                transferDate: String(r[2]).trim(),
-                createdAt: new Date(),
-              })));
-            }
+            const ops = [];
+            transferRows.forEach(r => {
+              const oldCode = String(r[0]).trim();
+              const newCode = String(r[1]).trim();
+              const key = `${oldCode}__${newCode}`;
+              const transferDate = r[2] instanceof Date
+                ? `${r[2].getFullYear()}-${String(r[2].getMonth()+1).padStart(2,"0")}-${String(r[2].getDate()).padStart(2,"0")}`
+                : String(r[2]).trim();
+              // 예전 랜덤ID 문서(같은 조합)는 지우고, 고정ID 문서 하나로 정리
+              (existingByKey.get(key) || []).forEach(id => {
+                if (id !== key) ops.push(deleteDoc(doc(db,"store_transfer", id)));
+              });
+              ops.push(setDoc(doc(db,"store_transfer", key), {
+                oldCode, newCode, transferDate, updatedAt: new Date(),
+              }));
+            });
+            await Promise.all(ops);
           }
         }
 
@@ -5232,7 +5242,14 @@ async function uploadReportData(file, onProgress) {
   const codeMap = window._oldToCurrentCodeMap || new Map();
   const resolveCode = code => codeMap.get(code) || code;
   const isEcode = code => typeof code === "string" && /^E\d/.test(code.trim());
-  const toDateStr = v => v instanceof Date ? v.toISOString().slice(0,10) : (v || null);
+  // .toISOString()은 UTC 기준으로 변환하는데, 브라우저가 로컬시간(한국 UTC+9)으로 날짜를
+  // 만들면 자정 날짜가 전날 오후로 밀려서 항상 하루 이르게(예: 7/1 오픈일이 6/30으로) 나오는
+  // 문제가 있었음 — UTC 변환 없이 로컬 날짜 구성요소를 그대로 조합해서 이 문제를 피함.
+  const toDateStr = v => {
+    if (!(v instanceof Date)) return v || null;
+    const y = v.getFullYear(), m = String(v.getMonth()+1).padStart(2,"0"), d = String(v.getDate()).padStart(2,"0");
+    return `${y}-${m}-${d}`;
+  };
 
   const reports = new Map(); // 현재코드 -> report 객체
   const getRep = code => {
