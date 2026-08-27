@@ -866,8 +866,8 @@ async function renderReportDetail(root) {
         <span class="q-title">설비정보</span>
         <div style="font-size:12px;color:#A0AEC0;margin:8px 0 4px">주문/호출기기</div>
         <table style="width:100%">
-          ${_reportInfoRow("키오스크 / POS", `${data.kiosk_yn==="O"?"있음":"없음"} · POS ${data.pos_count??"-"}대`)}
-          ${_reportInfoRow("DID / 디지털메뉴보드", `${data.did_yn==="O"?"있음":"없음"} · ${data.digital_menu_count??"-"}대`)}
+          ${_reportInfoRow("키오스크 / POS", `${(Number(data.kiosk_yn)||0) > 0 ? `${data.kiosk_yn}대` : "없음"} · POS ${data.pos_count??"-"}대`)}
+          ${_reportInfoRow("DID / 디지털메뉴보드", `${(Number(data.did_yn)||0) > 0 ? `${data.did_yn}대` : "없음"} · ${data.digital_menu_count??"-"}대`)}
         </table>
         <div style="font-size:12px;color:#A0AEC0;margin:10px 0 4px">제조기기</div>
         <table style="width:100%">
