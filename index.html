@@ -341,7 +341,7 @@ async function uploadStoreData(file) {
             // 신제품(내슈빌 핫치킨버거) 판매/교육 대상 매장 여부 — 내슈빌 핫치킨버거 홍보물 부착
             // 현장점검 전용 필터링에만 사용 (STORE INFO J열)
             nashvilleEligible: String(r[9]||"").trim().toUpperCase() === "O",
-            // 신제품(귀멸의칼날) 판매/교육 대상 매장 여부 — 귀멸의칼날 홍보물 부착 현장점검
+            // 신제품(귀멸의칼날) 판매/교육 대상 매장 여부 — 귀멸의칼날 필수 체크리스트
             // 전용 필터링에만 사용 (STORE INFO K열)
             gkEligible: String(r[10]||"").trim().toUpperCase() === "O",
           }));
@@ -454,15 +454,27 @@ const NASHVILLE_FORM = {
   memoMaxLen: 100,
 };
 
-// ── 귀멸의칼날 홍보물 부착 현장점검 문항 구성 (작업지시서 기준) ──
+// ── 귀멸의칼날 필수 체크리스트 문항 구성 (작업지시서 기준) ──
 // Q1/Q2/Q3: Y/N + 사진(최대 3장, Y 선택 시 최소 1장 필수) + 문항별 메모.
 // 완료 판정: Q1,Q2,Q3 전부 Y여야 정상. 하나라도 N이면 재점검 대상(역할 무관 — SV/TL/GL/ADMIN
 // 누가 점검했든 N이 있으면 재검매장으로 판정) — gkStatus()에서 처리.
+// ── 귀멸의칼날 필수 체크리스트(v2) 문항 구성 ──
+// Q1~Q4: Y/N, 전부 Y여야 정상판정(하나라도 N이면 재점검). Q5~Q6: Y/N/미취급, 응답은
+// 필수지만 판정에는 전혀 영향 없음("체크만 진행"). 사진은 문항별이 아니라 폼 하단에
+// 3개 카테고리로 모아서 첨부(Q1~Q4 전부 Y일 때만 카테고리별 최소 1장 필수, 아니면 선택).
 const GK_FORM = {
   questions: [
-    { key:"q1", label:"[귀멸의칼날] 홍보물(메인포스터, 키오스크속지, 와블러)은 정위치에 부착되어 있는가?", hasPhoto:true },
-    { key:"q2", label:"[갓빠삭] 할인 포스터는 정위치에 부착되어 있는가?", hasPhoto:true },
-    { key:"q3", label:"제거 필요 홍보물(모코코, 르세라핌)은 사전 제거되어 있는가?", hasPhoto:false },
+    { key:"q1", category:"귀멸의칼날", label:"홍보물(메인포스터, 키오스크속지, 와블러)은 정위치에 부착되어 있는가?", type:"yn", judged:true },
+    { key:"q2", category:"귀멸의칼날", label:"홍보물 덧방스티커 부착이 완료되었는가?", type:"yn", judged:true },
+    { key:"q3", category:"귀멸의칼날", label:"영양성분/원산지표기표는 최신화 되었는가?", type:"yn", judged:true },
+    { key:"q4", category:"홍보물", label:"제거 필요 홍보물(모코코, 르세라핌)은 사전 제거되어 있는가?", type:"yn", judged:true },
+    { key:"q5", category:"선불카드", label:"선불카드 홍보물은 정위치에 부착되어 있는가?", type:"single", options:["Y","N","미취급"], judged:false },
+    { key:"q6", category:"갓빠삭", label:"[갓빠삭] 할인 포스터는 정위치에 부착되어 있는가?", type:"single", options:["Y","N","미취급"], judged:false },
+  ],
+  photoCategories: [
+    { key:"common_front", label:"[공통] 매장 전면" },
+    { key:"gk_label", label:"[귀칼] 영양성분·원산지 표기", hint:"(날짜표기만 나오도록)" },
+    { key:"gk_interior", label:"[귀칼] 내부 홍보물" },
   ],
   maxPhotos: 3,
   memoMaxLen: 100,
@@ -835,6 +847,7 @@ async function renderReportDetail(root) {
       bodyEl.innerHTML = `<p class="error-text">이 매장의 리포트 데이터가 아직 없습니다.<br>관리자에게 데이터 업로드를 요청해주세요.</p>`;
       return;
     }
+    window._reportDetailData = data; // Excel 다운로드 시 참조
     const fmtDate2 = v => v ? String(v).slice(0,10) : "-";
     const fmtMoney = v => (v == null || v === "") ? "-" : (() => {
       const n = Number(String(v).replace(/,/g, "")); // "7,000" 같은 콤마 포함 문자열도 처리
@@ -842,10 +855,11 @@ async function renderReportDetail(root) {
     })();
 
     bodyEl.innerHTML = `
-      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;padding:0 2px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;padding:0 2px">
         <span style="font-size:18px;font-weight:700">${escapeHtml(target.name)}</span>
         <span style="font-size:13px;color:#718096">${escapeHtml(target.code)}</span>
       </div>
+      <button class="btn-ghost" onclick="downloadExcelReportDetail()" style="margin-bottom:16px">📥 Excel 다운로드</button>
 
       <div class="question-card">
         <span class="q-title">매장 기본정보</span>
@@ -961,6 +975,76 @@ function _drawReportChart(canvasId, monthMap, extractVal) {
   });
 }
 
+// 매장 컨설팅 리포트 상세화면의 Excel 다운로드 — 기본정보(구분/값 세로형) / POS매출(월별×채널) /
+// 물대(월별금액) 3개 시트로 구성. 화면에 이미 로드된 데이터(window._reportDetailData)를 그대로 씀.
+async function downloadExcelReportDetail() {
+  const data = window._reportDetailData;
+  const target = window._reportTarget;
+  if (!data || !target) { alert("데이터를 먼저 불러온 뒤 다운로드해주세요."); return; }
+  try {
+    await loadXLSX();
+  } catch(e) {
+    alert("엑셀 라이브러리 로드 실패: " + e.message);
+    return;
+  }
+
+  const fmtDate2 = v => v ? String(v).slice(0,10) : "";
+  const age = (() => {
+    const y = Number(data.owner_birth_year);
+    return Number.isFinite(y) && y > 0 ? `${new Date().getFullYear()-y}세` : "";
+  })();
+  const yn = (v, unit) => (Number(v)||0) > 0 ? `${v}${unit||""}` : "없음";
+
+  const infoRows = [
+    ["구분","값"],
+    ["매장코드", target.code],
+    ["매장명", target.name],
+    ["점주명", data.owner_name || ""],
+    ["연령", age],
+    ["최초 오픈일", fmtDate2(data.first_open_date)],
+    ["현재점 오픈일", fmtDate2(data.open_date)],
+    ["영업시간", data.biz_hours || ""],
+    ["담당AC/팀", `${data.ac_name||""} / ${data.team||""}`],
+    ["지역", `${data.region_large||""} ${data.region_small||""}`.trim()],
+    ["층수/평수", `${data.floor??""}층 · ${data.size_pyeong??""}평`],
+    ["보증금/임대료", `${data.deposit??""} / ${data.rent??""}`],
+    ["키오스크/POS", `${yn(data.kiosk_yn,"대")} · POS ${data.pos_count??"-"}대`],
+    ["DID/디지털메뉴보드", `${yn(data.did_yn,"대")} · ${data.digital_menu_count??"-"}대`],
+    ["후라이어(2구/3구)", `${data.fryer2_count??"-"} / ${data.fryer3_count??"-"}`],
+    ["패티워머/실링기/제빙기", `${data.patty_warmer??"-"} / ${data.sealer??"-"} / ${data.ice_maker??"-"}`],
+    ["비프 도입", data.beef_intro_date ? `도입 · ${fmtDate2(data.beef_intro_date)}` : "미도입"],
+    ["피자 도입", data.pizza_intro_date ? `도입 · ${fmtDate2(data.pizza_intro_date)}` : "미도입"],
+    ["배민1 가입", data.baemin1 === "O" ? "가입" : "미가입"],
+    ["쿠팡이츠 가입", data.coupangeats === "O" ? "가입" : "미가입"],
+  ];
+
+  const channels = ["전체","내점","배달","포장","배민","요기요","쿠팡이츠","기타"];
+  const salesHeader = ["연월"];
+  channels.forEach(ch => salesHeader.push(`${ch}_총매출액`, `${ch}_실매출액`, `${ch}_영수건수`));
+  const salesRows = [salesHeader];
+  Object.keys(data.pos_sales||{}).sort().forEach(ym => {
+    const m = data.pos_sales[ym] || {};
+    const row = [ym];
+    channels.forEach(ch => {
+      const c = m[ch] || {};
+      row.push(c.총매출액||0, c.실매출액||0, c.영수건수||0);
+    });
+    salesRows.push(row);
+  });
+
+  const waterRows = [["연월","물대금액"]];
+  Object.keys(data.water_sales||{}).sort().forEach(ym => {
+    waterRows.push([ym, data.water_sales[ym] || 0]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(infoRows), "기본정보");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(salesRows), "POS매출");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(waterRows), "물대");
+  const dateStr = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `${target.name}_${target.code}_컨설팅리포트_${dateStr}.xlsx`);
+}
+
 
 function renderHub(root) {
   // 신규플랫폼은 토글 자체가 없는 근간 기능이라 항상 카드로 노출(아코디언 대상 아님).
@@ -970,7 +1054,7 @@ function renderHub(root) {
     { key:"spacool", enabled:_spacoolEnabled, screen:"homeSpacool", cls:"spacool", icon:"S", bg:"#EAF3DE", fg:"#3B6D11", title:"스파쿨 프로모션 현장점검" },
     { key:"gbchicken", enabled:_gbchickenEnabled, screen:"homeGbchicken", cls:"np", icon:"G", bg:"#FFF0E6", fg:"#C2410C", title:"갓빠삭치킨 홍보물 부착 현장점검" },
     { key:"nashville", enabled:_nashvilleEnabled, screen:"homeNashville", cls:"np", icon:"H", bg:"#FDEBEB", fg:"#9B2C2C", title:"내슈빌 핫치킨버거 홍보물 부착 현장점검" },
-    { key:"gk", enabled:_gkEnabled, screen:"homeGk", cls:"np", icon:"⚔", bg:"#E6FFFA", fg:"#285E61", title:"귀멸의칼날 홍보물 부착 현장점검" },
+    { key:"gk", enabled:_gkEnabled, screen:"homeGk", cls:"np", icon:"⚔", bg:"#E6FFFA", fg:"#285E61", title:"귀멸의칼날 필수 체크리스트" },
     { key:"gkpre", enabled:_gkpreEnabled, screen:"homeGkpre", cls:"np", icon:"⚡", bg:"#FEFCBF", fg:"#744210", title:"귀멸의칼날 사전 체크리스트" },
   ];
 
@@ -1190,7 +1274,7 @@ async function searchStores() {
   else if (S.category === "gbchicken") matched = buildMatchedStoresNP(activeStores, name); // 신제품과 동일한 npEligible 기준 재사용 (작업지시서 3항)
   else if (S.category === "nashville") matched = buildMatchedStoresNashville(activeStores, name);
   else if (S.category === "gk") matched = buildMatchedStoresGk(activeStores, name);
-  else if (S.category === "gkpre") matched = buildMatchedStoresGk(activeStores, name); // 귀멸의칼날 홍보물점검과 동일 대상매장 재사용
+  else if (S.category === "gkpre") matched = buildMatchedStoresGk(activeStores, name); // 귀멸의칼날 필수 체크리스트과 동일 대상매장 재사용
   else if (S.category === "spacool") matched = buildMatchedStoresSpacool(activeStores, name);
   else matched = buildMatchedStoresDefault(activeStores, name);
 
@@ -1612,7 +1696,7 @@ function startForm() {
   } else if (S.category === "nashville") {
     S.nashvilleAnswers = { q1:null, photos:{q1:[]}, memoQ1:"", memo:"" };
   } else if (S.category === "gk") {
-    S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+    S.gkAnswers = { q1:null, q2:null, q3:null, q4:null, q5:null, q6:null, photos:{common_front:[],gk_label:[],gk_interior:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memoQ5:"", memoQ6:"", memo:"" };
   } else if (S.category === "gkpre") {
     S.gkpreAnswers = { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null, photos:{q1:[]},
       memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" };
@@ -3383,7 +3467,7 @@ async function renderPhotoSetting(root) {
 
   const gkCategoryHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:14px">귀멸의칼날 홍보물 부착 현장점검 사용</span>
+      <span style="font-size:14px">귀멸의칼날 필수 체크리스트 사용</span>
       <div id="toggle_wrap_gkEnabled"
         onclick="toggleGkEnabled()"
         style="width:44px;height:24px;border-radius:12px;background:${_gkEnabled?"#285E61":"#CBD5E0"};
@@ -3393,7 +3477,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_gkEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
-    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 귀멸의칼날 홍보물 부착 현장점검 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
+    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 귀멸의칼날 필수 체크리스트 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   const gkpreCategoryHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
@@ -3424,7 +3508,7 @@ async function renderPhotoSetting(root) {
       ${section("🧊", "스파쿨 프로모션 현장점검", spacoolCategoryHtml, false)}
       ${section("🍗", "갓빠삭치킨 홍보물 부착 현장점검", gbchickenCategoryHtml, false)}
       ${section("🌶️", "내슈빌 핫치킨버거 홍보물 부착 현장점검", nashvilleCategoryHtml, false)}
-      ${section("⚔️", "귀멸의칼날 홍보물 부착 현장점검", gkCategoryHtml, false)}
+      ${section("⚔️", "귀멸의칼날 필수 체크리스트", gkCategoryHtml, false)}
       ${section("⚡", "귀멸의칼날 사전 체크리스트", gkpreCategoryHtml, false)}
 
       <button class="btn-primary" onclick="applyAdminSettings()" style="margin-top:8px">저장하기</button>
@@ -3717,7 +3801,7 @@ function sessionRestore() {
     S.nashvilleAnswers = data.nashvilleAnswers ||
       (data.category === "nashville" ? { q1:null, photos:{q1:[]}, memoQ1:"", memo:"" } : null);
     S.gkAnswers = data.gkAnswers ||
-      (data.category === "gk" ? { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" } : null);
+      (data.category === "gk" ? { q1:null, q2:null, q3:null, q4:null, q5:null, q6:null, photos:{common_front:[],gk_label:[],gk_interior:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memoQ5:"", memoQ6:"", memo:"" } : null);
     S.gkpreAnswers = data.gkpreAnswers ||
       (data.category === "gkpre" ? { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null, photos:{q1:[]},
         memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" } : null);
@@ -3961,7 +4045,7 @@ const _cache = {
   recordsGbchicken:   { data: null, ts: 0, ttl: 480 }, // 8분
   dashboardNashville: { data: null, ts: 0, ttl: 600 }, // 10분 (내슈빌 핫치킨버거 홍보물 부착 현장점검, surveys_nashville 별도 컬렉션)
   recordsNashville:   { data: null, ts: 0, ttl: 480 }, // 8분
-  dashboardGk: { data: null, ts: 0, ttl: 600 }, // 10분 (귀멸의칼날 홍보물 부착 현장점검, surveys_gk 별도 컬렉션)
+  dashboardGk: { data: null, ts: 0, ttl: 600 }, // 10분 (귀멸의칼날 필수 체크리스트, surveys_gk 별도 컬렉션)
   recordsGk:   { data: null, ts: 0, ttl: 480 }, // 8분
   dashboardGkpre: { data: null, ts: 0, ttl: 600 }, // 10분 (귀멸의칼날 사전 체크리스트, surveys_gkpre 별도 컬렉션)
   recordsGkpre:   { data: null, ts: 0, ttl: 480 }, // 8분
@@ -6220,7 +6304,7 @@ function buildMatchedStoresNashville(activeStores, name) {
   return matched.filter(s => s.nashvilleEligible);
 }
 
-// 귀멸의칼날 홍보물 부착 현장점검 전용 매장범위 계산 — 역할별 범위 로직은
+// 귀멸의칼날 필수 체크리스트 전용 매장범위 계산 — 역할별 범위 로직은
 // buildMatchedStoresNashville와 동일(대상매장 플래그만 다름)
 function buildMatchedStoresGk(activeStores, name) {
   let matched;
@@ -9798,10 +9882,10 @@ async function downloadExcelNashville() {
   XLSX.writeFile(wb, `내슈빌핫치킨버거홍보물부착점검_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
-// 귀멸의칼날 홍보물 부착 현장점검 전용 코드 — surveys_gk 컬렉션
+// 귀멸의칼날 필수 체크리스트 전용 코드 — surveys_gk 컬렉션
 // (매장범위는 STORE INFO의 "신제품-귀멸의칼날" 플래그 전용 — buildMatchedStoresGk 사용)
 // ════════════════════════════════════════════════════════════
-// 귀멸의칼날 홍보물 부착 현장점검 건의 상태 계산: "none"|"needs"|"pending"|"done"
+// 귀멸의칼날 필수 체크리스트 건의 상태 계산: "none"|"needs"|"pending"|"done"
 // - 완료(정상) 조건: Q1=Y (작업지시서 4항). Q1=N이면 재점검 대상. 미응답이면 미점검.
 // - 조건 만족 + SV(AC) 점검 → 팀장승인대기(단일 단계, 그룹장 승인 없음 — 작업지시서 "SV-TL 2단계").
 // - 조건 만족 + TL/GL/관리자 본인점검 → 즉시 완료.
@@ -9810,14 +9894,14 @@ function gkStatus(rec) {
   if (rec.tlRejected) return "needs";
   const a = rec.gkAnswers;
   if (!a || a.q1 == null) return "none";
-  if (a.q1 === "N" || a.q2 === "N" || a.q3 === "N") return "needs";
+  if (a.q1 === "N" || a.q2 === "N" || a.q3 === "N" || a.q4 === "N") return "needs";
   if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
   return "done";
 }
 
 // ════════════════════════════════════════════════════════════
 // 귀멸의칼날 사전 체크리스트 전용 코드 — surveys_gkpre 컬렉션
-// (매장범위는 귀멸의칼날 홍보물 부착 현장점검과 동일한 buildMatchedStoresGk 재사용 — 같은
+// (매장범위는 귀멸의칼날 필수 체크리스트과 동일한 buildMatchedStoresGk 재사용 — 같은
 //  "신제품-귀멸의칼날" 플래그 대상이라 별도 함수 불필요)
 // ════════════════════════════════════════════════════════════
 // 이 문항이 현재 답변(a) 기준으로 노출 대상인지 판정(showIf 없으면 항상 노출)
@@ -9948,7 +10032,7 @@ function goAdminGkpre() {
   go("dashboardGkpre");
 }
 
-// 귀멸의칼날 사전 체크리스트 시작: 최초/보완 구분 없음, 대상매장은 귀멸의칼날 홍보물
+// 귀멸의칼날 사전 체크리스트 시작: 최초/보완 구분 없음, 대상매장은 귀멸의칼날 필수 체크리스트
 // 부착 현장점검과 동일한 "신제품-귀멸의칼날" 플래그(작업지시서 3항, buildMatchedStoresGk 재사용).
 function startGkpreInspection() {
   if (!_gkpreEnabled) {
@@ -10235,7 +10319,7 @@ async function loadGkEnabled() {
 
 function renderHomeGk(root) {
   if (!_gkEnabled) {
-    alert("현재 귀멸의칼날 홍보물 부착 현장점검 기능이 비활성화되어 있습니다.");
+    alert("현재 귀멸의칼날 필수 체크리스트 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -10247,14 +10331,14 @@ function renderHomeGk(root) {
       <button onclick="goBack()" style="position:absolute;top:14px;left:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer">←</button>
       <button onclick="go('hub')" title="점검 종류 선택으로" style="position:absolute;top:14px;right:14px;background:rgba(0,0,0,0.08);border:none;color:#3A2E00;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">☰ HUB</button>
       <div class="logo-wrap">${LOGO_SVG}</div>
-      <h1 class="hero-title">귀멸의칼날<br>홍보물 부착 현장점검</h1>
-      <p class="hero-sub">귀멸의칼날 홍보물 점검</p>
+      <h1 class="hero-title">귀멸의칼날<br>필수 체크리스트</h1>
+      <p class="hero-sub">귀멸의칼날 필수 체크리스트</p>
     </div>
     <div class="card-section">
       <button class="btn-primary-np" onclick="startGkInspection()">📋 점검 시작하기</button>
       <button class="btn-ghost" onclick="go('recordsGk')">📂 점검 내역 조회</button>
       ${canDash ? `<button class="btn-ghost" id="gkApprovalBtn" onclick="go('approvalGk')" style="color:#B7791F;border-color:#F6D384;background:#FFFBEB">✅ 승인대기<span id="gkApprovalBadge"></span></button>` : ""}
-      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminGk()">📊 관리자 대시보드 (귀멸의칼날 홍보물)</button>` : ""}
+      ${canDash ? `<button class="btn-ghost btn-admin-np" onclick="goAdminGk()">📊 관리자 대시보드 (귀멸의칼날 필수 체크리스트)</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
@@ -10321,58 +10405,42 @@ function goAdminGk() {
   go("dashboardGk");
 }
 
-// 귀멸의칼날 홍보물 부착 현장점검 시작: 최초/보완 구분 없음(작업지시서 1항) → inspType 화면
+// 귀멸의칼날 필수 체크리스트 시작: 최초/보완 구분 없음(작업지시서 1항) → inspType 화면
 // 건너뛰고 바로 매장선택으로 이동. 대상 매장은 "신제품-귀멸의칼날" 플래그 기준(작업지시서 3항).
 function startGkInspection() {
   if (!_gkEnabled) {
-    alert("현재 귀멸의칼날 홍보물 부착 현장점검 기능이 비활성화되어 있습니다.");
+    alert("현재 귀멸의칼날 필수 체크리스트 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
   S.category = "gk";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+  S.gkAnswers = { q1:null, q2:null, q3:null, q4:null, q5:null, q6:null, photos:{common_front:[],gk_label:[],gk_interior:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memoQ5:"", memoQ6:"", memo:"" };
   go("storeSel");
 }
 
-// ── FORM (귀멸의칼날 홍보물 부착 현장점검) ──────────────────
+// ── FORM (귀멸의칼날 필수 체크리스트) ──────────────────
 function renderFormGk(root) {
   const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
   const a = S.gkAnswers;
+  const allJudgedYes = ["q1","q2","q3","q4"].every(k => a[k] === "Y");
 
   const qBlocks = GK_FORM.questions.map((q) => {
     const val = a[q.key];
-    const qNum = q.key.slice(1); // "q1" -> "1"
+    const qNum = q.key.slice(1);
     const memoKey = "memoQ" + qNum;
-    let photoHtml = "";
-    if (q.hasPhoto) {
-      const photos = a.photos[q.key] || [];
-      const canAddMore = photos.length < GK_FORM.maxPhotos;
-      const photoThumbs = photos.map((p, pi) => `
-        <div class="preview-container" style="display:inline-block;margin-right:6px">
-          <img src="${p.image}" class="preview-img" onclick="openImageModal('${p.image}')">
-          <button class="remove-img" onclick="removeGkImage('${q.key}',${pi})">✕</button>
-        </div>`).join("");
-      photoHtml = `
-        <div style="margin-top:12px">
-          <div style="font-size:12px;color:var(--sub);margin-bottom:6px">사진 첨부 (최대 ${GK_FORM.maxPhotos}장${val==='Y' ? ', 최소 1장 필수' : ', 선택'})</div>
-          <div id="gkimg-preview-${q.key}">${photoThumbs}</div>
-          ${canAddMore ? `
-          <label class="img-upload-btn" for="gkimg-${q.key}">📷 사진 첨부
-            <input type="file" id="gkimg-${q.key}" accept="image/*" style="display:none" onchange="handleGkImage('${q.key}',this)">
-          </label>
-          <span id="gkimg-status-${q.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>` : ""}
-        </div>`;
-    }
-    return `
-      <div class="question-card">
-        <span class="q-title">Q${qNum}. ${q.label}</span>
-        ${q.hint ? `<div style="font-size:12px;color:var(--sub);margin-top:4px">${q.hint}</div>` : ""}
+    const answerHtml = q.type === "yn" ? `
         <div class="answer-row" style="margin-top:10px">
           <button class="ans-btn ans-yes ${val==='Y'?'selected':''}" onclick="setGkAnswer('${q.key}','Y')">✅ Y</button>
           <button class="ans-btn ans-no ${val==='N'?'selected':''}" onclick="setGkAnswer('${q.key}','N')">❌ N</button>
-        </div>
-        ${photoHtml}
+        </div>` : `
+        <div style="display:flex;gap:8px;margin-top:10px">
+          ${q.options.map(opt => `<button class="ans-btn ans-choice ${val===opt?'selected':''}" style="flex:1" onclick="setGkAnswer('${q.key}','${opt}')">${opt}</button>`).join("")}
+        </div>`;
+    return `
+      <div class="question-card">
+        <span class="q-title">[${q.category}] Q${qNum}. ${q.label}</span>
+        ${answerHtml}
         <div class="memo-wrap" style="margin-top:12px">
           <input type="text" class="memo-input"
             placeholder="Q${qNum} 관련 메모 (선택, 최대 ${GK_FORM.memoMaxLen}자)"
@@ -10383,16 +10451,43 @@ function renderFormGk(root) {
       </div>`;
   }).join("");
 
+  const photoBlocks = GK_FORM.photoCategories.map(pc => {
+    const photos = a.photos[pc.key] || [];
+    const canAddMore = photos.length < GK_FORM.maxPhotos;
+    const photoThumbs = photos.map((p, pi) => `
+      <div class="preview-container" style="display:inline-block;margin-right:6px">
+        <img src="${p.image}" class="preview-img" onclick="openImageModal('${p.image}')">
+        <button class="remove-img" onclick="removeGkImage('${pc.key}',${pi})">✕</button>
+      </div>`).join("");
+    return `
+      <div class="question-card">
+        <span class="q-title">${pc.label}</span>
+        ${pc.hint ? `<div style="font-size:12px;color:var(--sub);margin-top:4px">${pc.hint}</div>` : ""}
+        <div style="font-size:12px;color:var(--sub);margin:8px 0 6px">사진 첨부 (최대 ${GK_FORM.maxPhotos}장${allJudgedYes ? ', 최소 1장 필수' : ', 선택'})</div>
+        <div id="gkimg-preview-${pc.key}">${photoThumbs}</div>
+        ${canAddMore ? `
+        <label class="img-upload-btn" for="gkimg-${pc.key}">📷 사진 첨부
+          <input type="file" id="gkimg-${pc.key}" accept="image/*" style="display:none" onchange="handleGkImage('${pc.key}',this)">
+        </label>
+        <span id="gkimg-status-${pc.key}" style="font-size:12px;color:#B7791F;margin-left:8px"></span>` : ""}
+      </div>`;
+  }).join("");
+
   root.innerHTML = `
     <div class="sticky-header" style="display:flex;align-items:center;gap:8px;padding:16px;background:white;border-bottom:1px solid var(--border)">
       <button class="btn-back" onclick="confirmBack()" style="flex-shrink:0">←</button>
       <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0">
         <span class="header-store" style="font-size:15px;font-weight:700;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${S.storeName}</span>
-        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">귀멸의칼날 홍보물 부착 현장점검 · ${roleLabel}</span>
+        <span class="header-role" style="font-size:12px;color:var(--sub);text-align:left">귀멸의칼날 필수 체크리스트 · ${roleLabel}</span>
       </div>
     </div>
     <div class="form-body">
       ${qBlocks}
+
+      <div class="question-card">
+        <span class="q-title">사진 첨부</span>
+      </div>
+      ${photoBlocks}
 
       <div class="question-card">
         <span class="q-title">전체 메모 (선택)</span>
@@ -10474,7 +10569,7 @@ function removeGkImage(qKey, idx) {
 
 async function submitFormGk() {
   if (!_gkEnabled) {
-    alert("현재 귀멸의칼날 홍보물 부착 현장점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
+    alert("현재 귀멸의칼날 필수 체크리스트 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
   }
   const a = S.gkAnswers;
@@ -10484,12 +10579,24 @@ async function submitFormGk() {
     alert("⚠️ " + msg + "\n제출되지 않았습니다.");
   };
 
+  // 6개 문항 전부 응답 필수(Q5·Q6은 판정엔 안 들어가지만 응답 자체는 필수 — 작업지시서 "체크만 진행")
   for (const q of GK_FORM.questions) {
     const qNum = q.key.slice(1);
-    if (a[q.key] !== "Y" && a[q.key] !== "N") { showWarn(`Q${qNum} (${q.label})를 선택해주세요.`); return; }
-    if (q.hasPhoto && a[q.key] === "Y" && (a.photos[q.key]||[]).length === 0) {
-      showWarn(`Q${qNum}에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.`);
+    const val = a[q.key];
+    if (q.type === "yn" ? (val !== "Y" && val !== "N") : !q.options.includes(val)) {
+      showWarn(`[${q.category}] Q${qNum} (${q.label})를 선택해주세요.`);
       return;
+    }
+  }
+
+  // Q1~Q4 전부 Y일 때만 3개 사진카테고리 각각 최소 1장 필수
+  const allJudgedYes = ["q1","q2","q3","q4"].every(k => a[k] === "Y");
+  if (allJudgedYes) {
+    for (const pc of GK_FORM.photoCategories) {
+      if ((a.photos[pc.key]||[]).length === 0) {
+        showWarn(`${pc.label} 사진을 최소 1장 첨부해주세요.`);
+        return;
+      }
     }
   }
 
@@ -10504,20 +10611,20 @@ async function submitFormGk() {
   if (warnEl) warnEl.style.display = "none";
 
   try {
+    const trimMemo = v => (v || "").slice(0, GK_FORM.memoMaxLen);
     const payload = {
       storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
       writerName: S.writerName, role: S.role,
-      inspType: "최초", // 귀멸의칼날 홍보물 부착 현장점검은 최초/보완 구분 없음 (작업지시서 기준)
+      inspType: "최초", // 귀멸의칼날 필수 체크리스트는 최초/보완 구분 없음 (작업지시서 기준)
       visitDate: S.visitDate,
       gkAnswers: {
-        q1: a.q1, q2: a.q2, q3: a.q3,
-        memoQ2: (a.memoQ2 || "").slice(0, GK_FORM.memoMaxLen),
-        memoQ3: (a.memoQ3 || "").slice(0, GK_FORM.memoMaxLen),
+        q1: a.q1, q2: a.q2, q3: a.q3, q4: a.q4, q5: a.q5, q6: a.q6,
         photos: a.photos,
-        memoQ1: (a.memoQ1 || "").slice(0, GK_FORM.memoMaxLen),
-        memo: (a.memo || "").slice(0, GK_FORM.memoMaxLen),
+        memoQ1: trimMemo(a.memoQ1), memoQ2: trimMemo(a.memoQ2), memoQ3: trimMemo(a.memoQ3),
+        memoQ4: trimMemo(a.memoQ4), memoQ5: trimMemo(a.memoQ5), memoQ6: trimMemo(a.memoQ6),
+        memo: trimMemo(a.memo),
       },
-      needsFollowup: !(a.q1 === "Y" && a.q2 === "Y" && a.q3 === "Y"),
+      needsFollowup: !allJudgedYes,
       createdAt: new Date(),
     };
     // AC(SV)가 정상 조건 만족으로 제출한 건은 담당 팀장 승인 필요(단일 단계 — 작업지시서 "SV-TL 2단계",
@@ -10554,10 +10661,10 @@ function toggleGkpreEnabled() {
   if (thumb) thumb.style.left      = _gkpreEnabled ? "23px" : "3px";
 }
 
-// ── 점검 내역 조회 (귀멸의칼날 홍보물 부착 현장점검) ────────────────
+// ── 점검 내역 조회 (귀멸의칼날 필수 체크리스트) ────────────────
 async function renderRecordsGk(root) {
   if (!_gkEnabled) {
-    alert("현재 귀멸의칼날 홍보물 부착 현장점검 기능이 비활성화되어 있습니다.");
+    alert("현재 귀멸의칼날 필수 체크리스트 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -10567,7 +10674,7 @@ async function renderRecordsGk(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>점검 내역 조회 (귀멸의칼날 홍보물)</h2>
+      <h2>점검 내역 조회 (귀멸의칼날 필수 체크리스트)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
@@ -10702,7 +10809,7 @@ async function fetchRecordsGk() {
 function startInspectionForStoreGk(code, name, team) {
   S.category = "gk";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.gkAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+  S.gkAnswers = { q1:null, q2:null, q3:null, q4:null, q5:null, q6:null, photos:{common_front:[],gk_label:[],gk_interior:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memoQ5:"", memoQ6:"", memo:"" };
   selectStore(code, name, team);
 }
 
@@ -10711,10 +10818,10 @@ function setRecGkFilter(val) {
   fetchRecordsGk();
 }
 
-// ── 승인대기 (귀멸의칼날 홍보물, SV의 정상조건 만족 건 중 담당 팀장 승인 전 — 단일단계) ──
+// ── 승인대기 (귀멸의칼날 필수 체크리스트, SV의 정상조건 만족 건 중 담당 팀장 승인 전 — 단일단계) ──
 async function renderApprovalGk(root) {
   if (!_gkEnabled) {
-    alert("현재 귀멸의칼날 홍보물 부착 현장점검 기능이 비활성화되어 있습니다.");
+    alert("현재 귀멸의칼날 필수 체크리스트 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -10724,7 +10831,7 @@ async function renderApprovalGk(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>승인대기 (귀멸의칼날 홍보물)</h2>
+      <h2>승인대기 (귀멸의칼날 필수 체크리스트)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div style="padding:8px 16px 0;font-size:12px;color:#718096">${scopeDesc} 기준</div>
@@ -10803,12 +10910,18 @@ function renderRecordDetailGk(root) {
     const qNum = q.key.slice(1);
     const val = a[q.key] || "-";
     const memo = a["memoQ"+qNum];
-    const photos = q.hasPhoto ? (a.photos?.[q.key] || []) : [];
     return `
-      <label class="field-label">Q${qNum}. ${q.label}</label>
+      <label class="field-label">[${q.category}] Q${qNum}. ${q.label}</label>
       <div class="info-box">${val}</div>
-      ${photos.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">${photos.map(p => `<img src="${p.image}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer" onclick="openImageModal('${p.image}')">`).join("")}</div>` : ""}
       ${memo ? `<div style="font-size:12px;color:#4A5568;margin:4px 0 8px">메모: ${escapeHtml(memo)}</div>` : ""}
+    `;
+  }).join("");
+  const photoHtml = GK_FORM.photoCategories.map(pc => {
+    const photos = a.photos?.[pc.key] || [];
+    if (!photos.length) return "";
+    return `
+      <label class="field-label">${pc.label}</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">${photos.map(p => `<img src="${p.image}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer" onclick="openImageModal('${p.image}')">`).join("")}</div>
     `;
   }).join("");
   const canDecide = status === "pending" && ["tl","gl","admin"].includes(_authRole);
@@ -10816,7 +10929,7 @@ function renderRecordDetailGk(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>점검 상세 (귀멸의칼날 홍보물)</h2>
+      <h2>점검 상세 (귀멸의칼날 필수 체크리스트)</h2>
       <button class="btn-home-dash" onclick="goCategoryHome()" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="card-section">
@@ -10829,6 +10942,7 @@ function renderRecordDetailGk(root) {
       <label class="field-label">상태</label>
       <div class="info-box">${statusText}</div>
       ${qHtml}
+      ${photoHtml}
       ${a.memo ? `<label class="field-label">전체 메모</label><div class="info-box">${escapeHtml(a.memo)}</div>` : ""}
       ${r.tlComment ? `<label class="field-label">팀장 코멘트</label><div class="info-box">${escapeHtml(r.tlComment)}</div>` : ""}
       ${canDecide ? `
@@ -10880,10 +10994,10 @@ async function rejectGkRecord(docId) {
   }
 }
 
-// ── DASHBOARD (귀멸의칼날 홍보물 부착 현장점검, surveys_gk 전용) ──
+// ── DASHBOARD (귀멸의칼날 필수 체크리스트, surveys_gk 전용) ──
 async function renderDashboardGk(root) {
   if (!_gkEnabled) {
-    alert("현재 귀멸의칼날 홍보물 부착 현장점검 기능이 비활성화되어 있습니다.");
+    alert("현재 귀멸의칼날 필수 체크리스트 기능이 비활성화되어 있습니다.");
     go("hub");
     return;
   }
@@ -10897,7 +11011,7 @@ async function renderDashboardGk(root) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>관리자 대시보드 (귀멸의칼날 홍보물)</h2>
+      <h2>관리자 대시보드 (귀멸의칼날 필수 체크리스트)</h2>
       <button class="btn-home-dash" onclick="go('homeGk')" style="margin-left:auto">🏠 Home</button>
     </div>
     <div style="padding:20px;text-align:center;color:#718096">데이터 불러오는 중...</div>`;
@@ -11014,7 +11128,7 @@ function buildDashboardGk(root, records, scopeStores) {
   root.innerHTML = `
     <div class="page-header">
       <button class="btn-back" onclick="goBack()">←</button>
-      <h2>관리자 대시보드 (귀멸의칼날 홍보물)</h2>
+      <h2>관리자 대시보드 (귀멸의칼날 필수 체크리스트)</h2>
       <button class="btn-home-dash" onclick="go('homeGk')" style="margin-left:auto">🏠 Home</button>
     </div>
     <div class="dash-stats">
@@ -11117,7 +11231,7 @@ async function downloadExcelGk() {
     if (!ex || t > exT) latestByStore.set(key, r);
   });
 
-  const rows = [["매장코드","매장명","팀","상태","Q1","Q2","Q3","작성자","역할","점검일시","메모"]];
+  const rows = [["매장코드","매장명","팀","상태","Q1","Q2","Q3","Q4","Q5(선불카드)","Q6(갓빠삭)","작성자","역할","점검일시","메모"]];
   const statusLabel = { done:"완료", pending:"승인대기", needs:"재점검필요", none:"미점검" };
   scopeStores.forEach(s => {
     const rec = latestByStore.get(s.code);
@@ -11127,7 +11241,7 @@ async function downloadExcelGk() {
     rows.push([
       s.code, s.name, s.team||"",
       statusLabel[gkStatus(rec)],
-      a.q1||"", a.q2||"", a.q3||"",
+      a.q1||"", a.q2||"", a.q3||"", a.q4||"", a.q5||"", a.q6||"",
       rec?.writerName || "",
       roleLabel[rec?.role] || rec?.role || "",
       dt ? dt.toLocaleString("ko-KR") : "",
@@ -11288,7 +11402,8 @@ async function fetchRecordsGkpre() {
 function startInspectionForStoreGkpre(code, name, team) {
   S.category = "gkpre";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.gkpreAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+  S.gkpreAnswers = { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null, photos:{q1:[]},
+    memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" };
   selectStore(code, name, team);
 }
 
@@ -11511,7 +11626,7 @@ async function renderDashboardGkpre(root) {
     }
     const activeStores = await getActiveStoreData();
 
-    // "신제품-귀멸의칼날" 플래그 기준 (작업지시서 3항, 귀멸의칼날 홍보물 부착 현장점검과 동일 플래그 재사용)
+    // "신제품-귀멸의칼날" 플래그 기준 (작업지시서 3항, 귀멸의칼날 필수 체크리스트과 동일 플래그 재사용)
     let scopeStores = activeStores.filter(s => s.gkEligible);
     if (_authRole === "tl") {
       scopeStores = scopeStores.filter(s => s.tl === _authName || s.sv === _authName);
@@ -11770,7 +11885,7 @@ Object.assign(window, {
   startGkpreInspection, goAdminGkpre, toggleGkpreEnabled,
   setGkpreAnswer, toggleGkpreMultiAnswer, handleGkpreImage, removeGkpreImage, updateGkpreQMemo, updateGkpreMemo, submitFormGkpre, downloadExcelGkpre,
   fetchRecordsGkpre, setRecGkpreFilter, viewRecordGkpre, setDashGkpreFilter, viewStoreHistoryGkpre, approveGkpreRecord, rejectGkpreRecord, searchDashGkpre, startInspectionForStoreGkpre,
-  searchReportStores, viewReportDetail,
+  searchReportStores, viewReportDetail, downloadExcelReportDetail,
 });
 // 앱 시작 시 세션 복원
 (async () => {
