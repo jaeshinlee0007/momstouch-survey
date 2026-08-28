@@ -1018,16 +1018,16 @@ async function downloadExcelReportDetail() {
     ["쿠팡이츠 가입", data.coupangeats === "O" ? "가입" : "미가입"],
   ];
 
-  const channels = ["전체","내점","배달","포장","배민","요기요","쿠팡이츠","기타"];
+  const channels = ["전체","내점","배달","포장"]; // 다운로드용은 이 4개 채널의 실매출액만 노출
   const salesHeader = ["연월"];
-  channels.forEach(ch => salesHeader.push(`${ch}_총매출액`, `${ch}_실매출액`, `${ch}_영수건수`));
+  channels.forEach(ch => salesHeader.push(`${ch}_실매출액`));
   const salesRows = [salesHeader];
   Object.keys(data.pos_sales||{}).sort().forEach(ym => {
     const m = data.pos_sales[ym] || {};
     const row = [ym];
     channels.forEach(ch => {
       const c = m[ch] || {};
-      row.push(c.총매출액||0, c.실매출액||0, c.영수건수||0);
+      row.push(c.실매출액||0);
     });
     salesRows.push(row);
   });
