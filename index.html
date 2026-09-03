@@ -487,13 +487,27 @@ const GK_FORM = {
 // 아니라 "그 문항 자신의 답이 Y일 때만" 필수) 화면상 위치는 폼 하단에 모아서 표시.
 const BEEF_RENEWAL_FORM = {
   questions: [
-    { key:"q1", label:"메인포스터는 정위치에 부착되어 있는가?", hint:"(매장 전면사진)", type:"yn", photoLabel:"Q1 사진 — 메인포스터" },
-    { key:"q2", label:"키오스크/포스 홍보물은 정위치에 부착되어 있는가?", type:"yn", photoLabel:"Q2 사진 — 키오스크/POS 홍보물" },
-    { key:"q3", label:"그리들 적정 설정 온도를 준수하고 있는가?", hint:"(3번 타이머: 2분 20초, 온도: 분리형 240도 / 일체형 230도, 가스그리들: 미해당 체크)", type:"single", options:["Y","N","미해당"], photoLabel:"Q3 사진 — 그리들 온도" },
-    { key:"q4", label:"번 토스터기 설정 온도를 준수하고 있는가?", hint:"(200도, 버티컬 7.5)", type:"yn", photoLabel:"Q4 사진 — 번 토스터기 온도" },
-    // Q5: 응답은 필수이지만 Pass/Fail 판정에는 반영 안 됨(judged:false). 사진은 Y를 골라도
-    // 필수화하지 않고 항상 선택(optionalPhoto:true) — Q1~Q4와 달리 예외 처리됨.
-    { key:"q5", label:"번 토스터기 정상온도 설정 시 기기 이상은 없는가?", type:"yn", photoLabel:"Q5 사진 — 번 토스터기 이상여부", judged:false, optionalPhoto:true },
+    { key:"q1", label:"메인포스터는 정위치에 부착되어 있는가?",
+      hint:"① 매장전면 제거: 구형 비프 홍보물, 선불카드, 귀멸의칼날(소진시)\n② 필수 부착: 비프 2종, 귀멸의칼날, 스파쿨, 갓빠삭",
+      photoHint:"① 매장전면 제거: 구형 비프 홍보물, 선불카드, 귀멸의칼날(소진시)\n② 필수 부착: 비프 2종, 귀칼, 스파쿨, 갓빠삭 포함 사진 업로드",
+      type:"yn", photoLabel:"Q1 사진 — 메인포스터" },
+    { key:"q2", label:"키오스크/포스 홍보물은 정위치에 부착되어 있는가?",
+      hint:"① 귀칼, 비프 2종 필수 부착\n② 귀칼 소진시 갓빠삭 부착",
+      photoHint:"① 귀칼, 비프 2종 필수 부착\n② 귀칼 소진시 갓빠삭 부착",
+      type:"yn", photoLabel:"Q2 사진 — 키오스크/POS 홍보물" },
+    { key:"q3", label:"그리들 적정 설정 온도를 준수하고 있는가?",
+      hint:"(3번 타이머: 2분 20초, 온도: 분리형 240도 / 일체형 230도, 가스그리들: 미해당 체크)",
+      photoHint:"① 선택 2초간 눌러 1구 온도(240, 230) 사진 업로드\n② 3번 타이머 2:20 사진 업로드",
+      type:"single", options:["Y","N","미해당"], photoLabel:"Q3 사진 — 그리들 온도" },
+    { key:"q4", label:"번 토스터기 설정 온도를 준수하고 있는가?",
+      hint:"(200도, 버티컬 7.5) 아닌 경우 설정값 메모 기입",
+      photoHint:"번토스터기 온도 사진, 다이얼 사진 업로드",
+      type:"yn", photoLabel:"Q4 사진 — 번 토스터기 온도" },
+    // Q5: 응답은 필수이지만 Pass/Fail 판정에는 반영 안 됨(judged:false). 사진첨부 기능 자체를
+    // 없앰(noPhoto:true) — 폼/상세화면 전부 이 문항엔 사진 카드를 아예 안 그림.
+    { key:"q5", label:"번 토스터기 정상온도 설정 시 기기 이상은 없는가?",
+      hint:"X 경우 문제사항 메모 기입(ex: 전기 차단, 장비 애러 등)",
+      type:"yn", judged:false, noPhoto:true },
   ],
   maxPhotos: 3,
   memoMaxLen: 100,
@@ -10112,7 +10126,7 @@ function renderFormBeefRenewal(root) {
     return `
       <div class="question-card">
         <span class="q-title">Q${qNum}. ${q.label}</span>
-        ${q.hint ? `<div style="font-size:12px;color:var(--sub);margin-top:4px">${q.hint}</div>` : ""}
+        ${q.hint ? `<div style="font-size:12px;color:var(--sub);margin-top:4px;white-space:pre-line">${q.hint}</div>` : ""}
         ${answerHtml}
         <div class="memo-wrap" style="margin-top:12px">
           <input type="text" class="memo-input"
@@ -10124,7 +10138,7 @@ function renderFormBeefRenewal(root) {
       </div>`;
   }).join("");
 
-  const photoBlocks = BEEF_RENEWAL_FORM.questions.map((q) => {
+  const photoBlocks = BEEF_RENEWAL_FORM.questions.filter(q => !q.noPhoto).map((q) => {
     const photos = a.photos[q.key] || [];
     const canAddMore = photos.length < BEEF_RENEWAL_FORM.maxPhotos;
     const required = !q.optionalPhoto && a[q.key] === "Y";
@@ -10136,6 +10150,7 @@ function renderFormBeefRenewal(root) {
     return `
       <div class="question-card">
         <span class="q-title">${q.photoLabel}</span>
+        ${q.photoHint ? `<div style="font-size:12px;color:var(--sub);margin-top:4px;white-space:pre-line">${q.photoHint}</div>` : ""}
         <div style="font-size:11px;color:${required?'var(--text-accent)':'var(--sub)'};margin:4px 0 8px">${required ? 'Y 응답 · 최소 1장 필수' : '선택'} (최대 ${BEEF_RENEWAL_FORM.maxPhotos}장)</div>
         <div id="beefimg-preview-${q.key}">${photoThumbs}</div>
         ${canAddMore ? `
@@ -10268,7 +10283,7 @@ async function submitFormBeefRenewal() {
     const val = a[q.key];
     const valid = q.type === "yn" ? (val === "Y" || val === "N") : q.options.includes(val);
     if (!valid) { showWarn(`Q${qNum} (${q.label})를 선택해주세요.`); return; }
-    if (!q.optionalPhoto && val === "Y" && (a.photos[q.key]||[]).length === 0) {
+    if (!q.optionalPhoto && !q.noPhoto && val === "Y" && (a.photos[q.key]||[]).length === 0) {
       showWarn(`Q${qNum}에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.`);
       return;
     }
