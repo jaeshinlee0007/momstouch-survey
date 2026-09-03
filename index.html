@@ -491,6 +491,9 @@ const BEEF_RENEWAL_FORM = {
     { key:"q2", label:"키오스크/포스 홍보물은 정위치에 부착되어 있는가?", type:"yn", photoLabel:"Q2 사진 — 키오스크/POS 홍보물" },
     { key:"q3", label:"그리들 적정 설정 온도를 준수하고 있는가?", hint:"(3번 타이머: 2분 20초, 온도: 분리형 240도 / 일체형 230도, 가스그리들: 미해당 체크)", type:"single", options:["Y","N","미해당"], photoLabel:"Q3 사진 — 그리들 온도" },
     { key:"q4", label:"번 토스터기 설정 온도를 준수하고 있는가?", hint:"(200도, 버티컬 7.5)", type:"yn", photoLabel:"Q4 사진 — 번 토스터기 온도" },
+    // Q5: 응답은 필수이지만 Pass/Fail 판정에는 반영 안 됨(judged:false). 사진은 Y를 골라도
+    // 필수화하지 않고 항상 선택(optionalPhoto:true) — Q1~Q4와 달리 예외 처리됨.
+    { key:"q5", label:"번 토스터기 정상온도 설정 시 기기 이상은 없는가?", type:"yn", photoLabel:"Q5 사진 — 번 토스터기 이상여부", judged:false, optionalPhoto:true },
   ],
   maxPhotos: 3,
   memoMaxLen: 100,
@@ -1725,7 +1728,7 @@ function startForm() {
     S.gkpreAnswers = { q1:null, q2:null, q2_1:null, q2_2:null, q3:null, q4:null, q4_1:null, q5:null, q6:null, photos:{q1:[]},
       memo_q1:"", memo_q2:"", memo_q2_1:"", memo_q2_2:"", memo_q3:"", memo_q4:"", memo_q4_1:"", memo_q5:"", memo_q6:"", memo:"" };
   } else if (S.category === "beefRenewal") {
-    S.beefRenewalAnswers = { q1:null, q2:null, q3:null, q4:null, photos:{q1:[],q2:[],q3:[],q4:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memo:"" };
+    S.beefRenewalAnswers = { q1:null, q2:null, q3:null, q4:null, q5:null, photos:{q1:[],q2:[],q3:[],q4:[],q5:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memoQ5:"", memo:"" };
   } else if (S.category === "spacool") {
     S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
   } else {
@@ -10084,8 +10087,8 @@ function startBeefRenewalInspection() {
   }
   S.category = "beefRenewal";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.beefRenewalAnswers = { q1:null, q2:null, q3:null, q4:null,
-    photos:{q1:[],q2:[],q3:[],q4:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memo:"" };
+  S.beefRenewalAnswers = { q1:null, q2:null, q3:null, q4:null, q5:null,
+    photos:{q1:[],q2:[],q3:[],q4:[],q5:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memoQ5:"", memo:"" };
   go("storeSel");
 }
 
@@ -10124,7 +10127,7 @@ function renderFormBeefRenewal(root) {
   const photoBlocks = BEEF_RENEWAL_FORM.questions.map((q) => {
     const photos = a.photos[q.key] || [];
     const canAddMore = photos.length < BEEF_RENEWAL_FORM.maxPhotos;
-    const required = a[q.key] === "Y";
+    const required = !q.optionalPhoto && a[q.key] === "Y";
     const photoThumbs = photos.map((p, pi) => `
       <div class="preview-container" style="display:inline-block;margin-right:6px">
         <img src="${p.image}" class="preview-img" onclick="openImageModal('${p.image}')">
@@ -10265,7 +10268,7 @@ async function submitFormBeefRenewal() {
     const val = a[q.key];
     const valid = q.type === "yn" ? (val === "Y" || val === "N") : q.options.includes(val);
     if (!valid) { showWarn(`Q${qNum} (${q.label})를 선택해주세요.`); return; }
-    if (val === "Y" && (a.photos[q.key]||[]).length === 0) {
+    if (!q.optionalPhoto && val === "Y" && (a.photos[q.key]||[]).length === 0) {
       showWarn(`Q${qNum}에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.`);
       return;
     }
@@ -10289,9 +10292,9 @@ async function submitFormBeefRenewal() {
       inspType: "최초", // 비프 리뉴얼 체크리스트는 최초/보완 구분 없음 (작업지시서 기준)
       visitDate: S.visitDate,
       beefRenewalAnswers: {
-        q1: a.q1, q2: a.q2, q3: a.q3, q4: a.q4,
+        q1: a.q1, q2: a.q2, q3: a.q3, q4: a.q4, q5: a.q5,
         photos: a.photos,
-        memoQ1: trimMemo(a.memoQ1), memoQ2: trimMemo(a.memoQ2), memoQ3: trimMemo(a.memoQ3), memoQ4: trimMemo(a.memoQ4),
+        memoQ1: trimMemo(a.memoQ1), memoQ2: trimMemo(a.memoQ2), memoQ3: trimMemo(a.memoQ3), memoQ4: trimMemo(a.memoQ4), memoQ5: trimMemo(a.memoQ5),
         memo: trimMemo(a.memo),
       },
       needsFollowup: !allNormal,
@@ -11824,7 +11827,7 @@ async function fetchRecordsBeefRenewal() {
 function startInspectionForStoreBeefRenewal(code, name, team) {
   S.category = "beefRenewal";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.beefRenewalAnswers = { q1:null, q2:null, q3:null, q4:null, photos:{q1:[],q2:[],q3:[],q4:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memo:"" };
+  S.beefRenewalAnswers = { q1:null, q2:null, q3:null, q4:null, q5:null, photos:{q1:[],q2:[],q3:[],q4:[],q5:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memoQ5:"", memo:"" };
   selectStore(code, name, team);
 }
 
@@ -12243,7 +12246,7 @@ async function downloadExcelBeefRenewal() {
     if (!ex || t > exT) latestByStore.set(key, r);
   });
 
-  const rows = [["매장코드","매장명","팀","상태","Q1","Q2","Q3","Q4","작성자","역할","점검일시","메모"]];
+  const rows = [["매장코드","매장명","팀","상태","Q1","Q2","Q3","Q4","Q5(기기이상)","작성자","역할","점검일시","메모"]];
   const statusLabel = { done:"완료", pending:"승인대기", needs:"재점검필요", none:"미점검" };
   scopeStores.forEach(s => {
     const rec = latestByStore.get(s.code);
@@ -12253,7 +12256,7 @@ async function downloadExcelBeefRenewal() {
     rows.push([
       s.code, s.name, s.team||"",
       statusLabel[beefRenewalStatus(rec)],
-      a.q1||"", a.q2||"", a.q3||"", a.q4||"",
+      a.q1||"", a.q2||"", a.q3||"", a.q4||"", a.q5||"",
       rec?.writerName || "",
       roleLabel[rec?.role] || rec?.role || "",
       dt ? dt.toLocaleString("ko-KR") : "",
