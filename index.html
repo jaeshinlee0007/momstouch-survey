@@ -523,8 +523,9 @@ const BEEF_RENEWAL_FORM = {
 const CHUSEOK_FORM = {
   questions: [
     { key:"q1", label:"메인포스터는 정위치에 부착되어 있는가?", hint:"(매장전면사진 첨부, 귀멸의 칼날 판매 완료점포는 해당 포스터 제거)", hasPhoto:true },
-    { key:"q2", label:"키오스크/포스 홍보물은 정위치에 부착되어 있는가?", hint:"(해당 사진 첨부, 귀멸의 칼날 판매 완료점포는 해당 홍보물 제거)", hasPhoto:true },
-    { key:"q3", label:"(피자 취급점) 영양성분/원산지 표기판은 최신화 되어 있는가?", hint:"(피자 취급점에만 노출되는 문항입니다)", hasPhoto:true, showIf: () => !!(S.storeObj && S.storeObj.pizza) },
+    // 원래 Q3였던 문항 — Q2(키오스크/포스 홍보물)가 삭제되면서 번호가 Q2로 당겨짐. 저장 필드명도
+    // key를 "q2"로 맞춰서, 이후 제출되는 문서는 화면 표시 번호와 필드명이 항상 일치하도록 함.
+    { key:"q2", label:"(피자 취급점) 영양성분/원산지 표기판은 최신화 되어 있는가?", hint:"(피자 취급점에만 노출되는 문항입니다, 원산지, 영양성분 9월 17일 자)", hasPhoto:true, showIf: () => !!(S.storeObj && S.storeObj.pizza) },
   ],
   maxPhotos: 3,
   memoMaxLen: 100,
@@ -1769,7 +1770,7 @@ function startForm() {
   } else if (S.category === "beefRenewal") {
     S.beefRenewalAnswers = { q1:null, q2:null, q3:null, q4:null, q5:null, photos:{q1:[],q2:[],q3:[],q4:[],q5:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memoQ5:"", memo:"" };
   } else if (S.category === "chuseok") {
-    S.chuseokAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+    S.chuseokAnswers = { q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memo:"" };
   } else if (S.category === "spacool") {
     S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
   } else {
@@ -3916,7 +3917,7 @@ function sessionRestore() {
     S.beefRenewalAnswers = data.beefRenewalAnswers ||
       (data.category === "beefRenewal" ? { q1:null, q2:null, q3:null, q4:null, photos:{q1:[],q2:[],q3:[],q4:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memoQ4:"", memo:"" } : null);
     S.chuseokAnswers = data.chuseokAnswers ||
-      (data.category === "chuseok" ? { q1:null, q2:null, q3:null, photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" } : null);
+      (data.category === "chuseok" ? { q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memo:"" } : null);
     S.loadedDocId= data.loadedDocId;
     S.prevNItems = data.prevNItems || [];
     S.storeObj   = data.storeObj || null;
@@ -10073,7 +10074,7 @@ function chuseokStatus(rec) {
   if (rec.tlRejected) return "needs";
   const a = rec.chuseokAnswers;
   if (!a || a.q1 == null) return "none";
-  if (a.q1 === "N" || a.q2 === "N" || a.q3 === "N") return "needs";
+  if (a.q1 === "N" || a.q2 === "N") return "needs";
   if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
   return "done";
 }
@@ -10182,24 +10183,24 @@ function startChuseokInspection() {
   }
   S.category = "chuseok";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.chuseokAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+  S.chuseokAnswers = { q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memo:"" };
   go("storeSel");
 }
 
-// Q3(피자 취급점만 노출)가 현재 선택된 매장 기준으로 노출 대상인지 판정
-function _chuseokQ3Visible() {
+// Q2(원 Q3, 피자 취급점만 노출)가 현재 선택된 매장 기준으로 노출 대상인지 판정
+function _chuseokQ2Visible() {
   return !!(S.storeObj && S.storeObj.pizza);
 }
 
-// ── FORM (추석굿즈/싱글피자 체크리스트) — Q1·Q2 항상, Q3는 피자취급점만 조건부 노출,
+// ── FORM (추석굿즈/싱글피자 체크리스트) — Q1 항상, Q2는 피자취급점만 조건부 노출,
 // 사진은 각 문항 바로 아래 인라인(Y선택시 필수) ──
 function renderFormChuseok(root) {
   const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"}[S.role] || S.role || "";
   const a = S.chuseokAnswers;
-  const q3Visible = _chuseokQ3Visible();
+  const q2Visible = _chuseokQ2Visible();
 
   const qBlocks = CHUSEOK_FORM.questions
-    .filter(q => q.key !== "q3" || q3Visible)
+    .filter(q => q.key !== "q2" || q2Visible)
     .map((q) => {
       const val = a[q.key];
       const qNum = q.key.slice(1);
@@ -10341,7 +10342,7 @@ async function submitFormChuseok() {
     return;
   }
   const a = S.chuseokAnswers;
-  const q3Visible = _chuseokQ3Visible();
+  const q2Visible = _chuseokQ2Visible();
   const warnEl = document.getElementById("submitWarning");
   const showWarn = (msg) => {
     if (warnEl) { warnEl.textContent = "⚠️ " + msg; warnEl.style.display = "block"; }
@@ -10349,7 +10350,7 @@ async function submitFormChuseok() {
   };
 
   for (const q of CHUSEOK_FORM.questions) {
-    if (q.key === "q3" && !q3Visible) continue; // 피자 미취급점은 Q3 검증 자체를 건너뜀
+    if (q.key === "q2" && !q2Visible) continue; // 피자 미취급점은 Q2 검증 자체를 건너뜀
     const qNum = q.key.slice(1);
     const val = a[q.key];
     if (val !== "Y" && val !== "N") { showWarn(`Q${qNum} (${q.label})를 선택해주세요.`); return; }
@@ -10370,18 +10371,18 @@ async function submitFormChuseok() {
 
   try {
     const trimMemo = v => (v || "").slice(0, CHUSEOK_FORM.memoMaxLen);
-    // 피자 미취급점은 Q3를 "미취급"으로 자동 저장(작업지시서: 엑셀 RAW에서도 미취급 표기 요구)
-    const q3Value = q3Visible ? a.q3 : "미취급";
-    const allNormal = a.q1 === "Y" && a.q2 === "Y" && (q3Value === "Y" || q3Value === "미취급");
+    // 피자 미취급점은 Q2를 "미취급"으로 자동 저장(작업지시서: 엑셀 RAW에서도 미취급 표기 요구)
+    const q2Value = q2Visible ? a.q2 : "미취급";
+    const allNormal = a.q1 === "Y" && (q2Value === "Y" || q2Value === "미취급");
     const payload = {
       storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
       writerName: S.writerName, role: S.role,
       inspType: "최초", // 추석굿즈/싱글피자 체크리스트는 최초/보완 구분 없음 (작업지시서 기준)
       visitDate: S.visitDate,
       chuseokAnswers: {
-        q1: a.q1, q2: a.q2, q3: q3Value,
-        photos: q3Visible ? a.photos : { q1: a.photos.q1, q2: a.photos.q2, q3: [] },
-        memoQ1: trimMemo(a.memoQ1), memoQ2: trimMemo(a.memoQ2), memoQ3: q3Visible ? trimMemo(a.memoQ3) : "",
+        q1: a.q1, q2: q2Value,
+        photos: q2Visible ? a.photos : { q1: a.photos.q1, q2: [] },
+        memoQ1: trimMemo(a.memoQ1), memoQ2: q2Visible ? trimMemo(a.memoQ2) : "",
         memo: trimMemo(a.memo),
       },
       needsFollowup: !allNormal,
@@ -12846,7 +12847,7 @@ async function fetchRecordsChuseok() {
 function startInspectionForStoreChuseok(code, name, team) {
   S.category = "chuseok";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.chuseokAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
+  S.chuseokAnswers = { q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memo:"" };
   selectStore(code, name, team);
 }
 
@@ -13265,7 +13266,7 @@ async function downloadExcelChuseok() {
     if (!ex || t > exT) latestByStore.set(key, r);
   });
 
-  const rows = [["매장코드","매장명","팀","상태","Q1","Q2","Q3(피자취급점만)","작성자","역할","점검일시","메모"]];
+  const rows = [["매장코드","매장명","팀","상태","Q1","Q2(피자취급점만)","작성자","역할","점검일시","메모"]];
   const statusLabel = { done:"완료", pending:"승인대기", needs:"재점검필요", none:"미점검" };
   scopeStores.forEach(s => {
     const rec = latestByStore.get(s.code);
@@ -13275,7 +13276,7 @@ async function downloadExcelChuseok() {
     rows.push([
       s.code, s.name, s.team||"",
       statusLabel[chuseokStatus(rec)],
-      a.q1||"", a.q2||"", a.q3||"",
+      a.q1||"", a.q2||"",
       rec?.writerName || "",
       roleLabel[rec?.role] || rec?.role || "",
       dt ? dt.toLocaleString("ko-KR") : "",
