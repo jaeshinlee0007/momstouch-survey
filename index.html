@@ -13273,10 +13273,12 @@ async function downloadExcelChuseok() {
     const roleLabel = {sv:"AC",tl:"팀장",gl:"그룹장",admin:"관리자"};
     const dt = rec?.createdAt ? new Date(rec.createdAt.seconds*1000) : null;
     const a = rec?.chuseokAnswers || {};
+    // Q2는 점검여부(미점검 포함)와 무관하게, 매장 자체가 피자 미취급이면 항상 "미취급"으로 표기
+    const q2Display = s.pizza ? (a.q2||"") : "미취급";
     rows.push([
       s.code, s.name, s.team||"",
       statusLabel[chuseokStatus(rec)],
-      a.q1||"", a.q2||"",
+      a.q1||"", q2Display,
       rec?.writerName || "",
       roleLabel[rec?.role] || rec?.role || "",
       dt ? dt.toLocaleString("ko-KR") : "",
