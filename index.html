@@ -4173,7 +4173,7 @@ const _compareCache = new Map();
 // 방법1: 대시보드/점검내역 쿼리용 90일 기준 Date 반환
 function _dashFromTs() {
   const d = new Date();
-  d.setDate(d.getDate() - 90);
+  d.setDate(d.getDate() - 120);
   d.setHours(0, 0, 0, 0);
   return d;
 }
