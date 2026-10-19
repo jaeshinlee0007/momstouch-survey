@@ -11256,7 +11256,7 @@ async function submitFormRehitham() {
 }
 
 // ── 후덕죽 2차 체크리스트 문항 구성 (작업지시서 기준) ──
-// Q1~Q3: Y/N, Q4: 메뉴(드롭다운 4종) + 조리상태(양호/불량). Q1~Q3는 Y일 때 사진 필수, Q4는 사진 항상 필수.
+// Q1~Q3: Y/N(판정 반영), Q4: 메뉴(드롭다운 4종) + 조리상태(양호/불량, 판정 미반영). Q1~Q3는 Y일 때 사진 필수, Q4는 사진 항상 필수.
 // 답이 Y일 때만" 필수(1~3장)이며, 화면상 위치는 폼 하단에 문항별 카드로 모아서 표시.
 const HDJ2_FORM = {
   questions: [
@@ -11290,13 +11290,13 @@ function buildMatchedStoresHdj2(activeStores, name) {
 }
 
 // 후덕죽 2차 체크리스트 건의 상태 계산: "none"|"needs"|"pending"|"done"
-// Q1~Q3 전부 Y이고 Q4 조리상태가 "조리상태양호"여야 정상. N 또는 "조리상태불량"이 하나라도 있으면 역할 무관 재점검.
+// Q1~Q3 전부 Y여야 정상, N이 하나라도 있으면 역할 무관 재점검. Q4(메뉴/조리상태)는 응답·사진은 필수지만 판정에는 영향 없음("조리상태불량"이어도 정상 판정).
 function hdj2Status(rec) {
   if (!rec) return "none";
   if (rec.tlRejected) return "needs";
   const a = rec.hdj2Answers;
   if (!a || a.q1 == null) return "none";
-  if (a.q1 === "N" || a.q2 === "N" || a.q3 === "N" || a.q4 === "조리상태불량") return "needs";
+  if (a.q1 === "N" || a.q2 === "N" || a.q3 === "N") return "needs";
   if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
   return "done";
 }
@@ -11612,7 +11612,7 @@ async function submitFormHdj2() {
 
   try {
     const trimMemo = v => (v || "").slice(0, HDJ2_FORM.memoMaxLen);
-    const allNormal = a.q1 === "Y" && a.q2 === "Y" && a.q3 === "Y" && a.q4 === "조리상태양호";
+    const allNormal = a.q1 === "Y" && a.q2 === "Y" && a.q3 === "Y";
     const payload = {
       storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
       writerName: S.writerName, role: S.role,
