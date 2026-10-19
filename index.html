@@ -16171,7 +16171,7 @@ function buildDashboardHdj2(root, records, scopeStores) {
       const ph = a.photos?.q4 || [];
       const bad = a.q4 === "조리상태불량";
       const thumb = ph.length
-        ? `<div class="hdj2-th${bad?' bad':''}" onclick="event.stopPropagation();openHdj2Photo('${rec.id}',0)"><img data-hdj2rid="${rec.id}" alt=""><i>${ph.length}</i></div>`
+        ? `<div class="hdj2-th${bad?' bad':''}" onclick="event.stopPropagation();openHdj2Photo('${rec.id}',0)"><img data-hdj2rid="${rec.id}" alt=""></div>`
         : `<div class="hdj2-empty">없음</div>`;
       q4Cell = `<div class="hdj2-q4">${thumb}<div class="hdj2-menu">${escapeHtml(a.q4Menu||"-")}<br><span class="hdj2-bdg ${bad?'r':'g'}">${escapeHtml(a.q4||"-")}</span></div></div>`;
     }
@@ -17281,7 +17281,6 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .hdj2-th{width:40px;height:40px;border-radius:8px;flex-shrink:0;position:relative;cursor:pointer;border:1px solid var(--border);background:#EDF2F7}
 .hdj2-th img{width:100%;height:100%;object-fit:cover;border-radius:7px;display:block}
 .hdj2-th.bad{border:2px solid #FC8181}
-.hdj2-th i{position:absolute;right:-4px;bottom:-4px;background:#2D3748;color:#fff;border-radius:8px;font-size:9px;font-style:normal;padding:0 4px}
 .hdj2-empty{width:40px;height:40px;border-radius:8px;border:1px dashed var(--border);display:grid;place-items:center;color:#A0AEC0;font-size:11px}
 .hdj2-menu{font-size:12px;line-height:1.3}
 .hdj2-bdg{display:inline-block;font-size:10px;font-weight:700;border-radius:6px;padding:1px 6px;margin-top:2px}
