@@ -16372,9 +16372,9 @@ function toggleHdj2Row(code) {
   const a = rec.hdj2Answers || {};
   const ph = a.photos?.q4 || [];
   const imgs = ph.map((p, i) => `<img src="${p.image}" style="width:84px;height:84px;object-fit:cover;border-radius:8px;cursor:pointer;margin-right:6px" onclick="openHdj2Photo('${rec.id}',${i})">`).join("");
-  const ans = [["Q1",a.q1],["Q2",a.q2],["Q3",a.q3]].map(([k,v]) => `${k} <b style="color:${v==='Y'?'#276749':'#C53030'}">${v||"-"}</b>`).join(" · ");
+  const ans = [["Q1. 외부 홍보물",a.q1],["Q2. 내부 홍보물",a.q2],["Q3. 영양성분/원산지",a.q3]].map(([k,v]) => `${k}: <b style="color:${v==='Y'?'#276749':'#C53030'}">${v||"-"}</b>`).join("<br>");
   const bad = a.q4 === "조리상태불량";
-  const memoQ4 = a.memoQ4 ? `<div style="font-size:12px;color:#4A5568;margin-top:6px">Q4 메모: ${escapeHtml(a.memoQ4)}</div>` : "";
+  const memoQ4 = `<div style="font-size:12px;color:#4A5568;margin-top:4px">Q4 메모: ${a.memoQ4 ? escapeHtml(a.memoQ4) : "-"}</div>`;
   const memo = a.memo ? `<div style="font-size:12px;color:#4A5568;margin-top:4px">전체 메모: ${escapeHtml(a.memo)}</div>` : "";
   const tr = document.createElement("tr");
   tr.id = "hdj2exp-" + code;
@@ -16382,8 +16382,8 @@ function toggleHdj2Row(code) {
   tr.innerHTML = `<td colspan="5" style="padding:8px 12px 14px;background:rgba(155,44,44,.05)">
     <div style="font-size:12px;margin-bottom:6px"><b>${escapeHtml(a.q4Menu||"-")}</b> · <span style="color:${bad?'#C53030':'#276749'};font-weight:700">${escapeHtml(a.q4||"-")}</span></div>
     <div>${imgs || '<span style="color:#A0AEC0;font-size:12px">첨부 사진 없음</span>'}</div>
+    <div style="font-size:12px;margin-top:8px;line-height:1.7">${ans}</div>
     ${memoQ4}
-    <div style="font-size:12px;margin-top:6px">${ans}</div>
     ${memo}
     <div style="margin-top:8px"><button class="btn-ghost" style="padding:6px 12px;font-size:12px;width:auto" onclick="viewStoreHistoryHdj2('${code}')">점검 이력/상세 보기 ›</button></div>
   </td>`;
