@@ -11256,15 +11256,14 @@ async function submitFormRehitham() {
 }
 
 // ── 후덕죽 2차 체크리스트 문항 구성 (작업지시서 기준) ──
-// Q1~Q3: Y/N(판정 반영), Q4: 메뉴(드롭다운 4종) + 조리상태(양호/불량, 판정 미반영). Q1~Q3는 Y일 때 사진 필수, Q4는 사진 항상 필수.
+// Q1~Q3: Y/N(판정 반영), Q4: XO사천빅싸이순살 고정 메뉴의 조리상태(양호/불량, 판정 미반영). Q1~Q3는 Y일 때 사진 필수, Q4는 사진 항상 필수.
 // 답이 Y일 때만" 필수(1~3장)이며, 화면상 위치는 폼 하단에 문항별 카드로 모아서 표시.
 const HDJ2_FORM = {
   questions: [
     { key:"q1", label:"매장 전면 홍보물은 정위치 되어 있는가?", hint:"(귀칼, 김풍 등 노후포스터 제거 필, 전면사진 첨부)", type:"yn", photoLabel:"Q1 사진 — 매장 전면 홍보물" },
     { key:"q2", label:"POS 키오스크 홍보물은 정위치에 부착되어 있는가?", type:"yn", photoLabel:"Q2 사진 — POS 키오스크 홍보물" },
     { key:"q3", label:"영양성분/원산지 표기는 최신화 완료되었는가?", hint:"(일자 보이도록 첨부 필)", type:"yn", photoLabel:"Q3 사진 — 영양성분/원산지 표기(일자 확인)" },
-    { key:"q4", label:"대상 매장의 조리 완료 사진 첨부", hint:"메뉴를 선택하고 조리상태를 선택한 뒤, 하단에 조리 완료 사진을 첨부해주세요.", type:"menu",
-      menus:["쿵파오싸이","XO통모짜","XO쉬림프플렉스","XO사천빅싸이순살"], options:["조리상태양호","조리상태불량"], photoLabel:"Q4 사진 — 조리 완료 사진" },
+    { key:"q4", label:"대상 매장의 XO사천빅싸이순살 조리 완료 사진 첨부", type:"menu", menu:"XO사천빅싸이순살", options:["조리상태양호","조리상태불량"], photoLabel:"Q4 사진 — 조리 완료 사진" },
   ],
   maxPhotos: 3,
   memoMaxLen: 100,
@@ -11428,10 +11427,6 @@ function renderFormHdj2(root) {
           <button class="ans-btn ans-yes ${val==='Y'?'selected':''}" onclick="setHdj2Answer('${q.key}','Y')">✅ Y</button>
           <button class="ans-btn ans-no ${val==='N'?'selected':''}" onclick="setHdj2Answer('${q.key}','N')">❌ N</button>
         </div>` : `
-        <select class="memo-input" style="margin-top:10px;width:100%" onchange="setHdj2Menu(this.value)">
-          <option value="">메뉴 선택</option>
-          ${q.menus.map(m => `<option value="${m}" ${a.q4Menu===m?'selected':''}>${m}</option>`).join("")}
-        </select>
         <div style="display:flex;gap:6px;margin-top:8px">
           ${q.options.map(opt => `<button class="ans-btn ans-choice ${val===opt?'selected':''}" style="flex:1" onclick="setHdj2Answer('${q.key}','${opt}')">${opt}</button>`).join("")}
         </div>`}
@@ -11500,11 +11495,6 @@ function renderFormHdj2(root) {
         <button class="btn-submit" onclick="submitFormHdj2()">점검 제출하기</button>
       </div>
     </div>`;
-}
-
-function setHdj2Menu(val) {
-  S.hdj2Answers.q4Menu = val || "";
-  sessionSave();
 }
 
 function setHdj2Answer(qKey, val) {
@@ -11593,7 +11583,6 @@ async function submitFormHdj2() {
     const qNum = q.key.slice(1);
     const val = a[q.key];
     const valid = q.type === "yn" ? (val === "Y" || val === "N") : q.options.includes(val);
-    if (q.type === "menu" && !a.q4Menu) { showWarn(`Q${qNum} (${q.label})에서 메뉴를 선택해주세요.`); return; }
     if (!valid) { showWarn(`Q${qNum} (${q.label})를 선택해주세요.`); return; }
     if ((q.type === "menu" || val === "Y") && (a.photos[q.key]||[]).length === 0) {
       showWarn(q.type === "menu" ? `Q${qNum} 조리 완료 사진을 최소 1장 첨부해주세요.` : `Q${qNum}에서 Y를 선택하셨습니다. 사진을 최소 1장 첨부해주세요.`);
@@ -11619,7 +11608,7 @@ async function submitFormHdj2() {
       inspType: "최초", // 최초/보완 구분 없음 (작업지시서 기준)
       visitDate: S.visitDate,
       hdj2Answers: {
-        q1: a.q1, q2: a.q2, q3: a.q3, q4: a.q4, q4Menu: a.q4Menu,
+        q1: a.q1, q2: a.q2, q3: a.q3, q4: a.q4, q4Menu: HDJ2_FORM.questions[3].menu,
         photos: a.photos,
         memoQ1: trimMemo(a.memoQ1), memoQ2: trimMemo(a.memoQ2), memoQ3: trimMemo(a.memoQ3), memoQ4: trimMemo(a.memoQ4),
         memo: trimMemo(a.memo),
@@ -17037,7 +17026,7 @@ Object.assign(window, {
   startHdj2Inspection, goAdminHdj2, toggleHdj2Enabled,
   setHdj2Answer, handleHdj2Image, removeHdj2Image, updateHdj2QMemo, updateHdj2Memo, submitFormHdj2, downloadExcelHdj2,
   fetchRecordsHdj2, setRecHdj2Filter, viewRecordHdj2, setDashHdj2Filter, viewStoreHistoryHdj2, approveHdj2Record, rejectHdj2Record, searchDashHdj2, startInspectionForStoreHdj2,
-  setHdj2Menu, toggleHdj2Row, openHdj2Photo,
+  toggleHdj2Row, openHdj2Photo,
 });
 // 앱 시작 시 세션 복원
 (async () => {
