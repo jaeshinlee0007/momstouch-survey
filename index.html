@@ -915,7 +915,7 @@ function _paintNearby() {
   const pos = stat(mo.pos), wat = stat(mo.water);
   const isSejong = n.area === "세종특별자치시 전체";
   const row = (label, s) => `
-    <div class="sec" style="font-size:12px;font-weight:700;margin:12px 0 2px;color:#718096">${label} (${n.ym})</div>
+    <div class="sec" style="font-size:12px;font-weight:700;margin:12px 0 2px;color:#718096">${label} (${n.ym})${label === "물대" ? ' <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 포함</span>' : ""}</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
       <tr style="color:#718096;font-size:10.5px"><th style="text-align:left;padding:4px 2px;border-bottom:1px solid var(--border)"></th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">내 매장</th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">인근 평균</th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">인근 중앙값</th></tr>
       <tr><td style="padding:6px 2px">${label}</td><td style="text-align:right"><b>${_fmtWon(s.mine)}</b></td><td style="text-align:right">${_fmtWon(s.avg)}</td><td style="text-align:right">${_fmtWon(s.med)}</td></tr>
@@ -1060,7 +1060,7 @@ function _rtPaint() {
           <td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(c?.water, p?.water)}</td><td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(c?.water, y?.water)}</td></tr>`;
       }).join("");
       const th = (t, al) => `<th style="text-align:${al || "right"};font-size:10.5px;color:#718096;padding:6px 4px;border-bottom:1px solid var(--border);white-space:nowrap">${t}</th>`;
-      cmp = `<div style="font-size:12px;font-weight:700;margin:12px 0 4px;color:#718096">팀 비교 (단위: 백만원)</div>
+      cmp = `<div style="font-size:12px;font-weight:700;margin:12px 0 4px;color:#718096">팀 비교 (단위: 백만원 · 물대 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 포함</span>)</div>
         <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${th("팀", "left")}${th("실매출")}${th("내점")}${th("배달")}${th("포장")}${th("물대 전월")}${th("물대 전년")}</tr>${rowsT}</table></div>
         <div style="font-size:11px;color:#A0AEC0;margin-top:4px">팀 행을 누르면 해당 팀으로 전환됩니다.</div>`;
     }
@@ -1069,7 +1069,7 @@ function _rtPaint() {
         <div style="display:flex;justify-content:space-between;align-items:baseline"><b>${escapeHtml(scopeLabel)} · 매장 ${scopeStores.length}개</b><span style="font-size:11px;color:#718096">${ym} 합계 (단위: 백만원)</span></div>
         ${cur ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
           ${kpi("POS 실매출", _fmtMil0(cur.pos), chg(cur.pos, prv?.pos, yoy?.pos))}
-          ${kpi("물대", _fmtMil0(cur.water), chg(cur.water, prv?.water, yoy?.water))}
+          ${kpi(`물대 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 포함</span>`, _fmtMil0(cur.water), chg(cur.water, prv?.water, yoy?.water))}
           ${kpi("내점매출", _fmtMil0(cur.inn), share(cur.inn))}
           ${kpi("배달매출", _fmtMil0(cur.del), share(cur.del))}
           <div style="grid-column:span 2">${kpi("포장매출", _fmtMil0(cur.tak), share(cur.tak))}</div>
@@ -1104,7 +1104,7 @@ function _rtPaint() {
         <select onchange="rtSetSort(this.value)" style="border:1px solid var(--border);border-radius:8px;padding:7px 8px;font-size:12px;background:white">
           <option value="pos" ${rt.sort === "pos" ? "selected" : ""}>실매출 높은순</option><option value="water" ${rt.sort === "water" ? "selected" : ""}>물대 증감순</option><option value="name" ${rt.sort === "name" ? "selected" : ""}>매장명순</option></select>
       </div>
-      <div style="font-size:11px;color:#718096;margin-bottom:4px">금액 단위: 백만원 · 매장 행을 누르면 아래 그래프가 해당 매장으로 바뀌고, 이름 옆 ›는 컨설팅 리포트로 이동합니다.</div>
+      <div style="font-size:11px;color:#718096;margin-bottom:4px">금액 단위: 백만원 · 물대는 *음료대 포함 · 매장 행을 누르면 위 그래프가 해당 매장으로 바뀌고, 이름 옆 ›는 컨설팅 리포트로 이동합니다.</div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
         <tr>${th("매장", "left")}${th("실매출")}${th("내점")}${th("배달")}${th("포장")}${th("물대")}${th("물대 전월")}${th("물대 전년")}</tr>${body || `<tr><td colspan="8" style="text-align:center;padding:16px;color:#A0AEC0">해당 조건의 매장이 없습니다</td></tr>`}</table></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span style="font-size:11px;color:#718096">${rows.length}개 매장${kw ? ` (전체 ${scopeStores.length}개 중)` : ""}</span>
@@ -1113,16 +1113,17 @@ function _rtPaint() {
 
   const selStore = rt.sel ? rt.stores.find(s => s.code === rt.sel) : null;
   const chartTitleSuffix = selStore ? ` · ${escapeHtml(selStore.name)}` : ` · ${escapeHtml(scopeLabel)}`;
+  const chartsHtml = `
+      <div class="question-card" style="margin-top:12px"><span class="q-title">월별 POS 실매출 추이 (백만원)${chartTitleSuffix}</span>
+        <div style="position:relative;height:220px;margin-top:8px"><canvas id="rtChartPos"></canvas></div></div>
+      <div class="question-card"><span class="q-title">월별 물대 추이 (백만원)${chartTitleSuffix} <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 포함</span></span>
+        <div style="position:relative;height:220px;margin-top:8px"><canvas id="rtChartWater"></canvas></div></div>`;
   root.innerHTML = header + `
     <div class="card-section">
       <div style="display:flex;gap:6px">${scopeSel}${monthSel}</div>
       <div style="font-size:11px;color:#718096;margin-top:4px">${_authRole === "tl" ? "담당팀 기준" : "전체 팀 또는 팀 선택"} · 금액 단위: 백만원</div>
       ${seg}
-      ${bodyHtml}
-      <div class="question-card" style="margin-top:12px"><span class="q-title">월별 POS 실매출 추이 (백만원)${chartTitleSuffix}</span>
-        <div style="position:relative;height:220px;margin-top:8px"><canvas id="rtChartPos"></canvas></div></div>
-      <div class="question-card"><span class="q-title">월별 물대 추이 (백만원)${chartTitleSuffix}</span>
-        <div style="position:relative;height:220px;margin-top:8px"><canvas id="rtChartWater"></canvas></div></div>
+      ${rt.tab === "stores" ? chartsHtml + bodyHtml : bodyHtml + chartsHtml}
     </div>`;
   _rtDrawCharts();
 }
@@ -1408,7 +1409,7 @@ async function renderReportDetail(root) {
       </div>
 
       <div class="question-card">
-        <span class="q-title">3개년 물대 (월별)</span>
+        <span class="q-title">3개년 물대 (월별) <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 포함</span></span>
         <div style="position:relative;height:220px;margin-top:8px"><canvas id="reportWaterChart" role="img" aria-label="연도별 월간 물대 추이">연도별 월간 물대 추이</canvas></div>
       </div>
     `;
