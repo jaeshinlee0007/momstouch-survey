@@ -826,6 +826,7 @@ async function _loadAreaStats(area) {
   if (c && Date.now() - c.ts < _STATS_TTL) return c.data;
   const snap = await getDoc(doc(db, "area_stats", id));
   const data = snap.exists() ? snap.data() : null;
+  if (data && !data.months && data.monthsJson) { try { data.months = JSON.parse(data.monthsJson); } catch (e) { data.months = {}; } }
   _areaStatsCache.set(id, { ts: Date.now(), data });
   return data;
 }
@@ -835,6 +836,7 @@ async function _loadTeamStats(team) {
   if (c && Date.now() - c.ts < _STATS_TTL) return c.data;
   const snap = await getDoc(doc(db, "team_stats", id));
   const data = snap.exists() ? snap.data() : null;
+  if (data && !data.stores && data.storesJson) { try { data.stores = JSON.parse(data.storesJson); } catch (e) { data.stores = {}; } }
   _teamStatsCache.set(id, { ts: Date.now(), data });
   return data;
 }
@@ -6097,8 +6099,10 @@ async function uploadReportData(file, onProgress) {
         if (Object.keys(sm).length) t.stores[code] = sm;
       }
     });
-    areaMap.forEach((months, area) => aggWrites.push({ col: "area_stats", id: docId(area), payload: { area, months, updatedAt: new Date() }, merge: false }));
-    teamMap.forEach((t, team) => aggWrites.push({ col: "team_stats", id: docId(team), payload: { team, totals: t.totals, stores: t.stores, updatedAt: new Date() }, merge: false }));
+    // 주의: 매장×월 단위의 큰 중첩맵/배열을 Firestore 필드로 그대로 저장하면 문서당 인덱스 항목 한도(약 4만 개)를
+    // 넘어 규모가 큰 팀 문서 저장이 실패함 → 큰 구조는 JSON 문자열 1개 필드로 저장(인덱스 항목 1개, 용량도 감소).
+    areaMap.forEach((months, area) => aggWrites.push({ col: "area_stats", id: docId(area), payload: { area, monthsJson: JSON.stringify(months), updatedAt: new Date() }, merge: false }));
+    teamMap.forEach((t, team) => aggWrites.push({ col: "team_stats", id: docId(team), payload: { team, totals: t.totals, storesJson: JSON.stringify(t.stores), updatedAt: new Date() }, merge: false }));
     if (areaMap.size === 0) window._lastAggWarning = "지역 정보(area)가 있는 매장이 없어 인근 점포 집계가 생성되지 않았습니다. 매장 마스터(store_geo 시트 포함)를 먼저 업로드해주세요.";
   } catch (e) {
     window._lastAggWarning = "지역/팀 집계 저장 준비 중 오류: " + (e.message || e);
@@ -6142,17 +6146,21 @@ async function uploadReportData(file, onProgress) {
   const CONCURRENCY = 3;
   let done = 0;
   const failedBatchIndexes = [];
+  const failReasons = new Set();
   for (let i = 0; i < batches.length; i += CONCURRENCY) {
     const group = batches.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(group.map(b => b.commit()));
     results.forEach((r, gi) => {
-      if (r.status === "rejected") failedBatchIndexes.push(i + gi);
+      if (r.status === "rejected") {
+        failedBatchIndexes.push(i + gi);
+        failReasons.add(`${r.reason?.code || ""} ${r.reason?.message || r.reason || ""}`.trim().slice(0, 160));
+      }
     });
     done = Math.min(i + group.length, batches.length);
     if (typeof onProgress === "function") onProgress(done, batches.length);
   }
   if (failedBatchIndexes.length > 0) {
-    throw new Error(`${failedBatchIndexes.length}개 배치 전송 실패(전체 ${batches.length}개 중). 같은 파일을 다시 업로드하면 실패한 부분만 자동으로 채워집니다.`);
+    throw new Error(`${failedBatchIndexes.length}개 배치 전송 실패(전체 ${batches.length}개 중). 같은 파일을 다시 업로드하면 실패한 부분만 자동으로 채워집니다.\n[원인] ${[...failReasons].join(" / ")}`);
   }
 
   return entries.length;
