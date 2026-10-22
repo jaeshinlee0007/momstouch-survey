@@ -321,6 +321,19 @@ async function uploadStoreData(file) {
           }
         }
 
+        // ── 지역(store_geo) 시트: 점포코드 → 인근 점포 권역(시/군/구 단위) ──
+        // 세종특별자치시는 동·읍·면 단위로 쪼개져 있어 예외로 "세종특별자치시 전체" 1개 권역으로 묶음.
+        // 시트가 없으면 area는 빈 값(인근 점포 기능만 비활성, 업로드 자체는 정상 진행).
+        const geoMap = new Map();
+        const geoSheetName = wb.SheetNames.find(n => n.toLowerCase() === "store_geo");
+        if (geoSheetName) {
+          XLSX.utils.sheet_to_json(wb.Sheets[geoSheetName], { header: 1 }).slice(1).forEach(g => {
+            const gc = String(g[0]||"").trim(), l1 = String(g[3]||"").trim(), l2 = String(g[4]||"").trim();
+            if (!gc || !l1) return;
+            geoMap.set(gc, l1 === "세종특별자치시" ? "세종특별자치시 전체" : (l2 ? `${l1} ${l2}` : l1));
+          });
+        }
+
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
@@ -352,6 +365,8 @@ async function uploadStoreData(file) {
             rehitEligible: String(r[12]||"").trim().toUpperCase() === "O",
             // 신제품(후덕죽 2차) 대상 매장 여부 — 후덕죽 2차 체크리스트 전용 필터링에만 사용 (STORE INFO N열)
             hdjEligible: String(r[13]||"").trim().toUpperCase() === "O",
+            // 인근 점포 권역(store_geo 시트 대분류1+대분류2, 세종시는 전체 1권역) — 인근 점포 현황 전용
+            area: geoMap.get(String(r[0]||"").trim()) || "",
           }));
 
         if (stores.length === 0) {
@@ -663,13 +678,14 @@ function render() {
   root.innerHTML = ""; window.scrollTo(0,0);
   const scr = S.screen;
   // 미로그인 상태에서 보호 화면 접근 시 로그인으로 리디렉션
-  const protectedScreens = ["topHub","hub","home","homeNP","homeSpacool","homeGbchicken","homeNashville","homeGk","homeGkpre","homeBeefRenewal","homeChuseok","homeGrilledBulgogi","homeReport","reportStoreSel","reportDetail","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP","approvalNP","dashboardSpacool","recordsSpacool","recordDetailSpacool","storeHistorySpacool","approvalSpacool","dashboardGbchicken","recordsGbchicken","recordDetailGbchicken","storeHistoryGbchicken","approvalGbchicken","dashboardNashville","recordsNashville","recordDetailNashville","storeHistoryNashville","approvalNashville","dashboardGk","recordsGk","recordDetailGk","storeHistoryGk","approvalGk","dashboardGkpre","recordsGkpre","recordDetailGkpre","storeHistoryGkpre","approvalGkpre","dashboardBeefRenewal","recordsBeefRenewal","recordDetailBeefRenewal","storeHistoryBeefRenewal","approvalBeefRenewal","dashboardChuseok","recordsChuseok","recordDetailChuseok","storeHistoryChuseok","approvalChuseok","dashboardGrilledBulgogi","recordsGrilledBulgogi","recordDetailGrilledBulgogi","storeHistoryGrilledBulgogi","approvalGrilledBulgogi","homeRehitham","dashboardRehitham","recordsRehitham","recordDetailRehitham","storeHistoryRehitham","approvalRehitham","homeHdj2","dashboardHdj2","recordsHdj2","recordDetailHdj2","storeHistoryHdj2","approvalHdj2"];
+  const protectedScreens = ["topHub","hub","home","homeNP","homeSpacool","homeGbchicken","homeNashville","homeGk","homeGkpre","homeBeefRenewal","homeChuseok","homeGrilledBulgogi","homeReport","reportStoreSel","reportTeam","reportDetail","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP","approvalNP","dashboardSpacool","recordsSpacool","recordDetailSpacool","storeHistorySpacool","approvalSpacool","dashboardGbchicken","recordsGbchicken","recordDetailGbchicken","storeHistoryGbchicken","approvalGbchicken","dashboardNashville","recordsNashville","recordDetailNashville","storeHistoryNashville","approvalNashville","dashboardGk","recordsGk","recordDetailGk","storeHistoryGk","approvalGk","dashboardGkpre","recordsGkpre","recordDetailGkpre","storeHistoryGkpre","approvalGkpre","dashboardBeefRenewal","recordsBeefRenewal","recordDetailBeefRenewal","storeHistoryBeefRenewal","approvalBeefRenewal","dashboardChuseok","recordsChuseok","recordDetailChuseok","storeHistoryChuseok","approvalChuseok","dashboardGrilledBulgogi","recordsGrilledBulgogi","recordDetailGrilledBulgogi","storeHistoryGrilledBulgogi","approvalGrilledBulgogi","homeRehitham","dashboardRehitham","recordsRehitham","recordDetailRehitham","storeHistoryRehitham","approvalRehitham","homeHdj2","dashboardHdj2","recordsHdj2","recordDetailHdj2","storeHistoryHdj2","approvalHdj2"];
   if (!_currentUser && protectedScreens.includes(scr)) {
     renderLogin(root);
     return;
   }
   if      (scr==="topHub")     renderTopHub(root);
   else if (scr==="homeReport") renderHomeReport(root);
+  else if (scr==="reportTeam") renderReportTeam(root); // async
   else if (scr==="reportStoreSel") renderReportStoreSel(root);
   else if (scr==="reportDetail")   renderReportDetail(root); // async
   else if (scr==="hub")        renderHub(root); // npEnabled는 로그인 시 캐시됨
@@ -795,6 +811,377 @@ function renderTopHub(root) {
     </div>`;
 }
 
+// ════════════════════════════════════════════════════════════
+// 인근 점포 현황(컨설팅 리포트 상세) + 팀별 매출현황(TL 이상)
+// 데이터: 리포트 업로드 시 계산해 저장한 area_stats / team_stats 문서만 읽음(매장별 문서 대량조회 없음)
+// ════════════════════════════════════════════════════════════
+const _areaStatsCache = new Map(); // docId -> { ts, data }
+const _teamStatsCache = new Map();
+const _STATS_TTL = 10 * 60 * 1000;
+function _statsDocId(s) { return String(s).replace(/[\/\s]+/g, "_"); }
+
+async function _loadAreaStats(area) {
+  const id = _statsDocId(area);
+  const c = _areaStatsCache.get(id);
+  if (c && Date.now() - c.ts < _STATS_TTL) return c.data;
+  const snap = await getDoc(doc(db, "area_stats", id));
+  const data = snap.exists() ? snap.data() : null;
+  _areaStatsCache.set(id, { ts: Date.now(), data });
+  return data;
+}
+async function _loadTeamStats(team) {
+  const id = _statsDocId(team);
+  const c = _teamStatsCache.get(id);
+  if (c && Date.now() - c.ts < _STATS_TTL) return c.data;
+  const snap = await getDoc(doc(db, "team_stats", id));
+  const data = snap.exists() ? snap.data() : null;
+  _teamStatsCache.set(id, { ts: Date.now(), data });
+  return data;
+}
+
+function _ymAdd(ym, n) {
+  const [y0, m0] = ym.split("-").map(Number);
+  let m = m0 + n, y = y0 + Math.floor((m - 1) / 12);
+  m = (((m - 1) % 12) + 12) % 12 + 1;
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+function _fmtWon(n) { return (n == null || !Number.isFinite(n)) ? "-" : Math.round(n).toLocaleString(); }
+function _fmtMil0(n) { return (n == null || !Number.isFinite(n)) ? "-" : Math.round(n / 1e6).toLocaleString(); }
+function _fmtMil1(n) { return (n == null || !Number.isFinite(n)) ? "-" : (Math.round(n / 1e5) / 10).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
+function _median(arr) {
+  const a = arr.slice().sort((x, y) => x - y), n = a.length;
+  if (!n) return null;
+  return n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2;
+}
+// 증감(%) — 상승 빨강 / 하락 파랑
+function _pctNum(cur, base) { return (cur == null || !base) ? null : (cur - base) / base * 100; }
+function _pctHtml(cur, base) {
+  const p = _pctNum(cur, base);
+  if (p == null) return `<span style="color:#A0AEC0">-</span>`;
+  return `<span style="color:${p >= 0 ? "#C53030" : "#2B6CB0"};font-weight:700">${p >= 0 ? "+" : ""}${p.toFixed(1)}%</span>`;
+}
+function _teamNameSort(a, b) { return String(a).localeCompare(String(b), "ko", { numeric: true }); }
+
+// ── 1) 컨설팅 리포트 상세: 인근 점포 현황 카드 ──
+async function renderNearbyCard(code) {
+  const el = document.getElementById("nearbyCard");
+  if (!el) return;
+  const shell = (inner) => `<span class="q-title">인근 점포 현황</span>${inner}`;
+  try {
+    const stores = (window._activeStores && window._activeStores.length) ? window._activeStores : await getActiveStoreData();
+    const me = stores.find(s => s.code === code);
+    if (!me || !me.area) {
+      el.innerHTML = shell(`<div class="sub" style="font-size:12px;color:#A0AEC0;margin-top:8px">지역 정보가 없어 인근 점포를 표시할 수 없습니다.</div>`);
+      return;
+    }
+    const neighbors = stores.filter(s => s.area === me.area && s.code !== code).length;
+    if (neighbors === 0) {
+      el.innerHTML = shell(`<div style="font-size:12px;color:#718096;margin-top:6px">기준 권역: <b>${escapeHtml(me.area)}</b> (시/군/구 단위)</div>
+        <div style="margin-top:8px;padding:12px;border:1px dashed #CBD5E0;border-radius:10px;text-align:center;font-size:12px;color:#718096">인근 점포가 없습니다 (해당 권역 내 점포 1개)</div>`);
+      return;
+    }
+    el.innerHTML = shell(`<p class="loading-text">불러오는 중...</p>`);
+    const data = await _loadAreaStats(me.area);
+    if (!data || !data.months || Object.keys(data.months).length === 0) {
+      el.innerHTML = shell(`<div style="font-size:12px;color:#718096;margin-top:6px">기준 권역: <b>${escapeHtml(me.area)}</b> · 인근 점포 ${neighbors}개</div>
+        <div style="margin-top:8px;font-size:12px;color:#A0AEC0">지역별 매출 집계가 아직 없습니다. 관리자에게 리포트 데이터 업로드를 요청해주세요.</div>`);
+      return;
+    }
+    const months = Object.keys(data.months).sort().reverse();
+    const defYm = months.find(ym => data.months[ym]?.pos?.[code] != null) || months[0];
+    window._nearby = { code, area: me.area, neighbors, data, months, ym: defYm };
+    _paintNearby();
+  } catch (e) {
+    el.innerHTML = shell(`<div style="font-size:12px;color:#C53030;margin-top:8px">인근 점포 정보를 불러오지 못했습니다: ${escapeHtml(e.message || e)}</div>`);
+  }
+}
+function changeNearbyMonth(ym) {
+  if (!window._nearby) return;
+  window._nearby.ym = ym;
+  _paintNearby();
+}
+function _paintNearby() {
+  const el = document.getElementById("nearbyCard");
+  const n = window._nearby;
+  if (!el || !n) return;
+  const mo = n.data.months[n.ym] || { pos: {}, water: {} };
+  const stat = (map) => {
+    const vals = Object.values(map || {}).map(Number).filter(v => v > 0);
+    const mine = map?.[n.code] != null ? Number(map[n.code]) : null;
+    const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    const rank = mine != null ? 1 + vals.filter(v => v > mine).length : null;
+    return { mine, avg, med: _median(vals), rank, total: vals.length };
+  };
+  const pos = stat(mo.pos), wat = stat(mo.water);
+  const isSejong = n.area === "세종특별자치시 전체";
+  const row = (label, s) => `
+    <div class="sec" style="font-size:12px;font-weight:700;margin:12px 0 2px;color:#718096">${label} (${n.ym})</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr style="color:#718096;font-size:10.5px"><th style="text-align:left;padding:4px 2px;border-bottom:1px solid var(--border)"></th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">내 매장</th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">인근 평균</th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">인근 중앙값</th></tr>
+      <tr><td style="padding:6px 2px">${label}</td><td style="text-align:right"><b>${_fmtWon(s.mine)}</b></td><td style="text-align:right">${_fmtWon(s.avg)}</td><td style="text-align:right">${_fmtWon(s.med)}</td></tr>
+      <tr><td style="padding:2px 2px;color:#718096">평균 대비</td><td style="text-align:right">${_pctHtml(s.mine, s.avg)}</td><td></td><td></td></tr>
+    </table>`;
+  const rankTxt = (s) => s.rank != null ? `${s.rank}위 <small style="font-size:11px;font-weight:500">/ ${s.total}개 중</small>` : `-`;
+  el.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span class="q-title">인근 점포 현황</span>
+        <select onchange="changeNearbyMonth(this.value)" style="border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:13px;background:white">
+          ${n.months.map(m => `<option value="${m}" ${m === n.ym ? "selected" : ""}>${m}</option>`).join("")}
+        </select>
+      </div>
+      <div style="font-size:12px;color:#718096;margin-top:4px">기준 권역: <b>${escapeHtml(n.area)}</b> (시/군/구 단위)</div>
+      <div style="background:rgba(214,158,46,.12);border:1px solid rgba(214,158,46,.4);border-radius:8px;padding:7px 9px;font-size:11.5px;margin:8px 0">
+        ${isSejong ? "※ 세종시는 동·읍·면 구분 없이 <b>시 전체를 하나의 권역</b>으로 봅니다." : "※ 시/군/구 단위로 묶은 권역이라 실제 상권 거리와 다를 수 있습니다."}
+        <br>평균·중앙값·순위는 본인을 포함해 계산합니다.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div style="background:#F7FAFC;border-radius:10px;padding:8px;text-align:center"><b style="font-size:15px">${n.neighbors}개</b><div style="font-size:10.5px;color:#718096">인근 점포 수 (본인 제외)</div></div>
+        <div style="background:rgba(214,158,46,.12);border:1px solid rgba(214,158,46,.4);border-radius:10px;padding:8px;text-align:center"><b style="font-size:15px">${rankTxt(pos)}</b><div style="font-size:10.5px;color:#718096">POS 실매출 순위</div></div>
+      </div>
+      ${row("POS 실매출", pos)}
+      ${row("물대", wat)}
+      <div style="margin-top:8px"><span style="display:inline-block;font-size:11px;border-radius:6px;padding:1px 7px;background:#F7FAFC;border:1px solid var(--border);color:#718096">물대 순위 ${rankTxt(wat)}</span></div>
+    `;
+}
+
+// ── 2) 팀별 매출현황 (TL 이상) ──
+function openTeamSales() {
+  if (!["tl", "gl", "admin"].includes(_authRole)) { alert("이용권한이 없습니다"); return; }
+  go("reportTeam");
+}
+
+async function renderReportTeam(root) {
+  if (!["tl", "gl", "admin"].includes(_authRole)) { alert("이용권한이 없습니다"); go("homeReport"); return; }
+  const rt0 = window._rt;
+  if (rt0 && rt0.user === _authName && rt0.role === _authRole && Date.now() - rt0.ts < _STATS_TTL) { _rtPaint(); return; }
+  root.innerHTML = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>팀별 매출현황</h2>
+      <button class="btn-home-dash" onclick="go('homeReport')" style="margin-left:auto">🏠 Home</button>
+    </div>
+    <div class="card-section"><p class="loading-text">불러오는 중...</p></div>`;
+  try {
+    const stores = await getActiveStoreData();
+    const allTeams = [...new Set(stores.map(s => s.team).filter(Boolean))].sort(_teamNameSort);
+    let teams = allTeams;
+    if (_authRole === "tl") {
+      let mine = stores.filter(s => s.tl === _authName);
+      if (!mine.length) mine = stores.filter(s => s.sv === _authName);
+      teams = [...new Set(mine.map(s => s.team).filter(Boolean))].sort(_teamNameSort);
+    }
+    const docs = new Map();
+    await Promise.all(teams.map(async t => { docs.set(t, await _loadTeamStats(t)); }));
+    const monthSet = new Set();
+    docs.forEach(d => Object.keys(d?.totals || {}).forEach(ym => monthSet.add(ym)));
+    const months = [...monthSet].sort().reverse().slice(0, 14);
+    window._rt = {
+      user: _authName, role: _authRole, ts: Date.now(), stores, teams, docs, months,
+      scope: teams.length > 1 ? "ALL" : (teams[0] || ""), ym: months[0] || "",
+      tab: "summary", kw: "", sort: "pos", sel: null, charts: [],
+    };
+    _rtPaint();
+  } catch (e) {
+    root.querySelector(".card-section").innerHTML = `<p class="error-text">오류: ${escapeHtml(e.message || e)}</p>`;
+  }
+}
+
+function _rtScopeTeams() { const rt = window._rt; return rt.scope === "ALL" ? rt.teams : [rt.scope]; }
+function _rtTotals(ym, teamList) {
+  const rt = window._rt;
+  const sum = { pos: 0, inn: 0, del: 0, tak: 0, water: 0, n: 0 };
+  let found = false;
+  teamList.forEach(t => {
+    const x = rt.docs.get(t)?.totals?.[ym];
+    if (!x) return;
+    found = true;
+    Object.keys(sum).forEach(k => { sum[k] += Number(x[k]) || 0; });
+  });
+  return found ? sum : null;
+}
+function _rtStoreData(store) { return window._rt.docs.get(store.team)?.stores?.[store.code] || null; }
+
+function rtSetScope(v) { const rt = window._rt; rt.scope = v; rt.sel = null; rt.kw = ""; _rtPaint(); }
+function rtSetMonth(v) { window._rt.ym = v; _rtPaint(); }
+function rtSetTab(v) { window._rt.tab = v; _rtPaint(); }
+function rtSetSort(v) { window._rt.sort = v; _rtPaint(); }
+function rtSearch() { const i = document.getElementById("rtSearchInput"); window._rt.kw = i ? i.value : ""; _rtPaint(); }
+function rtSelectStore(code) { const rt = window._rt; rt.sel = rt.sel === code ? null : code; _rtPaint(); }
+function rtOpenStore(code) {
+  const s = window._rt.stores.find(x => x.code === code);
+  window._reportTarget = { code, name: s?.name || "", team: s?.team || "" };
+  go("reportDetail");
+}
+function rtPickTeam(team) { rtSetScope(team); }
+
+function _rtPaint() {
+  const rt = window._rt;
+  const root = document.getElementById("app");
+  if (!rt || !root) return;
+  const scopeTeams = _rtScopeTeams();
+  const scopeLabel = rt.scope === "ALL" ? (_authRole === "tl" ? "담당 전체" : "전체 팀") : rt.scope;
+  const noData = !rt.months.length;
+  const header = `
+    <div class="page-header">
+      <button class="btn-back" onclick="goBack()">←</button>
+      <h2>팀별 매출현황</h2>
+      <button class="btn-home-dash" onclick="go('homeReport')" style="margin-left:auto">🏠 Home</button>
+    </div>`;
+  if (noData) {
+    root.innerHTML = header + `<div class="card-section"><p class="error-text">팀별 매출 집계 데이터가 아직 없습니다.<br>관리자에게 리포트 데이터 업로드를 요청해주세요.</p></div>`;
+    return;
+  }
+  const ym = rt.ym, pm = _ymAdd(ym, -1), py = _ymAdd(ym, -12);
+  const scopeStores = rt.stores.filter(s => scopeTeams.includes(s.team));
+  const cur = _rtTotals(ym, scopeTeams), prv = _rtTotals(pm, scopeTeams), yoy = _rtTotals(py, scopeTeams);
+  const selOpts = (rt.teams.length > 1 ? `<option value="ALL" ${rt.scope === "ALL" ? "selected" : ""}>${_authRole === "tl" ? "담당 전체" : "전체 팀"}</option>` : "")
+    + rt.teams.map(t => `<option value="${escapeHtml(t)}" ${rt.scope === t ? "selected" : ""}>${escapeHtml(t)}</option>`).join("");
+  const scopeSel = rt.teams.length > 1
+    ? `<select onchange="rtSetScope(this.value)" style="flex:1;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:13px;background:white">${selOpts}</select>`
+    : `<div style="flex:1;font-weight:700;padding:7px 2px">${escapeHtml(rt.scope)}</div>`;
+  const monthSel = `<select onchange="rtSetMonth(this.value)" style="border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:13px;background:white">${rt.months.map(m => `<option value="${m}" ${m === ym ? "selected" : ""}>${m}</option>`).join("")}</select>`;
+  const seg = `<div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:10px 0">
+      <div onclick="rtSetTab('summary')" style="flex:1;text-align:center;padding:7px;font-size:13px;cursor:pointer;${rt.tab === "summary" ? "background:var(--amber);color:#fff;font-weight:700" : "color:#718096"}">팀 요약</div>
+      <div onclick="rtSetTab('stores')" style="flex:1;text-align:center;padding:7px;font-size:13px;cursor:pointer;${rt.tab === "stores" ? "background:var(--amber);color:#fff;font-weight:700" : "color:#718096"}">매장별 보기</div>
+    </div>`;
+
+  let bodyHtml = "";
+  if (rt.tab === "summary") {
+    const kpi = (label, val, sub) => `<div style="background:#F7FAFC;border-radius:10px;padding:9px"><div style="font-size:10.5px;color:#718096">${label}</div><b style="font-size:17px">${val}</b><div style="font-size:10.5px;color:#718096;margin-top:2px">${sub}</div></div>`;
+    const chg = (c, p, y) => `전월 ${_pctHtml(c, p)} · 전년동월 ${_pctHtml(c, y)}`;
+    const share = (v) => cur && cur.pos ? `전체 대비 ${(v / cur.pos * 100).toFixed(1)}%` : "-";
+    let cmp = "";
+    if (rt.scope === "ALL" && rt.teams.length > 1) {
+      const rowsT = rt.teams.map(t => {
+        const c = _rtTotals(ym, [t]), p = _rtTotals(pm, [t]), y = _rtTotals(py, [t]);
+        return `<tr onclick="rtPickTeam('${escapeHtml(t)}')" style="cursor:pointer"><td style="padding:7px 4px;border-bottom:1px solid var(--border)">${escapeHtml(t)}</td>
+          <td style="text-align:right;border-bottom:1px solid var(--border)">${_fmtMil0(c?.pos)}</td><td style="text-align:right;border-bottom:1px solid var(--border)">${_fmtMil0(c?.inn)}</td>
+          <td style="text-align:right;border-bottom:1px solid var(--border)">${_fmtMil0(c?.del)}</td><td style="text-align:right;border-bottom:1px solid var(--border)">${_fmtMil0(c?.tak)}</td>
+          <td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(c?.water, p?.water)}</td><td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(c?.water, y?.water)}</td></tr>`;
+      }).join("");
+      const th = (t, al) => `<th style="text-align:${al || "right"};font-size:10.5px;color:#718096;padding:6px 4px;border-bottom:1px solid var(--border);white-space:nowrap">${t}</th>`;
+      cmp = `<div style="font-size:12px;font-weight:700;margin:12px 0 4px;color:#718096">팀 비교 (단위: 백만원)</div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${th("팀", "left")}${th("실매출")}${th("내점")}${th("배달")}${th("포장")}${th("물대 전월")}${th("물대 전년")}</tr>${rowsT}</table></div>
+        <div style="font-size:11px;color:#A0AEC0;margin-top:4px">팀 행을 누르면 해당 팀으로 전환됩니다.</div>`;
+    }
+    bodyHtml = `
+      <div style="border:1px solid var(--border);border-radius:12px;padding:12px;background:white">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><b>${escapeHtml(scopeLabel)} · 매장 ${scopeStores.length}개</b><span style="font-size:11px;color:#718096">${ym} 합계 (단위: 백만원)</span></div>
+        ${cur ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+          ${kpi("POS 실매출", _fmtMil0(cur.pos), chg(cur.pos, prv?.pos, yoy?.pos))}
+          ${kpi("물대", _fmtMil0(cur.water), chg(cur.water, prv?.water, yoy?.water))}
+          ${kpi("내점매출", _fmtMil0(cur.inn), share(cur.inn))}
+          ${kpi("배달매출", _fmtMil0(cur.del), share(cur.del))}
+          <div style="grid-column:span 2">${kpi("포장매출", _fmtMil0(cur.tak), share(cur.tak))}</div>
+        </div>` : `<div style="margin-top:8px;font-size:12px;color:#A0AEC0">${ym} 데이터가 없습니다.</div>`}
+      </div>
+      ${cmp}`;
+  } else {
+    const kw = (rt.kw || "").trim().toLowerCase();
+    let rows = scopeStores.map(s => {
+      const d = _rtStoreData(s), c = d?.[ym], p = d?.[pm], y = d?.[py];
+      return { s, c, p, y };
+    });
+    if (kw) rows = rows.filter(r => r.s.name.toLowerCase().includes(kw) || (r.s.code || "").toLowerCase().includes(kw));
+    const growth = r => (r.c && r.p && r.p[4]) ? (r.c[4] - r.p[4]) / r.p[4] : -Infinity;
+    if (rt.sort === "pos") rows.sort((a, b) => (b.c?.[0] ?? -1) - (a.c?.[0] ?? -1));
+    else if (rt.sort === "water") rows.sort((a, b) => growth(b) - growth(a));
+    else rows.sort((a, b) => a.s.name.localeCompare(b.s.name, "ko"));
+    const td = (v, extra) => `<td style="text-align:right;padding:7px 4px;border-bottom:1px solid var(--border);white-space:nowrap;${extra || ""}">${v}</td>`;
+    const th = (t, al) => `<th style="text-align:${al || "right"};font-size:10.5px;color:#718096;padding:6px 4px;border-bottom:1px solid var(--border);white-space:nowrap">${t}</th>`;
+    const body = rows.map(({ s, c, p, y }) => `
+      <tr onclick="rtSelectStore('${s.code}')" style="cursor:pointer;${rt.sel === s.code ? "background:rgba(214,158,46,.14)" : ""}">
+        <td style="padding:7px 4px;border-bottom:1px solid var(--border);white-space:nowrap">${escapeHtml(s.name)}
+          <span onclick="event.stopPropagation();rtOpenStore('${s.code}')" title="컨설팅 리포트 보기" style="color:#2B6CB0;margin-left:4px">›</span>
+          ${rt.scope === "ALL" ? `<div style="font-size:10px;color:#A0AEC0">${escapeHtml(s.team || "")}</div>` : ""}</td>
+        ${td(_fmtMil1(c?.[0]))}${td(_fmtMil1(c?.[1]))}${td(_fmtMil1(c?.[2]))}${td(_fmtMil1(c?.[3]))}${td(_fmtMil1(c?.[4]))}
+        ${td(_pctHtml(c?.[4], p?.[4]))}${td(_pctHtml(c?.[4], y?.[4]))}
+      </tr>`).join("");
+    bodyHtml = `
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <input id="rtSearchInput" value="${escapeHtml(rt.kw || "")}" placeholder="매장명/코드 검색" onkeydown="if(event.key==='Enter')rtSearch()" style="flex:1;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:13px">
+        <button onclick="rtSearch()" style="padding:7px 14px;background:var(--amber);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">검색</button>
+        <select onchange="rtSetSort(this.value)" style="border:1px solid var(--border);border-radius:8px;padding:7px 8px;font-size:12px;background:white">
+          <option value="pos" ${rt.sort === "pos" ? "selected" : ""}>실매출 높은순</option><option value="water" ${rt.sort === "water" ? "selected" : ""}>물대 증감순</option><option value="name" ${rt.sort === "name" ? "selected" : ""}>매장명순</option></select>
+      </div>
+      <div style="font-size:11px;color:#718096;margin-bottom:4px">금액 단위: 백만원 · 매장 행을 누르면 아래 그래프가 해당 매장으로 바뀌고, 이름 옆 ›는 컨설팅 리포트로 이동합니다.</div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+        <tr>${th("매장", "left")}${th("실매출")}${th("내점")}${th("배달")}${th("포장")}${th("물대")}${th("물대 전월")}${th("물대 전년")}</tr>${body || `<tr><td colspan="8" style="text-align:center;padding:16px;color:#A0AEC0">해당 조건의 매장이 없습니다</td></tr>`}</table></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span style="font-size:11px;color:#718096">${rows.length}개 매장${kw ? ` (전체 ${scopeStores.length}개 중)` : ""}</span>
+        <button class="btn-ghost" onclick="rtDownloadExcel()" style="padding:6px 12px;font-size:12px;width:auto">📥 엑셀 다운로드</button></div>`;
+  }
+
+  const selStore = rt.sel ? rt.stores.find(s => s.code === rt.sel) : null;
+  const chartTitleSuffix = selStore ? ` · ${escapeHtml(selStore.name)}` : ` · ${escapeHtml(scopeLabel)}`;
+  root.innerHTML = header + `
+    <div class="card-section">
+      <div style="display:flex;gap:6px">${scopeSel}${monthSel}</div>
+      <div style="font-size:11px;color:#718096;margin-top:4px">${_authRole === "tl" ? "담당팀 기준" : "전체 팀 또는 팀 선택"} · 금액 단위: 백만원</div>
+      ${seg}
+      ${bodyHtml}
+      <div class="question-card" style="margin-top:12px"><span class="q-title">월별 POS 실매출 추이 (백만원)${chartTitleSuffix}</span>
+        <div style="position:relative;height:220px;margin-top:8px"><canvas id="rtChartPos"></canvas></div></div>
+      <div class="question-card"><span class="q-title">월별 물대 추이 (백만원)${chartTitleSuffix}</span>
+        <div style="position:relative;height:220px;margin-top:8px"><canvas id="rtChartWater"></canvas></div></div>
+    </div>`;
+  _rtDrawCharts();
+}
+
+async function _rtDrawCharts() {
+  const rt = window._rt;
+  try { await loadChartJS(); } catch (e) { return; }
+  if (!window.Chart || !rt) return;
+  (rt.charts || []).forEach(c => { try { c.destroy(); } catch (e) {} });
+  rt.charts = [];
+  const Y = rt.ym.slice(0, 4), P = String(Number(Y) - 1);
+  const months = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"));
+  const scopeTeams = _rtScopeTeams();
+  const selStore = rt.sel ? rt.stores.find(s => s.code === rt.sel) : null;
+  const valFor = (ymKey, idxTeam, idxStore) => {
+    if (selStore) { const v = _rtStoreData(selStore)?.[ymKey]?.[idxStore]; return v == null ? null : Math.round(v / 1e5) / 10; }
+    const t = _rtTotals(ymKey, scopeTeams);
+    return t == null ? null : Math.round(t[idxTeam] / 1e5) / 10;
+  };
+  const mk = (id, idxTeam, idxStore, color) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    rt.charts.push(new Chart(el, {
+      type: "line",
+      data: { labels: months.map(m => m + "월"), datasets: [
+        { label: Y, data: months.map(m => valFor(`${Y}-${m}`, idxTeam, idxStore)), borderColor: color, backgroundColor: color, borderWidth: 2.4, tension: 0.3, pointRadius: 3, pointHoverRadius: 6, spanGaps: true },
+        { label: P + " (전년)", data: months.map(m => valFor(`${P}-${m}`, idxTeam, idxStore)), borderColor: "#A0AEC0", backgroundColor: "#A0AEC0", borderWidth: 2, borderDash: [5, 3], tension: 0.3, pointRadius: 2, pointHoverRadius: 5, spanGaps: true },
+      ] },
+      options: {
+        responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: true, position: "top", labels: { boxWidth: 10, font: { size: 11 } } },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y == null ? "-" : ctx.parsed.y.toLocaleString() + "백만원"}` } } },
+        scales: { y: { ticks: { font: { size: 10 }, callback: v => v.toLocaleString() } }, x: { ticks: { font: { size: 9 } } } },
+      },
+    }));
+  };
+  mk("rtChartPos", "pos", 0, "#2a78d6");
+  mk("rtChartWater", "water", 4, "#1baf7a");
+}
+
+async function rtDownloadExcel() {
+  const rt = window._rt;
+  if (!rt) return;
+  try { await loadXLSX(); } catch (e) { alert("엑셀 라이브러리 로드 실패: " + e.message); return; }
+  const ym = rt.ym, pm = _ymAdd(ym, -1), py = _ymAdd(ym, -12);
+  const scopeTeams = _rtScopeTeams();
+  const num1 = v => (v == null ? "" : Math.round(v / 1e5) / 10);
+  const pct = (c, b) => { const p = _pctNum(c, b); return p == null ? "" : Math.round(p * 10) / 10; };
+  const rows = [["팀", "매장코드", "매장명", "기준월", "POS실매출(백만원)", "내점(백만원)", "배달(백만원)", "포장(백만원)", "물대(백만원)", "물대 전월대비(%)", "물대 전년동월대비(%)"]];
+  rt.stores.filter(s => scopeTeams.includes(s.team)).forEach(s => {
+    const d = _rtStoreData(s), c = d?.[ym], p = d?.[pm], y = d?.[py];
+    rows.push([s.team || "", s.code, s.name, ym, num1(c?.[0]), num1(c?.[1]), num1(c?.[2]), num1(c?.[3]), num1(c?.[4]), pct(c?.[4], p?.[4]), pct(c?.[4], y?.[4])]);
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), "팀별매출현황");
+  const scopeName = rt.scope === "ALL" ? (_authRole === "tl" ? "담당전체" : "전체팀") : rt.scope;
+  XLSX.writeFile(wb, `팀별매출현황_${scopeName}_${ym}.xlsx`);
+}
+
 // ── 매장 컨설팅 리포트 HOME ──────────────────────
 function renderHomeReport(root) {
   root.innerHTML = `
@@ -806,6 +1193,7 @@ function renderHomeReport(root) {
     </div>
     <div class="card-section">
       <button class="btn-primary-np" onclick="go('reportStoreSel')">🔍 매장 선택</button>
+      <button class="btn-ghost" onclick="openTeamSales()">📊 팀별 매출현황 <span style="font-size:11px;color:#718096;margin-left:4px">(TL 이상)</span></button>
       ${_authRole === "admin" ? `<button class="btn-ghost" onclick="go('photoSetting')" style="color:#6B46C1;border-color:#D6BCFA">⚙️ 리포트 데이터 관리</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
@@ -970,6 +1358,8 @@ async function renderReportDetail(root) {
         </table>
       </div>
 
+      <div id="nearbyCard" class="question-card"><p class="loading-text">인근 점포 불러오는 중...</p></div>
+
       <div class="question-card">
         <span class="q-title">설비정보</span>
         <div style="font-size:12px;color:#A0AEC0;margin:8px 0 4px">주문/호출기기</div>
@@ -1023,6 +1413,7 @@ async function renderReportDetail(root) {
       </div>
     `;
 
+    renderNearbyCard(target.code); // 비동기(자체 오류처리) — 리포트 본문 표시를 막지 않음
     _drawReportChart("reportPosChart", data.pos_sales || {}, v => v?.["전체"]?.실매출액 ?? 0);
     _drawReportChart("reportWaterChart", data.water_sales || {}, v => v ?? 0);
   } catch(e) {
@@ -5649,6 +6040,68 @@ async function uploadReportData(file, onProgress) {
   // 화면에서 검색이 안 돼 조회 불가능하므로 최종 저장에서 제외 — 양도양수된 매장의 과거
   // 이력은 위에서 이미 resolveCode로 신코드에 합쳐진 뒤라 이 필터로 인한 데이터 손실은 없음.
   const entries = [...reports.entries()].filter(([code]) => activeStoreCodes.has(code));
+
+  // ── 지역/팀 집계 계산 (인근 점포 현황·팀별 매출현황용) ──
+  // 화면에서 매장별 리포트 문서를 대량으로 읽지 않도록, 업로드 시점에 지역별(area_stats)·팀별
+  // (team_stats) 집계 문서를 미리 만들어 저장. 이 계산이 실패해도 매장 리포트 업로드는 계속 진행.
+  const aggWrites = [];
+  window._lastAggWarning = "";
+  try {
+    try { localStorage.removeItem("momstouch_store_master"); } catch(e) {}
+    cacheInvalidate("store");
+    const masterStores = await getActiveStoreData();
+    const masterByCode = new Map(masterStores.map(m => [m.code, m]));
+    const toNum = v => { if (v == null || v === "") return 0; const n = Number(String(v).replace(/,/g, "")); return Number.isFinite(n) ? Math.round(n) : 0; };
+    const perStore = new Map(); // code -> { ym: [실매출, 내점, 배달, 포장, 물대] }
+    entries.forEach(([code, rep]) => {
+      const yms = new Set([...Object.keys(rep.pos_sales || {}), ...Object.keys(rep.water_sales || {})]);
+      const mm = {};
+      yms.forEach(ym => {
+        const p = rep.pos_sales?.[ym];
+        const v = [toNum(p?.["전체"]?.실매출액), toNum(p?.["내점"]?.실매출액), toNum(p?.["배달"]?.실매출액), toNum(p?.["포장"]?.실매출액), toNum(rep.water_sales?.[ym])];
+        if (v.some(x => x > 0)) mm[ym] = v;
+      });
+      perStore.set(code, mm);
+    });
+    const allYms = [...new Set([...perStore.values()].flatMap(mm => Object.keys(mm)))].sort();
+    const ym36 = allYms.slice(-36), ym26 = allYms.slice(-26);
+    const docId = x => String(x).replace(/[\/\s]+/g, "_");
+
+    const areaMap = new Map(); // 권역 -> { ym: { pos:{코드:값}, water:{코드:값} } }
+    const teamMap = new Map(); // 팀 -> { totals:{ym:{...}}, stores:{코드:{ym:[...]}} }
+    perStore.forEach((mm, code) => {
+      const m = masterByCode.get(code);
+      if (!m) return;
+      if (m.area) {
+        if (!areaMap.has(m.area)) areaMap.set(m.area, {});
+        const months = areaMap.get(m.area);
+        ym36.forEach(ym => {
+          const v = mm[ym]; if (!v) return;
+          const o = months[ym] || (months[ym] = { pos: {}, water: {} });
+          if (v[0] > 0) o.pos[code] = v[0];
+          if (v[4] > 0) o.water[code] = v[4];
+        });
+      }
+      if (m.team) {
+        if (!teamMap.has(m.team)) teamMap.set(m.team, { totals: {}, stores: {} });
+        const t = teamMap.get(m.team);
+        ym36.forEach(ym => {
+          const v = mm[ym]; if (!v) return;
+          const tt = t.totals[ym] || (t.totals[ym] = { pos: 0, inn: 0, del: 0, tak: 0, water: 0, n: 0 });
+          tt.pos += v[0]; tt.inn += v[1]; tt.del += v[2]; tt.tak += v[3]; tt.water += v[4];
+          if (v[0] > 0) tt.n++;
+        });
+        const sm = {};
+        ym26.forEach(ym => { if (mm[ym]) sm[ym] = mm[ym]; });
+        if (Object.keys(sm).length) t.stores[code] = sm;
+      }
+    });
+    areaMap.forEach((months, area) => aggWrites.push({ col: "area_stats", id: docId(area), payload: { area, months, updatedAt: new Date() }, merge: false }));
+    teamMap.forEach((t, team) => aggWrites.push({ col: "team_stats", id: docId(team), payload: { team, totals: t.totals, stores: t.stores, updatedAt: new Date() }, merge: false }));
+    if (areaMap.size === 0) window._lastAggWarning = "지역 정보(area)가 있는 매장이 없어 인근 점포 집계가 생성되지 않았습니다. 매장 마스터(store_geo 시트 포함)를 먼저 업로드해주세요.";
+  } catch (e) {
+    window._lastAggWarning = "지역/팀 집계 저장 준비 중 오류: " + (e.message || e);
+  }
   // Firestore 배치 쓰기는 요청 1건당 총 용량이 약 10MB로 제한됨 — 매장당 매출·물대 이력이
   // 생각보다 커서(실측 시 매장당 최대 약 14KB, 배치 프로토콜 오버헤드까지 감안하면 400개
   // 묶었을 때 한도 초과 발생) 청크를 훨씬 작게 잡아 안전마진을 확보함.
@@ -5662,8 +6115,12 @@ async function uploadReportData(file, onProgress) {
   let batch = writeBatch(db);
   let batchBytes = 0;
   let batchCount = 0;
-  entries.forEach(([code, rep]) => {
-    const payload = { ...rep, updatedAt: new Date() };
+  const writes = [
+    ...entries.map(([code, rep]) => ({ col: "store_reports", id: code, payload: { ...rep, updatedAt: new Date() }, merge: true })),
+    ...aggWrites,
+  ];
+  writes.forEach((w) => {
+    const payload = w.payload;
     const approxBytes = JSON.stringify(payload).length * 3; // Firestore 중첩맵 인코딩 오버헤드 감안 3배 마진
     if (batchCount > 0 && batchBytes + approxBytes > SAFE_BATCH_BYTES) {
       batches.push(batch);
@@ -5671,7 +6128,8 @@ async function uploadReportData(file, onProgress) {
       batchBytes = 0;
       batchCount = 0;
     }
-    batch.set(doc(db, "store_reports", code), payload, { merge: true });
+    if (w.merge) batch.set(doc(db, w.col, w.id), payload, { merge: true });
+    else batch.set(doc(db, w.col, w.id), payload);
     batchBytes += approxBytes;
     batchCount++;
   });
@@ -5718,7 +6176,7 @@ async function handleReportDataUpload(input) {
     });
     if (text) text.textContent = `완료! ${count}개 매장 리포트 데이터 반영됨`;
     setTimeout(() => { if (progress) progress.style.display = "none"; }, 2500);
-    alert(`✅ 매장 컨설팅 리포트 데이터 업로드 완료!\n${count}개 매장이 반영되었습니다.`);
+    alert(`✅ 매장 컨설팅 리포트 데이터 업로드 완료!\n${count}개 매장이 반영되었습니다.` + (window._lastAggWarning ? `\n\n⚠️ ${window._lastAggWarning}` : "\n지역별·팀별 집계도 함께 저장되었습니다."));
   } catch(e) {
     if (text) text.textContent = `오류: ${e.message}`;
     alert(`업로드 실패: ${e.message}`);
@@ -17027,6 +17485,7 @@ Object.assign(window, {
   setHdj2Answer, handleHdj2Image, removeHdj2Image, updateHdj2QMemo, updateHdj2Memo, submitFormHdj2, downloadExcelHdj2,
   fetchRecordsHdj2, setRecHdj2Filter, viewRecordHdj2, setDashHdj2Filter, viewStoreHistoryHdj2, approveHdj2Record, rejectHdj2Record, searchDashHdj2, startInspectionForStoreHdj2,
   toggleHdj2Row, openHdj2Photo,
+  openTeamSales, rtSetScope, rtSetMonth, rtSetTab, rtSetSort, rtSearch, rtSelectStore, rtOpenStore, rtPickTeam, rtDownloadExcel, changeNearbyMonth,
 });
 // 앱 시작 시 세션 복원
 (async () => {
