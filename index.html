@@ -917,7 +917,7 @@ function _paintNearby() {
   const pos = stat(mo.pos), wat = stat(mo.water);
   const isSejong = n.area === "세종특별자치시 전체";
   const row = (label, s) => `
-    <div class="sec" style="font-size:12px;font-weight:700;margin:12px 0 2px;color:#718096">${label} (${n.ym})${label === "물대" ? ' <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 포함</span>' : ""}</div>
+    <div class="sec" style="font-size:12px;font-weight:700;margin:12px 0 2px;color:#718096">${label} (${n.ym})${label === "물대" ? ' <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 제외</span>' : ""}</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
       <tr style="color:#718096;font-size:10.5px"><th style="text-align:left;padding:4px 2px;border-bottom:1px solid var(--border)"></th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">내 매장</th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">인근 평균</th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">인근 중앙값</th></tr>
       <tr><td style="padding:6px 2px">${label}</td><td style="text-align:right"><b>${_fmtWon(s.mine)}</b></td><td style="text-align:right">${_fmtWon(s.avg)}</td><td style="text-align:right">${_fmtWon(s.med)}</td></tr>
@@ -1062,7 +1062,7 @@ function _rtPaint() {
           <td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(c?.water, p?.water)}</td><td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(c?.water, y?.water)}</td></tr>`;
       }).join("");
       const th = (t, al) => `<th style="text-align:${al || "right"};font-size:10.5px;color:#718096;padding:6px 4px;border-bottom:1px solid var(--border);white-space:nowrap">${t}</th>`;
-      cmp = `<div style="font-size:12px;font-weight:700;margin:12px 0 4px;color:#718096">팀 비교 (단위: 백만원 · 물대 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 포함</span>)</div>
+      cmp = `<div style="font-size:12px;font-weight:700;margin:12px 0 4px;color:#718096">팀 비교 (단위: 백만원 · 물대 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 제외</span>)</div>
         <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${th("팀", "left")}${th("실매출")}${th("내점")}${th("배달")}${th("포장")}${th("물대 전월")}${th("물대 전년")}</tr>${rowsT}</table></div>
         <div style="font-size:11px;color:#A0AEC0;margin-top:4px">팀 행을 누르면 해당 팀으로 전환됩니다.</div>`;
     }
@@ -1071,7 +1071,7 @@ function _rtPaint() {
         <div style="display:flex;justify-content:space-between;align-items:baseline"><b>${escapeHtml(scopeLabel)} · 매장 ${scopeStores.length}개</b><span style="font-size:11px;color:#718096">${ym} 합계 (단위: 백만원)</span></div>
         ${cur ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
           ${kpi("POS 실매출", _fmtMil0(cur.pos), chg(cur.pos, prv?.pos, yoy?.pos))}
-          ${kpi(`물대 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 포함</span>`, _fmtMil0(cur.water), chg(cur.water, prv?.water, yoy?.water))}
+          ${kpi(`물대 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 제외</span>`, _fmtMil0(cur.water), chg(cur.water, prv?.water, yoy?.water))}
           ${kpi("내점매출", _fmtMil0(cur.inn), share(cur.inn))}
           ${kpi("배달매출", _fmtMil0(cur.del), share(cur.del))}
           <div style="grid-column:span 2">${kpi("포장매출", _fmtMil0(cur.tak), share(cur.tak))}</div>
@@ -1106,7 +1106,7 @@ function _rtPaint() {
         <select onchange="rtSetSort(this.value)" style="border:1px solid var(--border);border-radius:8px;padding:7px 8px;font-size:12px;background:white">
           <option value="pos" ${rt.sort === "pos" ? "selected" : ""}>실매출 높은순</option><option value="water" ${rt.sort === "water" ? "selected" : ""}>물대 증감순</option><option value="name" ${rt.sort === "name" ? "selected" : ""}>매장명순</option></select>
       </div>
-      <div style="font-size:11px;color:#718096;margin-bottom:4px">금액 단위: 백만원 · 물대는 *음료대 포함 · 매장 행을 누르면 위 그래프가 해당 매장으로 바뀌고, 이름 옆 ›는 컨설팅 리포트로 이동합니다.</div>
+      <div style="font-size:11px;color:#718096;margin-bottom:4px">금액 단위: 백만원 · 물대는 *음료대 제외 · 매장 행을 누르면 위 그래프가 해당 매장으로 바뀌고, 이름 옆 ›는 컨설팅 리포트로 이동합니다.</div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
         <tr>${th("매장", "left")}${th("실매출")}${th("내점")}${th("배달")}${th("포장")}${th("물대")}${th("물대 전월")}${th("물대 전년")}</tr>${body || `<tr><td colspan="8" style="text-align:center;padding:16px;color:#A0AEC0">해당 조건의 매장이 없습니다</td></tr>`}</table></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span style="font-size:11px;color:#718096">${rows.length}개 매장${kw ? ` (전체 ${scopeStores.length}개 중)` : ""}</span>
@@ -1118,7 +1118,7 @@ function _rtPaint() {
   const chartsHtml = `
       <div class="question-card" style="margin-top:12px"><span class="q-title">월별 POS 실매출 추이 (백만원)${chartTitleSuffix}</span>
         <div style="position:relative;height:220px;margin-top:8px"><canvas id="rtChartPos"></canvas></div></div>
-      <div class="question-card"><span class="q-title">월별 물대 추이 (백만원)${chartTitleSuffix} <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 포함</span></span>
+      <div class="question-card"><span class="q-title">월별 물대 추이 (백만원)${chartTitleSuffix} <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 제외</span></span>
         <div style="position:relative;height:220px;margin-top:8px"><canvas id="rtChartWater"></canvas></div></div>`;
   root.innerHTML = header + `
     <div class="card-section">
@@ -1291,11 +1291,24 @@ async function _fetchReportData(storeCode) {
   if (found.length === 0) return null;
   const primaryEntry = found.find(x => x.code === storeCode) || found[0];
   const primary = primaryEntry.data;
-  const merged = { ...primary, pos_sales: { ...(primary.pos_sales||{}) }, water_sales: { ...(primary.water_sales||{}) } };
+  const merged = { ...primary, pos_sales: { ...(primary.pos_sales||{}) }, water_sales: { ...(primary.water_sales||{}) }, drink_sales: { ...(primary.drink_sales||{}) } };
   found.forEach(({ data: d }) => {
     if (d === primary) return;
     Object.entries(d.pos_sales || {}).forEach(([ym, v]) => { if (!(ym in merged.pos_sales)) merged.pos_sales[ym] = v; });
     Object.entries(d.water_sales || {}).forEach(([ym, v]) => { if (!(ym in merged.water_sales)) merged.water_sales[ym] = v; });
+    Object.entries(d.drink_sales || {}).forEach(([ym, v]) => { if (!(ym in merged.drink_sales)) merged.drink_sales[ym] = v; });
+  });
+  // 표시용 보정: POS 매출은 부가세(10%) 제외(÷1.1), 물대는 음료대 제외. (DB 원본은 그대로 유지)
+  const exVat = x => Math.round((Number(x) || 0) / 1.1);
+  Object.keys(merged.pos_sales).forEach(ym => {
+    const m = merged.pos_sales[ym] || {}, o = {};
+    Object.keys(m).forEach(ch => { const c = m[ch] || {}; o[ch] = { ...c, 총매출액: exVat(c.총매출액), 실매출액: exVat(c.실매출액) }; });
+    merged.pos_sales[ym] = o;
+  });
+  Object.keys(merged.water_sales).forEach(ym => {
+    const w = Number(merged.water_sales[ym]) || 0, d = Number(merged.drink_sales[ym]) || 0;
+    let net = w - d; if (w >= 0 && net < 0) net = 0;
+    merged.water_sales[ym] = net;
   });
   return merged;
 }
@@ -1411,7 +1424,7 @@ async function renderReportDetail(root) {
       </div>
 
       <div class="question-card">
-        <span class="q-title">3개년 물대 (월별) <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 포함</span></span>
+        <span class="q-title">3개년 물대 (월별) <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 제외</span></span>
         <div style="position:relative;height:220px;margin-top:8px"><canvas id="reportWaterChart" role="img" aria-label="연도별 월간 물대 추이">연도별 월간 물대 추이</canvas></div>
       </div>
     `;
@@ -5959,7 +5972,7 @@ async function uploadReportData(file, onProgress) {
 
   const reports = new Map(); // 현재코드 -> report 객체
   const getRep = code => {
-    if (!reports.has(code)) reports.set(code, { pos_sales:{}, water_sales:{} });
+    if (!reports.has(code)) reports.set(code, { pos_sales:{}, water_sales:{}, drink_sales:{} });
     return reports.get(code);
   };
 
@@ -6044,6 +6057,26 @@ async function uploadReportData(file, onProgress) {
   // 이력은 위에서 이미 resolveCode로 신코드에 합쳐진 뒤라 이 필터로 인한 데이터 손실은 없음.
   const entries = [...reports.entries()].filter(([code]) => activeStoreCodes.has(code));
 
+  // ── 3-2. 음료대 시트 (물대 시트와 동일 구조: 1행=헤더, 거래처코드/주문거래처/YYYY-MM...) ──
+  // 물대에서 제외해서 표시하기 위해 원본을 별도 필드(drink_sales)로 저장. 시트가 없으면 건너뜀(음료대 0 취급).
+  const wsDrink = wb.Sheets["음료대"];
+  if (wsDrink) {
+    const dRows = XLSX.utils.sheet_to_json(wsDrink, { header: 1, defval: null });
+    const dHeader = dRows[0] || [];
+    dRows.slice(1).forEach(r => {
+      const raw = r[0];
+      if (!isEcode(raw)) return;
+      const code = resolveCode(String(raw).trim());
+      const rep = getRep(code);
+      for (let i = 2; i < dHeader.length; i++) {
+        const ymKey = String(dHeader[i] || "");
+        if (!/^\d{4}-\d{2}$/.test(ymKey)) continue;
+        const val = r[i];
+        if (val != null && val !== "") rep.drink_sales[ymKey] = val;
+      }
+    });
+  }
+
   // ── 지역/팀 집계 계산 (인근 점포 현황·팀별 매출현황용) ──
   // 화면에서 매장별 리포트 문서를 대량으로 읽지 않도록, 업로드 시점에 지역별(area_stats)·팀별
   // (team_stats) 집계 문서를 미리 만들어 저장. 이 계산이 실패해도 매장 리포트 업로드는 계속 진행.
@@ -6061,7 +6094,11 @@ async function uploadReportData(file, onProgress) {
       const mm = {};
       yms.forEach(ym => {
         const p = rep.pos_sales?.[ym];
-        const v = [toNum(p?.["전체"]?.실매출액), toNum(p?.["내점"]?.실매출액), toNum(p?.["배달"]?.실매출액), toNum(p?.["포장"]?.실매출액), toNum(rep.water_sales?.[ym])];
+        // POS 매출은 부가세(10%) 포함 값이므로 ÷1.1(부가세 제외), 물대는 음료대를 뺀 금액으로 집계
+        const ex = x => Math.round(toNum(x) / 1.1);
+        const wRaw = toNum(rep.water_sales?.[ym]), dRaw = toNum(rep.drink_sales?.[ym]);
+        let wNet = wRaw - dRaw; if (wRaw >= 0 && wNet < 0) wNet = 0;
+        const v = [ex(p?.["전체"]?.실매출액), ex(p?.["내점"]?.실매출액), ex(p?.["배달"]?.실매출액), ex(p?.["포장"]?.실매출액), wNet];
         if (v.some(x => x > 0)) mm[ym] = v;
       });
       perStore.set(code, mm);
