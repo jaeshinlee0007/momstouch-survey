@@ -678,7 +678,7 @@ function render() {
   root.innerHTML = ""; window.scrollTo(0,0);
   const scr = S.screen;
   // 미로그인 상태에서 보호 화면 접근 시 로그인으로 리디렉션
-  const protectedScreens = ["topHub","hub","home","homeNP","homeSpacool","homeGbchicken","homeNashville","homeGk","homeGkpre","homeBeefRenewal","homeChuseok","homeGrilledBulgogi","homeReport","reportStoreSel","reportTeam","reportDetail","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP","approvalNP","dashboardSpacool","recordsSpacool","recordDetailSpacool","storeHistorySpacool","approvalSpacool","dashboardGbchicken","recordsGbchicken","recordDetailGbchicken","storeHistoryGbchicken","approvalGbchicken","dashboardNashville","recordsNashville","recordDetailNashville","storeHistoryNashville","approvalNashville","dashboardGk","recordsGk","recordDetailGk","storeHistoryGk","approvalGk","dashboardGkpre","recordsGkpre","recordDetailGkpre","storeHistoryGkpre","approvalGkpre","dashboardBeefRenewal","recordsBeefRenewal","recordDetailBeefRenewal","storeHistoryBeefRenewal","approvalBeefRenewal","dashboardChuseok","recordsChuseok","recordDetailChuseok","storeHistoryChuseok","approvalChuseok","dashboardGrilledBulgogi","recordsGrilledBulgogi","recordDetailGrilledBulgogi","storeHistoryGrilledBulgogi","approvalGrilledBulgogi","homeRehitham","dashboardRehitham","recordsRehitham","recordDetailRehitham","storeHistoryRehitham","approvalRehitham","homeHdj2","dashboardHdj2","recordsHdj2","recordDetailHdj2","storeHistoryHdj2","approvalHdj2"];
+  const protectedScreens = ["topHub","hub","home","homeNP","homeSpacool","homeGbchicken","homeNashville","homeGk","homeGkpre","homeBeefRenewal","homeChuseok","homeGrilledBulgogi","homeReport","reportStoreSel","reportTeam","reportDetail","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP","approvalNP","dashboardSpacool","recordsSpacool","recordDetailSpacool","storeHistorySpacool","approvalSpacool","dashboardGbchicken","recordsGbchicken","recordDetailGbchicken","storeHistoryGbchicken","approvalGbchicken","dashboardNashville","recordsNashville","recordDetailNashville","storeHistoryNashville","approvalNashville","dashboardGk","recordsGk","recordDetailGk","storeHistoryGk","approvalGk","dashboardGkpre","recordsGkpre","recordDetailGkpre","storeHistoryGkpre","approvalGkpre","dashboardBeefRenewal","recordsBeefRenewal","recordDetailBeefRenewal","storeHistoryBeefRenewal","approvalBeefRenewal","dashboardChuseok","recordsChuseok","recordDetailChuseok","storeHistoryChuseok","approvalChuseok","dashboardGrilledBulgogi","recordsGrilledBulgogi","recordDetailGrilledBulgogi","storeHistoryGrilledBulgogi","approvalGrilledBulgogi","homeRehitham","dashboardRehitham","recordsRehitham","recordDetailRehitham","storeHistoryRehitham","approvalRehitham","mobileDash","homeHdj2","dashboardHdj2","recordsHdj2","recordDetailHdj2","storeHistoryHdj2","approvalHdj2"];
   if (!_currentUser && protectedScreens.includes(scr)) {
     renderLogin(root);
     return;
@@ -686,6 +686,7 @@ function render() {
   if      (scr==="topHub")     renderTopHub(root);
   else if (scr==="homeReport") renderHomeReport(root);
   else if (scr==="reportTeam") renderReportTeam(root); // async
+  else if (scr==="mobileDash") renderMobileDash(root); // async
   else if (scr==="reportStoreSel") renderReportStoreSel(root);
   else if (scr==="reportDetail")   renderReportDetail(root); // async
   else if (scr==="hub")        renderHub(root); // npEnabled는 로그인 시 캐시됨
@@ -1186,6 +1187,315 @@ async function rtDownloadExcel() {
 }
 
 // ── 매장 컨설팅 리포트 HOME ──────────────────────
+// ═════════════ 모바일 가맹점 대시보드 (GL·ADMIN) ═════════════
+// 기존 "모바일 대시보드(별도 HTML)"의 UI를 SCV 안으로 이식. 이름 충돌 방지를 위해 CSS 클래스/ID/함수명은 모두 mfd 접두사.
+// 데이터: 매출·물대·매장정보 = store_reports(SCV 기준: POS 실매출 ÷1.1, 물대 음료대 제외),
+//        오일사입·내용증명·최근방문 = store_dash/{매장코드} (업로드 시 저장)
+const _MFD_ROLES = ["gl", "admin"];
+const _mfd = { stores: [], byCode: new Map(), pC: null, wC: null, tmr: null, code: null, yrs: [], pos: {}, water: {}, seq: 0 };
+
+function openMobileDash() {
+  if (!_MFD_ROLES.includes(_authRole)) { alert("이용권한이 없습니다"); return; }
+  go("mobileDash");
+}
+
+// 기존 대시보드의 경량 차트(캔버스 직접 그리기). 전역 Chart와 충돌하지 않도록 MfdChart로 분리.
+function MfdChart(canvas,cfg){this.canvas=canvas;this.ctx=canvas.getContext("2d");this.cfg=cfg;this._draw();}MfdChart.prototype.destroy=function(){this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);};MfdChart.prototype._draw=function(){var self=this,cfg=this.cfg,ctx=this.ctx;var type=cfg.type,data=cfg.data;var ds=data.datasets[0];var vals=ds.data.map(Number);var labels=data.labels||vals.map(function(_,i){return i;});var W=self.canvas.getBoundingClientRect().width||self.canvas.offsetWidth||(self.canvas.parentElement?(self.canvas.parentElement.getBoundingClientRect().width||self.canvas.parentElement.offsetWidth):0)||300,H=195;self.canvas.style.width="100%";self.canvas.style.height=H+"px";self.canvas.width=W*2;self.canvas.height=H*2;ctx.scale(2,2);var PAD={l:52,r:12,t:16,b:32};var cw=W-PAD.l-PAD.r,ch=H-PAD.t-PAD.b;var max=Math.max.apply(null,vals.concat([0]))||1;var mag=Math.pow(10,Math.floor(Math.log10(max)));var niceMax=Math.ceil(max/mag)*mag;if(niceMax<max*1.05)niceMax+=mag;ctx.strokeStyle="rgba(0,0,0,0.06)";ctx.lineWidth=1;var ticks=4;for(var ti=0;ti<=ticks;ti++){var y=PAD.t+ch*(1-ti/ticks);ctx.beginPath();ctx.moveTo(PAD.l,y);ctx.lineTo(PAD.l+cw,y);ctx.stroke();ctx.fillStyle="#888";ctx.font="10px -apple-system,sans-serif";ctx.textAlign="right";var tv=niceMax*ti/ticks;var tl=tv>=10000?Math.round(tv/10000)+"만":tv>=1000?Math.round(tv/1000)+"천":Math.round(tv).toString();ctx.fillText(tl,PAD.l-5,y+4);}ctx.fillStyle="#888";ctx.font="10px -apple-system,sans-serif";ctx.textAlign="center";var step=Math.ceil(labels.length/7);labels.forEach(function(l,i){if(i%step!==0&&i!==labels.length-1)return;var x;if(type==="bar")x=PAD.l+cw*(i+0.5)/labels.length;else x=PAD.l+cw*(i/Math.max(labels.length-1,1));ctx.fillText(l,x,H-PAD.b+14);});var bgColors=Array.isArray(ds.backgroundColor)?ds.backgroundColor:[ds.backgroundColor||"#C8102E"];var bdColors=Array.isArray(ds.borderColor)?ds.borderColor:[ds.borderColor||"#C8102E"];if(type==="bar"){var gap=cw/labels.length,bw=gap*0.62;vals.forEach(function(v,i){var bh=ch*(v/niceMax);var x=PAD.l+i*gap+(gap-bw)/2,y=PAD.t+ch-bh;ctx.fillStyle=bgColors[i%bgColors.length];var r=Math.min(4,bh/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+bw-r,y);ctx.quadraticCurveTo(x+bw,y,x+bw,y+r);ctx.lineTo(x+bw,y+bh);ctx.lineTo(x,y+bh);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();ctx.fill();});}else{var pts=vals.map(function(v,i){return{x:PAD.l+cw*(i/Math.max(vals.length-1,1)),y:PAD.t+ch*(1-v/niceMax)};});ctx.beginPath();ctx.moveTo(pts[0].x,PAD.t+ch);pts.forEach(function(p){ctx.lineTo(p.x,p.y);});ctx.lineTo(pts[pts.length-1].x,PAD.t+ch);ctx.closePath();ctx.fillStyle=ds.backgroundColor||"rgba(200,16,46,0.13)";ctx.fill();ctx.beginPath();ctx.strokeStyle=bdColors[0];ctx.lineWidth=2;pts.forEach(function(p,i){i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);});ctx.stroke();ctx.fillStyle=bdColors[0];pts.forEach(function(p){ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();});}};
+
+function _mfdFmt(v) { if (!v || v < 1) return "-"; return Math.round(v / 10000).toLocaleString("ko-KR") + "만원"; }
+function _mfdFmtDay(v) {
+  if (!v || v < 1) return "-";
+  const d = v / 30;
+  if (d >= 10000) return (Math.round(d / 10000 * 10) / 10) + "만원";
+  return (Math.round(d / 1000 * 10) / 10) + "천원";
+}
+function _mfdFmtN(v) { if (!v || isNaN(v)) return "-"; return Math.round(v).toLocaleString("ko-KR"); }
+function _mfdPct(a, b) { if (!b || !a) return null; return ((a - b) / b * 100).toFixed(1); }
+function _mfdDiffEl(a, b) {
+  const d = _mfdPct(a, b);
+  if (d === null) return '<span class="mfd-mdi mfd-fl">-</span>';
+  const up = parseFloat(d) >= 0;
+  return `<span class="mfd-mdi ${up ? "mfd-up" : "mfd-dn"}">${up ? "&#x25B2;" : "&#x25BC;"}${Math.abs(d)}%</span>`;
+}
+function _mfdTag(l, on) { return `<span class="mfd-tag ${on ? "mfd-ton" : "mfd-toff"}">${on ? "&#x2713;" : "&#x2013;"} ${l}</span>`; }
+// 월별 맵 집계 (기존 대시보드와 동일 정의: 최근 3개월=보유 최신 3개 키 중 0 초과 평균)
+function _mfdR3(map, field) {
+  const keys = Object.keys(map).sort().slice(-3);
+  let s = 0, c = 0;
+  keys.forEach(k => { const v = field ? (map[k][field] || 0) : map[k]; if (v > 0) { s += v; c++; } });
+  return c ? s / c : 0;
+}
+function _mfdYrAvg(map, year, field) {
+  let s = 0, c = 0;
+  for (let m = 1; m <= 12; m++) {
+    const e = map[year + "-" + String(m).padStart(2, "0")];
+    if (!e) continue;
+    const v = field ? (e[field] || 0) : e;
+    if (v > 0) { s += v; c++; }
+  }
+  return c ? s / c : 0;
+}
+function _mfdYSum(map, year, field) {
+  let s = 0;
+  for (let m = 1; m <= 12; m++) {
+    const e = map[year + "-" + String(m).padStart(2, "0")];
+    if (e) s += field ? (e[field] || 0) : e;
+  }
+  return s;
+}
+const _MFD_CP = ["#C8102E", "#5DCAA5", "#EF9F27"], _MFD_CW = ["#185FA5", "#1D9E75", "#ba7517"];
+function _mfdLegend(id, items) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = items.map(i => `<span class="mfd-lgi"><span class="mfd-lgd" style="background:${i.c}"></span>${i.l}</span>`).join("");
+}
+function _mfdDraw(kind, mode) {
+  const isPos = kind === "p";
+  const cv = document.getElementById(isPos ? "mfdPC" : "mfdWC");
+  if (!cv) return;
+  const key = isPos ? "pC" : "wC";
+  if (_mfd[key]) { _mfd[key].destroy(); _mfd[key] = null; }
+  const map = isPos ? _mfd.pos : _mfd.water, field = isPos ? "total" : null;
+  const colors = isPos ? _MFD_CP : _MFD_CW, lgId = isPos ? "mfdPLg" : "mfdWLg";
+  if (mode === "y") {
+    const vals = _mfd.yrs.map(y => Math.round(_mfdYSum(map, y, field) / 10000));
+    _mfd[key] = new MfdChart(cv, { type: "bar", data: { labels: _mfd.yrs.map(String), datasets: [{ data: vals,
+      backgroundColor: _mfd.yrs.map((_, i) => colors[i] + "cc"), borderColor: _mfd.yrs.map((_, i) => colors[i]), borderWidth: 1.5 }] } });
+    _mfdLegend(lgId, _mfd.yrs.map((y, i) => ({ l: y + "년", c: colors[i] })));
+  } else {
+    const yr = parseInt(mode), labels = [], vals = [];
+    for (let m = 1; m <= 12; m++) {
+      const e = map[yr + "-" + String(m).padStart(2, "0")];
+      const v = e ? (field ? (e[field] || 0) : e) : 0;
+      if (v > 0) { labels.push(m + "월"); vals.push(Math.round(v / 10000)); }
+    }
+    if (!vals.length) { document.getElementById(lgId).innerHTML = '<span style="font-size:12px;color:var(--th)">데이터 없음</span>'; return; }
+    _mfd[key] = new MfdChart(cv, { type: "line", data: { labels, datasets: [{ data: vals, borderColor: colors[0], backgroundColor: colors[0] + "22", borderWidth: 2, pointRadius: 3, fill: true, tension: .3 }] } });
+    _mfdLegend(lgId, [{ l: yr + "년 월별", c: colors[0] }]);
+  }
+}
+function _mfdBindToggle(btnId, areaId, kind) {
+  const btn = document.getElementById(btnId), area = document.getElementById(areaId);
+  if (!btn || !area) return;
+  const toggle = () => {
+    const open = area.style.display === "block";
+    area.style.display = open ? "none" : "block";
+    btn.innerHTML = open ? "&#x1F4CA; 펼치기" : "&#x25B2; 접기";
+    if (!open) setTimeout(() => _mfdDraw(kind, "y"), 50);
+  };
+  btn.addEventListener("click", toggle);
+  btn.addEventListener("touchend", e => { e.preventDefault(); toggle(); });
+}
+
+async function renderMobileDash(root) {
+  if (!_MFD_ROLES.includes(_authRole)) { alert("이용권한이 없습니다"); go("homeReport"); return; }
+  if (_mfd.pC) { _mfd.pC.destroy(); _mfd.pC = null; }
+  if (_mfd.wC) { _mfd.wC.destroy(); _mfd.wC = null; }
+  root.innerHTML = `
+  <div id="mfdRoot">
+    <div class="mfd-hd">
+      <div class="mfd-hd-top">
+        <button class="mfd-back" onclick="go('homeReport')" aria-label="뒤로">&#x2190;</button>
+        <span class="mfd-logo">&#x1F354; 가맹점 대시보드</span><span class="mfd-dtlbl" id="mfdDt"></span>
+      </div>
+      <div class="mfd-sw">
+        <span class="mfd-sico">&#x1F50D;</span>
+        <input class="mfd-si" id="mfdSI" type="text" placeholder="매장명 검색 (예: 목동, 강남)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button class="mfd-scl" id="mfdSCL">&#x2715;</button>
+        <div class="mfd-sbx" id="mfdSB"></div>
+      </div>
+    </div>
+    <div class="mfd-home" id="mfdHV">
+      <div class="mfd-hico">&#x1F4CB;</div>
+      <div class="mfd-htit">매장명으로 검색하세요</div>
+      <div class="mfd-hdesc">예: &ldquo;목동&rdquo; &#x2192; 목동점...<br>&ldquo;강남&rdquo; &#x2192; 강남역점...</div>
+      <div class="mfd-hmeta" id="mfdMeta">매장 목록 불러오는 중...</div>
+    </div>
+    <div class="mfd-res" id="mfdRV"></div>
+  </div>`;
+  const SI = document.getElementById("mfdSI"), SB = document.getElementById("mfdSB"), SCL = document.getElementById("mfdSCL");
+  const clearSrch = () => {
+    SI.value = ""; SCL.style.display = "none"; SB.style.display = "none";
+    document.getElementById("mfdHV").style.display = "";
+    document.getElementById("mfdRV").style.display = "none";
+  };
+  const sug = q => {
+    if (!q) { SB.style.display = "none"; return; }
+    const lower = q.toLowerCase(), matches = [];
+    for (const s of _mfd.stores) {
+      if (!s.name) continue;
+      if (s.name.indexOf(q) >= 0 || s.name.toLowerCase().indexOf(lower) >= 0) { matches.push(s); if (matches.length >= 15) break; }
+    }
+    if (!matches.length) { SB.style.display = "none"; return; }
+    SB.innerHTML = matches.map(m => `<div class="mfd-sitem" data-c="${escapeHtml(m.code)}"><div class="mfd-sn">${escapeHtml(m.name)}</div><div class="mfd-sm">${escapeHtml((m.team || "") + (m.sv ? " · AC " + m.sv : ""))}</div></div>`).join("");
+    SB.querySelectorAll(".mfd-sitem").forEach(el => {
+      const doSel = () => {
+        const inf = _mfd.byCode.get(el.dataset.c);
+        SI.value = inf ? inf.name : el.dataset.c;
+        SB.style.display = "none";
+        _mfdShow(el.dataset.c);
+      };
+      el.addEventListener("click", doSel);
+      el.addEventListener("touchend", e => { e.preventDefault(); doSel(); });
+    });
+    SB.style.display = "block";
+  };
+  const onInput = () => {
+    const q = SI.value.trim();
+    SCL.style.display = q ? "block" : "none";
+    clearTimeout(_mfd.tmr);
+    _mfd.tmr = setTimeout(() => sug(q), 130);
+  };
+  SI.addEventListener("input", onInput);
+  SI.addEventListener("keyup", onInput);
+  SI.addEventListener("compositionend", onInput);
+  SI.addEventListener("focus", () => { const q = SI.value.trim(); if (q) sug(q); });
+  SCL.addEventListener("click", clearSrch);
+  SCL.addEventListener("touchend", e => { e.preventDefault(); clearSrch(); });
+  SI.addEventListener("keydown", e => {
+    const items = SB.querySelectorAll(".mfd-sitem"), act = SB.querySelector(".mfd-sitem.mfd-act");
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!act) { if (items[0]) items[0].classList.add("mfd-act"); }
+      else { act.classList.remove("mfd-act"); (act.nextElementSibling || items[0]).classList.add("mfd-act"); }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!act) { if (items[items.length - 1]) items[items.length - 1].classList.add("mfd-act"); }
+      else { act.classList.remove("mfd-act"); (act.previousElementSibling || items[items.length - 1]).classList.add("mfd-act"); }
+    } else if (e.key === "Enter") {
+      const a = SB.querySelector(".mfd-sitem.mfd-act") || items[0]; if (a) a.click();
+    } else if (e.key === "Escape") SB.style.display = "none";
+  });
+  try {
+    const stores = await getActiveStoreData();
+    _mfd.stores = stores;
+    _mfd.byCode = new Map(stores.map(s => [s.code, s]));
+    const meta = document.getElementById("mfdMeta");
+    if (meta) meta.textContent = `${stores.length}개 매장`;
+  } catch (e) {
+    const meta = document.getElementById("mfdMeta");
+    if (meta) meta.textContent = "매장 목록을 불러오지 못했습니다: " + (e.message || e);
+  }
+}
+
+async function _mfdShow(code) {
+  const info = _mfd.byCode.get(code);
+  if (!info) return;
+  const seq = ++_mfd.seq;
+  if (_mfd.pC) { _mfd.pC.destroy(); _mfd.pC = null; }
+  if (_mfd.wC) { _mfd.wC.destroy(); _mfd.wC = null; }
+  const rv = document.getElementById("mfdRV");
+  document.getElementById("mfdHV").style.display = "none";
+  rv.style.display = "block";
+  rv.innerHTML = '<div class="mfd-nd">불러오는 중...</div>';
+  // 매출·물대·오픈일: store_reports(양도양수 구코드 병합, SCV 기준 보정 적용) / 오일·내용증명·방문: store_dash
+  const [rep, dashRes] = await Promise.all([
+    _fetchReportData(code).catch(() => null),
+    getDoc(doc(db, "store_dash", code)).then(s => ({ ok: true, data: s.exists() ? s.data() : null })).catch(e => ({ ok: false, err: e })),
+  ]);
+  if (seq !== _mfd.seq) return; // 그 사이 다른 매장을 선택함
+  const dash = dashRes.ok ? dashRes.data : null;
+  // 기존 대시보드와 같은 형태로 변환 (매출 0 이하 월은 제외)
+  const pos = {}, water = {};
+  Object.entries(rep?.pos_sales || {}).forEach(([ym, m]) => {
+    const t = Number(m?.["전체"]?.실매출액) || 0;
+    if (t <= 0) return;
+    pos[ym] = {
+      total: t,
+      dine: Number(m["내점"]?.실매출액) || 0, dineTC: Number(m["내점"]?.영수건수) || 0,
+      delivery: Number(m["배달"]?.실매출액) || 0, deliveryTC: Number(m["배달"]?.영수건수) || 0,
+      takeout: Number(m["포장"]?.실매출액) || 0, takeoutTC: Number(m["포장"]?.영수건수) || 0,
+    };
+  });
+  Object.entries(rep?.water_sales || {}).forEach(([ym, v]) => { const n = Number(v) || 0; if (n > 0) water[ym] = n; });
+  _mfd.code = code; _mfd.pos = pos; _mfd.water = water;
+  const allYm = [...Object.keys(pos), ...Object.keys(water)].sort();
+  const asOf = dash?.asOf || (Object.keys(pos).sort().pop() || "");
+  const ly = parseInt((asOf || allYm[allYm.length - 1] || String(new Date().getFullYear())).slice(0, 4));
+  const yrs = [ly - 2, ly - 1, ly];
+  _mfd.yrs = yrs;
+  const lyr = yrs[2];
+  const dt = document.getElementById("mfdDt");
+  if (dt && asOf) dt.textContent = asOf.slice(0, 4) + "." + asOf.slice(5, 7) + " 기준";
+
+  const rp = _mfdR3(pos, "total"), rw = _mfdR3(water, null);
+  const rd = _mfdR3(pos, "dine"), rdlv = _mfdR3(pos, "delivery"), rto = _mfdR3(pos, "takeout");
+  const rdTC = _mfdR3(pos, "dineTC"), rdlvTC = _mfdR3(pos, "deliveryTC"), rtoTC = _mfdR3(pos, "takeoutTC");
+  const chTotal = rd + rdlv + rto;
+  const chPct = v => (!chTotal || !v) ? "-" : (v / chTotal * 100).toFixed(1) + "%";
+  const cyP = _mfdYrAvg(pos, lyr, "total"), pyP = _mfdYrAvg(pos, yrs[1], "total");
+  const cyW = _mfdYrAvg(water, lyr, null), pyW = _mfdYrAvg(water, yrs[1], null);
+
+  const oilD = dash?.oil || null;
+  const fc = oilD && oilD.grade ? String(oilD.grade).charAt(0) : "";
+  const ogc = ({ "1": "g1", "2": "g2", "3": "g3", "정": "gn", "제": "ge" })[fc] || "gn";
+  const openDate = rep?.open_date || "", firstOpen = rep?.first_open_date || "";
+  const transferred = !!(openDate && firstOpen && openDate !== firstOpen);
+  const hasOldCodes = getStoreCodeChain(code).length > 1;
+  const txBadge = transferred ? '<span class="mfd-bg mfd-bw">&#x1F504; 양도양수</span>'
+    : hasOldCodes ? '<span class="mfd-bg mfd-bw">&#x1F504; 양도양수 인계</span>' : "";
+  const tBg = info.team ? `<span class="mfd-bg mfd-bgg">${escapeHtml(info.team)}</span>` : "";
+  const aBg = info.sv ? `<span class="mfd-bg mfd-bgg">AC ${escapeHtml(info.sv)}</span>` : "";
+  let dateRows = '<div class="mfd-sdates">';
+  if (openDate && openDate === firstOpen) {
+    dateRows += `<div class="mfd-sdr"><span class="mfd-sdl">오픈일&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="mfd-sdv">${escapeHtml(openDate)}</span></div>`;
+  } else {
+    if (openDate) dateRows += `<div class="mfd-sdr"><span class="mfd-sdl">현재점 오픈</span><span class="mfd-sdv">${escapeHtml(openDate)}</span></div>`;
+    if (firstOpen) dateRows += `<div class="mfd-sdr"><span class="mfd-sdl">최초 오픈&nbsp;&nbsp;&nbsp;</span><span class="mfd-sdv">${escapeHtml(firstOpen)}</span></div>`;
+  }
+  dateRows += "</div>";
+  const mkTabs = cid => '<div class="mfd-tabs">' + ["y"].concat(yrs.map(String)).map((m, i) =>
+    `<button class="mfd-tb${i === 0 ? " mfd-on" : ""}" data-c="${cid}" data-m="${m}">${i === 0 ? "연도별" : m}</button>`).join("") + "</div>";
+
+  const ndFail = '<div class="mfd-nd">데이터를 불러오지 못했습니다</div>';
+  const vD = dash?.visit || null;
+  const visitHtml = !dashRes.ok ? ndFail : vD
+    ? `<div class="mfd-vbox"><div class="mfd-vdate">${escapeHtml(vD.date)}</div><div class="mfd-vmeta">${escapeHtml(vD.visitor)} · ${escapeHtml(vD.place)}</div></div>`
+    : '<div class="mfd-nd">방문 이력 없음</div>';
+  const certList = Array.isArray(dash?.certs) ? dash.certs : [];
+  const certYear = asOf ? asOf.slice(0, 4) + "년" : "";
+  const certHtml = !dashRes.ok ? ndFail : certList.length
+    ? '<div class="mfd-clist">' + certList.map(c =>
+        '<div class="mfd-citem">' + (c.cdate ? `<div style="font-size:11px;color:var(--th);margin-bottom:4px">적발일 ${escapeHtml(c.cdate)}</div>` : "")
+        + `<div class="mfd-ctitle">${escapeHtml(c.ctitle)}</div>` + (c.cdetail ? `<div class="mfd-cdetail">${escapeHtml(c.cdetail)}</div>` : "") + "</div>").join("") + "</div>"
+    : `<div class="mfd-nd">${certYear ? certYear + " " : ""}내용증명 없음</div>`;
+  const oilHtml = !dashRes.ok ? ndFail : oilD
+    ? `<div class="mfd-obox"><div class="mfd-og mfd-${ogc}">${escapeHtml(oilD.grade)}</div><div class="mfd-oi"><div class="mfd-ol">개선현황</div><div class="mfd-os">${escapeHtml(oilD.status)}</div></div></div>`
+    : '<div class="mfd-nd">오일사입 분석 대상 아님</div>';
+  const hasPos = Object.keys(pos).length > 0;
+  const posBody = '<div class="mfd-mg">'
+    + `<div class="mfd-mc"><div class="mfd-ml">최근 3개월<br>월평균</div><div class="mfd-mv">${_mfdFmt(rp)}</div></div>`
+    + `<div class="mfd-mc"><div class="mfd-ml">${lyr}년<br>월평균</div><div class="mfd-mv">${_mfdFmt(cyP)}</div>` + (pyP ? "<div>" + _mfdDiffEl(cyP, pyP) + "</div>" : '<div class="mfd-mdi mfd-fl">-</div>') + "</div></div>"
+    + '<div class="mfd-divl"></div><div class="mfd-ssub">최근 3개월 채널별 일평균 (&#xF7;30)</div><div class="mfd-chg">'
+    + `<div class="mfd-chc"><div class="mfd-chl">내점</div><div class="mfd-cpct">${chPct(rd)}</div><div class="mfd-chv">${_mfdFmtDay(rd)}</div><div class="mfd-chs">TC ${_mfdFmtN(rdTC / 30)}</div></div>`
+    + `<div class="mfd-chc"><div class="mfd-chl">배달</div><div class="mfd-cpct">${chPct(rdlv)}</div><div class="mfd-chv">${_mfdFmtDay(rdlv)}</div><div class="mfd-chs">TC ${_mfdFmtN(rdlvTC / 30)}</div></div>`
+    + `<div class="mfd-chc"><div class="mfd-chl">포장</div><div class="mfd-cpct">${chPct(rto)}</div><div class="mfd-chv">${_mfdFmtDay(rto)}</div><div class="mfd-chs">TC ${_mfdFmtN(rtoTC / 30)}</div></div>`
+    + '</div><div class="mfd-divl"></div><button class="mfd-ctoggle" id="mfdPTog">&#x1F4CA; 펼치기</button>'
+    + `<div class="mfd-carea" id="mfdPArea">${mkTabs("p")}<div class="mfd-lgrow" id="mfdPLg"></div><div class="mfd-cw"><canvas id="mfdPC"></canvas></div></div>`;
+  rv.innerHTML =
+    `<div class="mfd-shd"><div class="mfd-shw"><div class="mfd-av">${escapeHtml(info.name.slice(0, 2))}</div>`
+    + `<div style="flex:1;min-width:0"><div class="mfd-snm">${escapeHtml(info.name)}</div><div class="mfd-scode">${escapeHtml(code)}</div>${dateRows}`
+    + `<div class="mfd-bgs">${txBadge}${tBg}${aBg}</div></div></div></div>`
+    + `<div class="mfd-sec"><div class="mfd-sti">&#x1F355; 취급 제품</div><div class="mfd-tags">${_mfdTag("비프", !!info.beef)}${_mfdTag("피자", !!info.pizza)}${_mfdTag("스파쿨", !!info.spacool)}</div></div>`
+    + `<div class="mfd-sec"><div class="mfd-sti">&#x1F4CD; 매장방문현황 (AC/팀장 최근)</div>${visitHtml}</div>`
+    + `<div class="mfd-sec"><div class="mfd-sti">&#x1F4DC; 내용증명현황${certYear ? " (" + certYear + ")" : ""}</div>${certHtml}</div>`
+    + `<div class="mfd-sec"><div class="mfd-sti">&#x1F6E2; 오일 사입 현황</div>${oilHtml}</div>`
+    + `<div class="mfd-sec"><div class="mfd-sti">&#x1F4C8; POS 매출 <span style="font-size:11px;font-weight:400;color:var(--th)">(부가세 제외 실매출)</span></div>${posBody}</div>`
+    + `<div class="mfd-sec"><div class="mfd-sti">&#x1F4A7; 물대 매출 <span style="font-size:11px;font-weight:400;color:var(--th)">*음료대 제외</span></div>`
+    + '<div class="mfd-mg">'
+    + `<div class="mfd-mc"><div class="mfd-ml">최근 3개월<br>월평균</div><div class="mfd-mv">${_mfdFmt(rw)}</div></div>`
+    + `<div class="mfd-mc"><div class="mfd-ml">${lyr}년<br>월평균</div><div class="mfd-mv">${_mfdFmt(cyW)}</div>` + (pyW ? "<div>" + _mfdDiffEl(cyW, pyW) + "</div>" : '<div class="mfd-mdi mfd-fl">-</div>') + "</div></div>"
+    + '<button class="mfd-ctoggle" id="mfdWTog">&#x1F4CA; 펼치기</button>'
+    + `<div class="mfd-carea" id="mfdWArea">${mkTabs("w")}<div class="mfd-lgrow" id="mfdWLg"></div><div class="mfd-cw"><canvas id="mfdWC"></canvas></div></div></div>`;
+  rv.querySelectorAll(".mfd-tb").forEach(b => b.addEventListener("click", () => {
+    b.closest(".mfd-tabs").querySelectorAll(".mfd-tb").forEach(x => x.classList.remove("mfd-on"));
+    b.classList.add("mfd-on");
+    _mfdDraw(b.dataset.c, b.dataset.m);
+  }));
+  _mfdBindToggle("mfdPTog", "mfdPArea", "p");
+  _mfdBindToggle("mfdWTog", "mfdWArea", "w");
+}
+
 function renderHomeReport(root) {
   root.innerHTML = `
     <div class="hero-np" style="padding-bottom:16px;position:relative">
@@ -1197,6 +1507,7 @@ function renderHomeReport(root) {
     <div class="card-section">
       <button class="btn-primary-np" onclick="go('reportStoreSel')">🔍 매장 선택</button>
       <button class="btn-ghost" onclick="openTeamSales()">📊 팀별 매출현황 <span style="font-size:11px;color:#718096;margin-left:4px">(TL 이상)</span></button>
+      <button class="btn-ghost" onclick="openMobileDash()">📱 모바일 가맹점 대시보드 <span style="font-size:11px;color:#718096;margin-left:4px">(GL·ADMIN)</span></button>
       ${_authRole === "admin" ? `<button class="btn-ghost" onclick="go('photoSetting')" style="color:#6B46C1;border-color:#D6BCFA">⚙️ 리포트 데이터 관리</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
@@ -6200,6 +6511,79 @@ async function uploadReportData(file, onProgress) {
     throw new Error(`${failedBatchIndexes.length}개 배치 전송 실패(전체 ${batches.length}개 중). 같은 파일을 다시 업로드하면 실패한 부분만 자동으로 채워집니다.\n[원인] ${[...failReasons].join(" / ")}`);
   }
 
+  // ── 모바일 가맹점 대시보드용 데이터(오일사입/내용증명/매장방문) → store_dash/{매장코드} ──
+  // 컨설팅 리포트 저장과 완전히 분리(try/catch)되어, 여기서 실패해도 위 업로드 결과에는 영향이 없음.
+  // 시트가 있는 항목만 갱신(없는 시트의 기존 값은 유지), 있는 시트는 전체 매장을 빈 값 포함해서 덮어써 지난 데이터가 남지 않게 함.
+  window._lastDashWarning = "";
+  try {
+    const sheetOf = names => { const n = names.find(x => wb.Sheets[x]); return n ? wb.Sheets[n] : null; };
+    const wsOil = sheetOf(["오일사입"]);
+    const wsCert = sheetOf(["내용증명"]);
+    const wsVisit = sheetOf(["매장방문", "매장방문현황"]);
+    if (!wsOil && !wsCert && !wsVisit) {
+      window._lastDashWarning = "오일사입/내용증명/매장방문 시트가 없어 가맹점 대시보드 데이터는 갱신하지 않았습니다.";
+    } else {
+      const txt = v => v == null ? "" : (typeof v === "number" ? String(v) : String(v).replace(/\r\n?/g, "\n").trim());
+      const oilMap = new Map(), certMap = new Map(), visitMap = new Map();
+      if (wsOil) { // 3번째 줄부터: 코드(0) 팀 담당 개선필요여부(4)=등급 개선현황(5)=상태
+        XLSX.utils.sheet_to_json(wsOil, { header: 1, defval: null }).slice(2).forEach(r => {
+          if (!isEcode(r[0])) return;
+          const grade = txt(r[4]);
+          if (grade) oilMap.set(resolveCode(String(r[0]).trim()), { grade, status: txt(r[5]) });
+        });
+      }
+      if (wsCert) { // 2번째 줄부터: 코드2(3), 적발일(6), 발생연도(7), 내용증명 발송 내용(12), 세부내용(13) — 가장 최근 발생연도 건만
+        const rows = XLSX.utils.sheet_to_json(wsCert, { header: 1, defval: null }).slice(1).filter(r => /^[A-Z]\d/.test(String(r[3] || "").trim()));
+        const maxYear = Math.max(0, ...rows.map(r => Number(r[7]) || 0));
+        rows.forEach(r => {
+          if (maxYear && Number(r[7]) && Number(r[7]) !== maxYear) return;
+          const code = resolveCode(String(r[3]).trim());
+          if (!certMap.has(code)) certMap.set(code, []);
+          certMap.get(code).push({
+            cdate: typeof r[6] === "number" ? (excelSerialToYMD(r[6]) || "") : txt(r[6]).slice(0, 10),
+            ctitle: txt(r[12]), cdetail: txt(r[13]),
+          });
+        });
+      }
+      if (wsVisit) { // 4번째 줄부터: 이름(0) 날짜(4, "2026.10.01(목)") 근무지(6) 코드(7) 방문여부(15="O") — 매장별 가장 최근 1건
+        XLSX.utils.sheet_to_json(wsVisit, { header: 1, defval: null }).slice(3).forEach(r => {
+          const rawCode = String(r[7] || "").trim();
+          if (!/^E\d/.test(rawCode) || String(r[15] || "").trim() !== "O") return;
+          const m = String(r[4] || "").match(/^(\d{4})\.(\d{2})\.(\d{2})\((.)\)/);
+          if (!m) return;
+          const dn = Number(m[1] + m[2] + m[3]), code = resolveCode(rawCode), prev = visitMap.get(code);
+          if (!prev || dn > prev.dn) visitMap.set(code, { dn, date: `${m[1]}-${m[2]}-${m[3]}(${m[4]})`, visitor: txt(r[0]), place: txt(r[6]) });
+        });
+      }
+      let asOf = ""; // 매출 데이터가 있는 가장 최근 월(대시보드 기준월 표시용)
+      entries.forEach(([, rep]) => Object.keys(rep.pos_sales || {}).forEach(ym => {
+        if (ym > asOf && Number(rep.pos_sales[ym]?.["전체"]?.실매출액) > 0) asOf = ym;
+      }));
+      const dashDocs = [...activeStoreCodes].map(code => {
+        const p = { code, asOf, updatedAt: new Date() };
+        if (wsOil) p.oil = oilMap.get(code) || null;
+        if (wsCert) p.certs = certMap.get(code) || [];
+        if (wsVisit) p.visit = visitMap.get(code) || null;
+        return p;
+      });
+      const dashBatches = [];
+      for (let i = 0; i < dashDocs.length; i += 200) {
+        const b = writeBatch(db);
+        dashDocs.slice(i, i + 200).forEach(p => b.set(doc(db, "store_dash", p.code), p, { merge: true }));
+        dashBatches.push(b);
+      }
+      let dashFail = 0;
+      const dashReasons = new Set();
+      for (let i = 0; i < dashBatches.length; i += 3) {
+        const res = await Promise.allSettled(dashBatches.slice(i, i + 3).map(b => b.commit()));
+        res.forEach(r => { if (r.status === "rejected") { dashFail++; dashReasons.add(`${r.reason?.code || ""} ${r.reason?.message || r.reason || ""}`.trim().slice(0, 140)); } });
+      }
+      if (dashFail > 0) window._lastDashWarning = `가맹점 대시보드 데이터 ${dashFail}개 배치 저장 실패 (컨설팅 리포트 업로드는 정상 완료). [원인] ${[...dashReasons].join(" / ")}`;
+    }
+  } catch (e) {
+    window._lastDashWarning = "가맹점 대시보드 데이터 처리 중 오류(컨설팅 리포트 업로드는 정상 완료): " + (e.message || e);
+  }
+
   return entries.length;
 }
 
@@ -6222,7 +6606,7 @@ async function handleReportDataUpload(input) {
     });
     if (text) text.textContent = `완료! ${count}개 매장 리포트 데이터 반영됨`;
     setTimeout(() => { if (progress) progress.style.display = "none"; }, 2500);
-    alert(`✅ 매장 컨설팅 리포트 데이터 업로드 완료!\n${count}개 매장이 반영되었습니다.` + (window._lastAggWarning ? `\n\n⚠️ ${window._lastAggWarning}` : "\n지역별·팀별 집계도 함께 저장되었습니다."));
+    alert(`✅ 매장 컨설팅 리포트 데이터 업로드 완료!\n${count}개 매장이 반영되었습니다.` + (window._lastAggWarning ? `\n\n⚠️ ${window._lastAggWarning}` : "\n지역별·팀별 집계도 함께 저장되었습니다.") + (window._lastDashWarning ? `\n\n⚠️ ${window._lastDashWarning}` : "\n가맹점 대시보드 데이터도 함께 저장되었습니다."));
   } catch(e) {
     if (text) text.textContent = `오류: ${e.message}`;
     alert(`업로드 실패: ${e.message}`);
@@ -17531,7 +17915,7 @@ Object.assign(window, {
   setHdj2Answer, handleHdj2Image, removeHdj2Image, updateHdj2QMemo, updateHdj2Memo, submitFormHdj2, downloadExcelHdj2,
   fetchRecordsHdj2, setRecHdj2Filter, viewRecordHdj2, setDashHdj2Filter, viewStoreHistoryHdj2, approveHdj2Record, rejectHdj2Record, searchDashHdj2, startInspectionForStoreHdj2,
   toggleHdj2Row, openHdj2Photo,
-  openTeamSales, rtSetScope, rtSetMonth, rtSetTab, rtSetSort, rtSearch, rtSelectStore, rtOpenStore, rtPickTeam, rtDownloadExcel, changeNearbyMonth,
+  openMobileDash, openTeamSales, rtSetScope, rtSetMonth, rtSetTab, rtSetSort, rtSearch, rtSelectStore, rtOpenStore, rtPickTeam, rtDownloadExcel, changeNearbyMonth,
 });
 // 앱 시작 시 세션 복원
 (async () => {
@@ -17779,6 +18163,100 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .hdj2-menu{font-size:12px;line-height:1.3}
 .hdj2-bdg{display:inline-block;font-size:10px;font-weight:700;border-radius:6px;padding:1px 6px;margin-top:2px}
 .hdj2-bdg.g{background:#C6F6D5;color:#22543D}.hdj2-bdg.r{background:#FED7D7;color:#822727}
+
+/* ── 모바일 가맹점 대시보드 (mfd 접두사로 분리) ── */
+#mfdRoot *{box-sizing:border-box;margin:0;padding:0}
+#mfdRoot{--red:#C8102E;--rl:#fdf0f2;--tx:#1a1a1a;--ts:#6b6b6b;--th:#999;--bg:#f5f5f3;--sf:#fff;--bd:#e5e5e2;--sg:#1d9e75;--sb:#e1f5ee;--wn:#ba7517;--wb:#faeeda;--dg:#a32d2d;--db:#fcebeb;--in:#185FA5;}
+#mfdRoot{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo",sans-serif;background:var(--bg);color:var(--tx);font-size:15px;min-height:100vh;}
+#mfdRoot .mfd-hd{background:var(--red);color:#fff;padding:13px 16px 12px;position:sticky;top:0;z-index:100;}
+#mfdRoot .mfd-hd-top{display:flex;align-items:center;margin-bottom:10px;}
+#mfdRoot .mfd-logo{font-weight:700;font-size:16px;}
+#mfdRoot .mfd-dtlbl{font-size:12px;opacity:.75;margin-left:auto;}
+#mfdRoot .mfd-sw{position:relative;}
+#mfdRoot .mfd-si{width:100%;padding:9px 36px 9px 38px;border-radius:8px;border:none;background:rgba(255,255,255,.2);color:#fff;font-size:16px;outline:none;-webkit-appearance:none;}
+#mfdRoot .mfd-si::placeholder{color:rgba(255,255,255,.6);}
+#mfdRoot .mfd-si:focus{background:rgba(255,255,255,.3);}
+#mfdRoot .mfd-sico{position:absolute;left:11px;top:50%;transform:translateY(-50%);opacity:.7;font-size:15px;pointer-events:none;}
+#mfdRoot .mfd-scl{position:absolute;right:9px;top:50%;transform:translateY(-50%);background:none;border:none;color:rgba(255,255,255,.75);font-size:18px;cursor:pointer;display:none;line-height:1;padding:4px 6px;-webkit-tap-highlight-color:transparent;}
+#mfdRoot .mfd-sbx{position:absolute;top:100%;left:0;right:0;background:#fff;border-radius:0 0 12px 12px;box-shadow:0 8px 28px rgba(0,0,0,.14);z-index:200;max-height:300px;overflow-y:auto;display:none;-webkit-overflow-scrolling:touch;}
+#mfdRoot .mfd-sitem{padding:12px 16px;cursor:pointer;border-bottom:.5px solid var(--bd);-webkit-tap-highlight-color:transparent;}
+#mfdRoot .mfd-sitem:last-child{border-bottom:none;}
+#mfdRoot .mfd-sitem:hover,#mfdRoot .mfd-sitem.mfd-act{background:var(--rl);}
+#mfdRoot .mfd-sn{font-size:14px;font-weight:600;color:var(--tx);}
+#mfdRoot .mfd-sm{font-size:12px;color:var(--ts);margin-top:3px;}
+#mfdRoot .mfd-home{padding:40px 24px;text-align:center;color:var(--th);}
+#mfdRoot .mfd-hico{font-size:44px;margin-bottom:14px;opacity:.4;}
+#mfdRoot .mfd-htit{font-size:17px;font-weight:600;color:var(--ts);margin-bottom:8px;}
+#mfdRoot .mfd-hdesc{font-size:13px;line-height:1.75;}
+#mfdRoot .mfd-hmeta{font-size:11px;margin-top:16px;opacity:.55;}
+#mfdRoot .mfd-res{padding:0 13px 32px;display:none;}
+#mfdRoot .mfd-shd{background:var(--sf);border-radius:14px;border:.5px solid var(--bd);padding:16px 18px;margin-bottom:12px;}
+#mfdRoot .mfd-shw{display:flex;align-items:flex-start;gap:14px;}
+#mfdRoot .mfd-av{width:46px;height:46px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0;margin-top:1px;}
+#mfdRoot .mfd-snm{font-size:17px;font-weight:700;line-height:1.3;}
+#mfdRoot .mfd-scode{font-size:12px;color:var(--th);margin-top:3px;}
+#mfdRoot .mfd-sdates{margin-top:6px;display:flex;flex-direction:column;gap:3px;}
+#mfdRoot .mfd-sdr{display:flex;align-items:center;}
+#mfdRoot .mfd-sdl{font-size:12px;color:var(--th);min-width:80px;}
+#mfdRoot .mfd-sdv{font-size:12px;font-weight:600;color:var(--tx);}
+#mfdRoot .mfd-bgs{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px;}
+#mfdRoot .mfd-bg{display:inline-flex;align-items:center;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:500;}
+#mfdRoot .mfd-bw{background:var(--wb);color:var(--wn);}
+#mfdRoot .mfd-bgg{background:var(--bg);color:var(--ts);border:.5px solid var(--bd);}
+#mfdRoot .mfd-sec{background:var(--sf);border-radius:14px;border:.5px solid var(--bd);padding:15px 17px;margin-bottom:12px;}
+#mfdRoot .mfd-sti{font-size:13px;font-weight:500;color:var(--ts);margin-bottom:13px;}
+#mfdRoot .mfd-mg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px;}
+#mfdRoot .mfd-mc{background:var(--bg);border-radius:8px;padding:11px 9px;text-align:center;}
+#mfdRoot .mfd-ml{font-size:11px;color:var(--th);margin-bottom:4px;line-height:1.45;}
+#mfdRoot .mfd-mv{font-size:16px;font-weight:700;color:var(--tx);}
+#mfdRoot .mfd-mdi{font-size:11px;margin-top:3px;}
+#mfdRoot .mfd-up{color:var(--sg);}
+#mfdRoot .mfd-dn{color:var(--dg);}
+#mfdRoot .mfd-fl{color:var(--th);}
+#mfdRoot .mfd-chg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:12px;}
+#mfdRoot .mfd-chc{background:var(--bg);border-radius:8px;padding:9px 6px;text-align:center;}
+#mfdRoot .mfd-chl{font-size:11px;color:var(--th);margin-bottom:3px;}
+#mfdRoot .mfd-chv{font-size:13px;font-weight:700;color:var(--tx);}
+#mfdRoot .mfd-chs{font-size:10px;color:var(--th);margin-top:2px;}
+#mfdRoot .mfd-cpct{font-size:12px;font-weight:600;color:var(--red);margin-bottom:2px;}
+#mfdRoot .mfd-divl{height:.5px;background:var(--bd);margin:10px 0;}
+#mfdRoot .mfd-ssub{font-size:12px;color:var(--th);margin-bottom:7px;}
+#mfdRoot .mfd-ctoggle{width:100%;padding:9px;background:var(--bg);border:none;border-radius:8px;font-size:13px;color:var(--in);cursor:pointer;font-weight:500;-webkit-tap-highlight-color:transparent;}
+#mfdRoot .mfd-ctoggle:hover{background:#deeaf7;}
+#mfdRoot .mfd-carea{display:none;margin-top:12px;}
+#mfdRoot .mfd-tabs{display:flex;gap:2px;background:var(--bg);border-radius:8px;padding:3px;margin-bottom:12px;}
+#mfdRoot .mfd-tb{flex:1;padding:7px 3px;border:none;background:none;border-radius:6px;font-size:12px;color:var(--ts);cursor:pointer;font-weight:500;-webkit-tap-highlight-color:transparent;}
+#mfdRoot .mfd-tb.mfd-on{background:var(--sf);color:var(--red);box-shadow:0 1px 3px rgba(0,0,0,.08);}
+#mfdRoot .mfd-lgrow{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;font-size:12px;color:var(--ts);}
+#mfdRoot .mfd-lgi{display:flex;align-items:center;gap:5px;}
+#mfdRoot .mfd-lgd{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+#mfdRoot .mfd-cw{position:relative;width:100%;height:195px;overflow:hidden;}
+#mfdRoot .mfd-tags{display:flex;gap:7px;flex-wrap:wrap;}
+#mfdRoot .mfd-tag{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:20px;font-size:13px;font-weight:500;}
+#mfdRoot .mfd-ton{background:var(--sb);color:var(--sg);}
+#mfdRoot .mfd-toff{background:var(--bg);color:var(--th);border:.5px solid var(--bd);}
+#mfdRoot .mfd-obox{display:flex;align-items:center;gap:14px;padding:13px 15px;border-radius:10px;background:var(--bg);}
+#mfdRoot .mfd-og{font-size:19px;font-weight:700;min-width:56px;}
+#mfdRoot .mfd-g1{color:var(--dg);}
+#mfdRoot .mfd-g2{color:var(--wn);}
+#mfdRoot .mfd-g3{color:var(--in);}
+#mfdRoot .mfd-gn{color:var(--sg);}
+#mfdRoot .mfd-ge{color:var(--th);}
+#mfdRoot .mfd-oi{display:flex;flex-direction:column;gap:3px;}
+#mfdRoot .mfd-ol{font-size:11px;color:var(--th);}
+#mfdRoot .mfd-os{font-size:14px;font-weight:600;color:var(--tx);}
+#mfdRoot .mfd-vbox{background:var(--bg);border-radius:10px;padding:13px 15px;}
+#mfdRoot .mfd-vdate{font-size:15px;font-weight:700;color:var(--tx);margin-bottom:4px;}
+#mfdRoot .mfd-vmeta{font-size:12px;color:var(--ts);}
+#mfdRoot .mfd-clist{display:flex;flex-direction:column;gap:8px;}
+#mfdRoot .mfd-citem{background:var(--bg);border-radius:8px;padding:11px 14px;border-left:3px solid var(--dg);}
+#mfdRoot .mfd-ctitle{font-size:13px;font-weight:600;color:var(--tx);margin-bottom:3px;}
+#mfdRoot .mfd-cdetail{font-size:12px;color:var(--ts);line-height:1.5;}
+#mfdRoot .mfd-nd{font-size:13px;color:var(--th);text-align:center;padding:14px 0;}
+#mfdRoot .mfd-selfpos{background:var(--db);border-radius:10px;padding:16px;text-align:center;}
+#mfdRoot .mfd-selfpos-lbl{font-size:13px;color:var(--in);font-weight:600;}
+#mfdRoot .mfd-back{background:rgba(255,255,255,.2);border:none;color:#fff;width:28px;height:28px;border-radius:50%;font-size:15px;cursor:pointer;margin-right:9px;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+
 </style>
 </head>
 <body><div id="app"></div></body>
