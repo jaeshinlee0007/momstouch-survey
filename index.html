@@ -794,6 +794,13 @@ function renderTopHub(root) {
           <span class="hub-card-title">매장 컨설팅 리포트<span style="font-size:10px;background:#6B46C1;color:white;padding:1px 6px;border-radius:8px;margin-left:6px">NEW</span></span>
         </span>
       </button>
+      <button class="hub-card" onclick="openMobileDash()">
+        <span class="hub-card-icon" style="background:#FFF5F5;color:#C8102E"><span style="font-size:16px">📱</span></span>
+        <span>
+          <span class="hub-card-title">모바일 가맹점 대시보드</span>
+          <span class="hub-card-sub" style="display:block">GL·ADMIN 전용</span>
+        </span>
+      </button>
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:36px;height:36px;border-radius:50%;background:#EBF8FF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#2B6CB0;flex-shrink:0;">
@@ -1288,14 +1295,14 @@ function _mfdBindToggle(btnId, areaId, kind) {
 }
 
 async function renderMobileDash(root) {
-  if (!_MFD_ROLES.includes(_authRole)) { alert("이용권한이 없습니다"); go("homeReport"); return; }
+  if (!_MFD_ROLES.includes(_authRole)) { alert("이용권한이 없습니다"); go("topHub"); return; }
   if (_mfd.pC) { _mfd.pC.destroy(); _mfd.pC = null; }
   if (_mfd.wC) { _mfd.wC.destroy(); _mfd.wC = null; }
   root.innerHTML = `
   <div id="mfdRoot">
     <div class="mfd-hd">
       <div class="mfd-hd-top">
-        <button class="mfd-back" onclick="go('homeReport')" aria-label="뒤로">&#x2190;</button>
+        <button class="mfd-back" onclick="go('topHub')" aria-label="뒤로">&#x2190;</button>
         <span class="mfd-logo">&#x1F354; 가맹점 대시보드</span><span class="mfd-dtlbl" id="mfdDt"></span>
       </div>
       <div class="mfd-sw">
@@ -1507,7 +1514,6 @@ function renderHomeReport(root) {
     <div class="card-section">
       <button class="btn-primary-np" onclick="go('reportStoreSel')">🔍 매장 선택</button>
       <button class="btn-ghost" onclick="openTeamSales()">📊 팀별 매출현황 <span style="font-size:11px;color:#718096;margin-left:4px">(TL 이상)</span></button>
-      <button class="btn-ghost" onclick="openMobileDash()">📱 모바일 가맹점 대시보드 <span style="font-size:11px;color:#718096;margin-left:4px">(GL·ADMIN)</span></button>
       ${_authRole === "admin" ? `<button class="btn-ghost" onclick="go('photoSetting')" style="color:#6B46C1;border-color:#D6BCFA">⚙️ 리포트 데이터 관리</button>` : ""}
       <div style="width:100%;padding:14px 16px;border-radius:var(--radius);border:1.5px solid var(--border);background:white;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;">
         <div style="display:flex;align-items:center;gap:10px;">
