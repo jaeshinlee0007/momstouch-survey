@@ -13,7 +13,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, memoryLocalCache, terminate, collection, addDoc, getDocs, getDoc, query, where, orderBy, updateDoc, deleteDoc, setDoc, doc, arrayUnion, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, memoryLocalCache, terminate, collection, addDoc, getDocs, getDoc, query, where, orderBy, updateDoc, deleteDoc, setDoc, doc, arrayUnion, writeBatch, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
@@ -939,6 +939,32 @@ function _paintNearby() {
       <tr><td style="padding:6px 2px">${label}</td><td style="text-align:right"><b>${_fmtWon(s.mine)}</b></td><td style="text-align:right">${_fmtWon(s.avg)}</td><td style="text-align:right">${_fmtWon(s.med)}</td></tr>
       <tr><td style="padding:2px 2px;color:#718096">평균 대비</td><td style="text-align:right">${_pctHtml(s.mine, s.avg)}</td><td></td><td></td></tr>
     </table>`;
+  // 영업지표 비교(영업일/일 평균 영업시간/일 평균 치킨·비프·피자 수량): 해당점 vs 인근 평균·중앙값 (본인 포함, 0/없음 제외)
+  const own = window._reportDetailData || {};
+  const hasOps = !!(mo.days && Object.keys(mo.days).length);
+  const opsRow = (label, map, fmt, kind) => {
+    const s = stat(map);
+    let mineTxt;
+    if (s.mine != null) mineTxt = fmt(s.mine);
+    else if (kind === "beef" && !own.beef_intro_date) mineTxt = "미취급";
+    else if (kind === "pizza" && !own.pizza_intro_date) mineTxt = "미취급";
+    else if (["chk", "beef", "pizza"].includes(kind) && s.total === 0) mineTxt = "업데이트 예정";
+    else mineTxt = "-";
+    const cell = v => v == null ? "-" : fmt(v);
+    const showPct = s.mine != null && s.avg != null;
+    return `
+    <div class="sec" style="font-size:12px;font-weight:700;margin:12px 0 2px;color:#718096">${label} (${_ymKo(n.ym)} 기준)</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr style="color:#718096;font-size:10.5px"><th style="text-align:left;padding:4px 2px;border-bottom:1px solid var(--border)"></th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">내 매장</th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">인근 평균</th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">인근 중앙값</th></tr>
+      <tr><td style="padding:6px 2px">${label}</td><td style="text-align:right"><b>${mineTxt}</b></td><td style="text-align:right">${cell(s.avg)}</td><td style="text-align:right">${cell(s.med)}</td></tr>
+      ${showPct ? `<tr><td style="padding:2px 2px;color:#718096">평균 대비</td><td style="text-align:right">${_pctHtml(s.mine, s.avg)}</td><td></td><td></td></tr>` : ""}
+    </table>`;
+  };
+  const fDay = v => `${Number(v).toFixed(1).replace(/\.0$/, "")}일`, fHr = v => `${Number(v).toFixed(1)}시간`, fQty = v => Number(v).toFixed(1) + "개";
+  const opsHtml = hasOps
+    ? opsRow("월 평균영업일", mo.days, fDay, "days") + opsRow("일 평균 영업시간", mo.dh, fHr, "dh")
+      + opsRow("일 평균 치킨", mo.chk, fQty, "chk") + opsRow("일 평균 비프", mo.bef, fQty, "beef") + opsRow("일 평균 피자", mo.piz, fQty, "pizza")
+    : "";
   const rankTxt = (s) => s.rank != null ? `${s.rank}위 <small style="font-size:11px;font-weight:500">/ ${s.total}개 중</small>` : `-`;
   el.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -959,6 +985,7 @@ function _paintNearby() {
       ${row("POS 실매출", pos)}
       ${row("물대", wat)}
       <div style="margin-top:8px"><span style="display:inline-block;font-size:11px;border-radius:6px;padding:1px 7px;background:#F7FAFC;border:1px solid var(--border);color:#718096">물대 순위 ${rankTxt(wat)}</span></div>
+      ${opsHtml}
     `;
 }
 
@@ -1452,12 +1479,9 @@ async function _mfdShow(code) {
   const tBg = info.team ? `<span class="mfd-bg mfd-bgg">${escapeHtml(info.team)}</span>` : "";
   const aBg = info.sv ? `<span class="mfd-bg mfd-bgg">AC ${escapeHtml(info.sv)}</span>` : "";
   let dateRows = '<div class="mfd-sdates">';
-  if (openDate && openDate === firstOpen) {
-    dateRows += `<div class="mfd-sdr"><span class="mfd-sdl">오픈일&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="mfd-sdv">${escapeHtml(openDate)}</span></div>`;
-  } else {
-    if (openDate) dateRows += `<div class="mfd-sdr"><span class="mfd-sdl">현재점 오픈</span><span class="mfd-sdv">${escapeHtml(openDate)}</span></div>`;
-    if (firstOpen) dateRows += `<div class="mfd-sdr"><span class="mfd-sdl">최초 오픈&nbsp;&nbsp;&nbsp;</span><span class="mfd-sdv">${escapeHtml(firstOpen)}</span></div>`;
-  }
+  // 최초 오픈일 / 현재점 오픈일을 항상 각각 표시 (동일해도 둘 다 노출)
+  dateRows += `<div class="mfd-sdr"><span class="mfd-sdl">최초 오픈&nbsp;&nbsp;&nbsp;</span><span class="mfd-sdv">${escapeHtml(firstOpen || "-")}</span></div>`;
+  dateRows += `<div class="mfd-sdr"><span class="mfd-sdl">현재점 오픈</span><span class="mfd-sdv">${escapeHtml(openDate || "-")}</span></div>`;
   dateRows += "</div>";
   const mkTabs = cid => '<div class="mfd-tabs">' + ["y"].concat(yrs.map(String)).map((m, i) =>
     `<button class="mfd-tb${i === 0 ? " mfd-on" : ""}" data-c="${cid}" data-m="${m}">${i === 0 ? "연도별" : m}</button>`).join("") + "</div>";
@@ -1477,6 +1501,17 @@ async function _mfdShow(code) {
   const oilHtml = !dashRes.ok ? ndFail : oilD
     ? `<div class="mfd-obox"><div class="mfd-og mfd-${ogc}">${escapeHtml(oilD.grade)}</div><div class="mfd-oi"><div class="mfd-ol">개선현황</div><div class="mfd-os">${escapeHtml(oilD.status)}</div></div></div>`
     : '<div class="mfd-nd">오일사입 분석 대상 아님</div>';
+  // 주요메뉴 판매현황 / 영업현황 (전월 기준, 컨설팅 리포트의 매장운영정보와 동일 계산)
+  const opsV = _opsView(rep || {});
+  const opsNote = opsV.ym ? `<span style="font-size:11px;font-weight:400;color:var(--th)">${opsV.ymKo} 기준</span>` : '<span style="font-size:11px;font-weight:400;color:var(--th)">전월 데이터 없음</span>';
+  const mval = v => { const num = /^\d/.test(v); return `<div class="mfd-chv"${num ? "" : ' style="font-size:12px"'}>${escapeHtml(v)}</div>`; };
+  const menuHtml = '<div class="mfd-chg">'
+    + `<div class="mfd-chc"><div class="mfd-chl">치킨</div>${mval(opsV.chicken)}<div class="mfd-chs">일 평균</div></div>`
+    + `<div class="mfd-chc"><div class="mfd-chl">비프</div>${mval(opsV.beef)}<div class="mfd-chs">일 평균</div></div>`
+    + `<div class="mfd-chc"><div class="mfd-chl">피자</div>${mval(opsV.pizza)}<div class="mfd-chs">일 평균</div></div></div>`;
+  const opsBody = '<div class="mfd-mg">'
+    + `<div class="mfd-mc"><div class="mfd-ml">월 평균<br>영업일</div><div class="mfd-mv">${escapeHtml(opsV.daysTxt)}</div></div>`
+    + `<div class="mfd-mc"><div class="mfd-ml">일 평균<br>영업시간</div><div class="mfd-mv">${escapeHtml(opsV.hrsTxt)}</div></div></div>`;
   const hasPos = Object.keys(pos).length > 0;
   const posBody = '<div class="mfd-mg">'
     + `<div class="mfd-mc"><div class="mfd-ml">최근 3개월<br>월평균</div><div class="mfd-mv">${_mfdFmt(rp)}</div></div>`
@@ -1491,7 +1526,9 @@ async function _mfdShow(code) {
     `<div class="mfd-shd"><div class="mfd-shw"><div class="mfd-av">${escapeHtml(info.name.slice(0, 2))}</div>`
     + `<div style="flex:1;min-width:0"><div class="mfd-snm">${escapeHtml(info.name)}</div><div class="mfd-scode">${escapeHtml(code)}</div>${dateRows}`
     + `<div class="mfd-bgs">${txBadge}${tBg}${aBg}</div></div></div></div>`
-    + `<div class="mfd-sec"><div class="mfd-sti">&#x1F355; 취급 제품</div><div class="mfd-tags">${_mfdTag("비프", !!info.beef)}${_mfdTag("피자", !!info.pizza)}${_mfdTag("스파쿨", !!info.spacool)}</div></div>`
+    + `<div class="mfd-sec"><div class="mfd-sti">&#x1F355; 취급 제품</div><div class="mfd-tags">${_mfdTag("비프", !!rep?.beef_intro_date)}${_mfdTag("피자", !!rep?.pizza_intro_date)}${_mfdTag("스파쿨", !!info.spacool)}</div></div>`
+    + `<div class="mfd-sec"><div class="mfd-sti">&#x1F357; 주요메뉴 판매현황 ${opsNote}</div>${menuHtml}</div>`
+    + `<div class="mfd-sec"><div class="mfd-sti">&#x1F552; 영업현황 ${opsNote}</div>${opsBody}</div>`
     + `<div class="mfd-sec"><div class="mfd-sti">&#x1F4CD; 매장방문현황 (AC/팀장 최근)</div>${visitHtml}</div>`
     + `<div class="mfd-sec"><div class="mfd-sti">&#x1F4DC; 내용증명현황${certYear ? " (" + certYear + ")" : ""}</div>${certHtml}</div>`
     + `<div class="mfd-sec"><div class="mfd-sti">&#x1F6E2; 오일 사입 현황</div>${oilHtml}</div>`
@@ -1586,7 +1623,7 @@ async function searchReportStores() {
     }
     // 검색어가 비어있으면 권한범위 내 전체 매장을 보여줌
     const matched = kw
-      ? window._reportStoresScope.filter(s => s.name && s.name.includes(kw))
+      ? window._reportStoresScope.filter(s => s.name && s.name.toLowerCase().includes(String(kw).toLowerCase()))
       : window._reportStoresScope.slice().sort((a,b) => (a.name||"").localeCompare(b.name||""));
     if (matched.length === 0) { listEl.innerHTML = `<p class="error-text">검색 결과가 없습니다.</p>`; return; }
     listEl.innerHTML = `<div class="store-count" style="padding:0 2px 8px">${matched.length}개 매장</div><div class="search-list">` + matched.map(s => `
@@ -1638,6 +1675,31 @@ async function _fetchReportData(storeCode) {
   return merged;
 }
 
+// 매장운영정보(전월 기준) 계산 — 영업일·영업시간·메뉴 수량은 업로드 시 월별로 저장돼 있고, 일 평균은 여기서 계산:
+//   일 평균 영업시간 = 월 총 영업시간 ÷ 월 영업일, 일 평균 수량 = 월 수량 합계 ÷ 월 영업일
+// 비프/피자는 도입일이 없으면 "미취급", 수량 데이터가 없으면 "업데이트 예정".
+function _ymKo(ym) { return /^\d{4}-\d{2}$/.test(ym || "") ? `${ym.slice(0,4)}년 ${Number(ym.slice(5,7))}월` : ""; }
+function _opsView(rep) {
+  const ym = rep?.ops_asof || "";
+  const o = ym ? (rep?.ops?.[ym] || null) : null;
+  const days = o && Number(o.d) > 0 ? Number(o.d) : null;
+  const hrs = o && days && Number(o.h) > 0 ? Number(o.h) / days : null;
+  const menuTxt = (key) => {
+    if (key === "beef" && !rep?.beef_intro_date) return "미취급";
+    if (key === "pizza" && !rep?.pizza_intro_date) return "미취급";
+    const q = ym ? rep?.menu_qty?.[ym]?.[key] : null;
+    if (q == null) return "업데이트 예정";
+    if (!days) return "-";
+    return (Number(q) / days).toFixed(1) + "개";
+  };
+  return {
+    ym, days, hrs, ymKo: _ymKo(ym),
+    daysTxt: days ? `${days}일` : "-",
+    hrsTxt: hrs ? `${hrs.toFixed(1)}시간` : "-",
+    chicken: menuTxt("chicken"), beef: menuTxt("beef"), pizza: menuTxt("pizza"),
+  };
+}
+
 function _reportInfoRow(label, val) {
   return `<tr><td style="color:#718096;font-size:13px;padding:4px 0;width:42%">${label}</td><td style="text-align:right;padding:4px 0;font-size:13px">${val ?? "-"}</td></tr>`;
 }
@@ -1664,6 +1726,7 @@ async function renderReportDetail(root) {
     }
     window._reportDetailData = data; // Excel 다운로드 시 참조
     const fmtDate2 = v => v ? String(v).slice(0,10) : "-";
+    const opsV = _opsView(data);
     const fmtMoney = v => (v == null || v === "") ? "-" : (() => {
       const n = Number(String(v).replace(/,/g, "")); // "7,000" 같은 콤마 포함 문자열도 처리
       return Number.isNaN(n) ? String(v) : n.toLocaleString();
@@ -1679,14 +1742,13 @@ async function renderReportDetail(root) {
       <div class="question-card">
         <span class="q-title">매장 기본정보</span>
         <table style="width:100%;margin-top:8px">
-          ${_reportInfoRow("점주명", data.owner_name ? `${escapeHtml(data.owner_name)} (${(() => {
-            const y = Number(data.owner_birth_year);
-            return Number.isFinite(y) && y > 0 ? `${new Date().getFullYear()-y}세` : "연령정보 없음";
-          })()})` : null)}
+          ${_reportInfoRow("점주명", data.owner_name ? escapeHtml(data.owner_name) : null)}
           ${_reportInfoRow("최초 오픈일", fmtDate2(data.first_open_date))}
           ${_reportInfoRow("현재점 오픈일", fmtDate2(data.open_date))}
           ${_reportInfoRow("영업시간", escapeHtml(data.biz_hours||""))}
           ${_reportInfoRow("담당 AC / 팀", `${escapeHtml(data.ac_name||"-")} / ${escapeHtml(data.team||"-")}`)}
+          ${_reportInfoRow("메뉴 판매형태 · 비프", data.beef_intro_date ? `도입 · ${fmtDate2(data.beef_intro_date)}` : "미도입")}
+          ${_reportInfoRow("메뉴 판매형태 · 피자", data.pizza_intro_date ? `도입 · ${fmtDate2(data.pizza_intro_date)}` : "미도입")}
         </table>
       </div>
 
@@ -1699,35 +1761,18 @@ async function renderReportDetail(root) {
         </table>
       </div>
 
+      <div class="question-card">
+        <span class="q-title">매장운영정보 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">${opsV.ym ? `*${opsV.ymKo} 기준` : "*전월 데이터 없음"}</span></span>
+        <table style="width:100%;margin-top:8px">
+          ${_reportInfoRow(`월 평균영업일${opsV.ym ? ` <span style="font-size:10.5px;color:#A0AEC0">(${opsV.ymKo} 기준)</span>` : ""}`, opsV.daysTxt)}
+          ${_reportInfoRow(`일 평균 영업시간${opsV.ym ? ` <span style="font-size:10.5px;color:#A0AEC0">(${opsV.ymKo} 기준)</span>` : ""}`, opsV.hrsTxt)}
+          ${_reportInfoRow("일 평균 치킨", escapeHtml(opsV.chicken))}
+          ${_reportInfoRow("일 평균 비프", escapeHtml(opsV.beef))}
+          ${_reportInfoRow("일 평균 피자", escapeHtml(opsV.pizza))}
+        </table>
+      </div>
+
       <div id="nearbyCard" class="question-card"><p class="loading-text">인근 점포 불러오는 중...</p></div>
-
-      <div class="question-card">
-        <span class="q-title">설비정보</span>
-        <div style="font-size:12px;color:#A0AEC0;margin:8px 0 4px">주문/호출기기</div>
-        <table style="width:100%">
-          ${_reportInfoRow("키오스크 / POS", `${(Number(data.kiosk_yn)||0) > 0 ? `${data.kiosk_yn}대` : "없음"} · POS ${data.pos_count??"-"}대`)}
-          ${_reportInfoRow("DID / 디지털메뉴보드", `${(Number(data.did_yn)||0) > 0 ? `${data.did_yn}대` : "없음"} · ${data.digital_menu_count??"-"}대`)}
-        </table>
-        <div style="font-size:12px;color:#A0AEC0;margin:10px 0 4px">제조기기</div>
-        <table style="width:100%">
-          ${_reportInfoRow("후라이어(2구/3구)", `${data.fryer2_count??"-"} / ${data.fryer3_count??"-"}`)}
-          ${_reportInfoRow("패티워머 / 실링기 / 제빙기", `${data.patty_warmer??"-"} / ${data.sealer??"-"} / ${data.ice_maker??"-"}`)}
-        </table>
-      </div>
-
-      <div class="question-card">
-        <span class="q-title">메뉴 판매형태</span>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
-          <div style="background:${data.beef_intro_date?'#EAF3DE':'#F7FAFC'};border-radius:8px;padding:10px">
-            <div style="font-size:12px;font-weight:700;color:${data.beef_intro_date?'#3B6D11':'#A0AEC0'}">비프</div>
-            <div style="font-size:12px;color:${data.beef_intro_date?'#3B6D11':'#A0AEC0'};margin-top:2px">${data.beef_intro_date ? '도입 · '+fmtDate2(data.beef_intro_date) : '미도입'}</div>
-          </div>
-          <div style="background:${data.pizza_intro_date?'#EAF3DE':'#F7FAFC'};border-radius:8px;padding:10px">
-            <div style="font-size:12px;font-weight:700;color:${data.pizza_intro_date?'#3B6D11':'#A0AEC0'}">피자</div>
-            <div style="font-size:12px;color:${data.pizza_intro_date?'#3B6D11':'#A0AEC0'};margin-top:2px">${data.pizza_intro_date ? '도입 · '+fmtDate2(data.pizza_intro_date) : '미도입'}</div>
-          </div>
-        </div>
-      </div>
 
       <div class="question-card">
         <span class="q-title">배달앱 가입현황</span>
@@ -1807,18 +1852,12 @@ async function downloadExcelReportDetail() {
   }
 
   const fmtDate2 = v => v ? String(v).slice(0,10) : "";
-  const age = (() => {
-    const y = Number(data.owner_birth_year);
-    return Number.isFinite(y) && y > 0 ? `${new Date().getFullYear()-y}세` : "";
-  })();
-  const yn = (v, unit) => (Number(v)||0) > 0 ? `${v}${unit||""}` : "없음";
-
+  const opsV = _opsView(data);
   const infoRows = [
     ["구분","값"],
     ["매장코드", target.code],
     ["매장명", target.name],
     ["점주명", data.owner_name || ""],
-    ["연령", age],
     ["최초 오픈일", fmtDate2(data.first_open_date)],
     ["현재점 오픈일", fmtDate2(data.open_date)],
     ["영업시간", data.biz_hours || ""],
@@ -1826,14 +1865,15 @@ async function downloadExcelReportDetail() {
     ["지역", `${data.region_large||""} ${data.region_small||""}`.trim()],
     ["층수/평수", `${data.floor??""}층 · ${data.size_pyeong??""}평`],
     ["보증금/임대료", `${data.deposit??""} / ${data.rent??""}`],
-    ["키오스크/POS", `${yn(data.kiosk_yn,"대")} · POS ${data.pos_count??"-"}대`],
-    ["DID/디지털메뉴보드", `${yn(data.did_yn,"대")} · ${data.digital_menu_count??"-"}대`],
-    ["후라이어(2구/3구)", `${data.fryer2_count??"-"} / ${data.fryer3_count??"-"}`],
-    ["패티워머/실링기/제빙기", `${data.patty_warmer??"-"} / ${data.sealer??"-"} / ${data.ice_maker??"-"}`],
     ["비프 도입", data.beef_intro_date ? `도입 · ${fmtDate2(data.beef_intro_date)}` : "미도입"],
     ["피자 도입", data.pizza_intro_date ? `도입 · ${fmtDate2(data.pizza_intro_date)}` : "미도입"],
     ["배민1 가입", data.baemin1 === "O" ? "가입" : "미가입"],
     ["쿠팡이츠 가입", data.coupangeats === "O" ? "가입" : "미가입"],
+    [`월 평균영업일${opsV.ym ? ` (${opsV.ymKo} 기준)` : ""}`, opsV.daysTxt],
+    [`일 평균 영업시간${opsV.ym ? ` (${opsV.ymKo} 기준)` : ""}`, opsV.hrsTxt],
+    ["일 평균 치킨", opsV.chicken],
+    ["일 평균 비프", opsV.beef],
+    ["일 평균 피자", opsV.pizza],
   ];
 
   const channels = ["전체","내점","배달","포장"]; // 다운로드용은 이 4개 채널의 실매출액만 노출
@@ -2240,7 +2280,7 @@ function renderStoreList(list, keyword="") {
 
 function renderStoreListInner(list, keyword="") {
   const filtered = keyword
-    ? list.filter(s => s.name.includes(keyword) || s.code.includes(keyword))
+    ? list.filter(s => s.name.toLowerCase().includes(String(keyword).toLowerCase()) || s.code.toLowerCase().includes(String(keyword).toLowerCase()))
     : list;
   const needsFollowup = window._needsFollowup || new Set();
   const alreadyDone = window._alreadyDone || new Set();
@@ -4209,6 +4249,8 @@ async function renderPhotoSetting(root) {
       <div id="reportUploadProgress" style="display:none" class="upload-progress">
         <span id="reportUploadProgressText">업로드 중...</span>
       </div>
+      <button class="btn-ghost" onclick="purgeReportLegacyFields()" style="margin-top:10px;font-size:12px;color:#C53030;border-color:#FEB2B2">🧹 삭제 항목 일괄 정리 (점주 생년·이메일·설비 등)</button>
+      <div id="reportPurgeStatus" style="font-size:12px;color:#718096;margin-top:6px"></div>
       <div style="font-size:12px;color:#718096;margin-top:8px">E코드로 시작하는 매장만 반영되며(다른 브랜드·테스트 계정 자동 제외), 양도양수된 매장은 구코드 이력도 현재코드에 자동 합산됩니다.</div>
     </div>`;
 
@@ -5496,7 +5538,7 @@ async function buildFollowupNeeded() {
 
   // 매장명 검색 적용
   if (_followupFilter.keyword) {
-    filtered = filtered.filter(r => (r.storeName||"").includes(_followupFilter.keyword));
+    filtered = filtered.filter(r => (r.storeName||"").toLowerCase().includes(String(_followupFilter.keyword).toLowerCase()));
   }
 
   // 정렬: 반려 최상단 → 나머지 (매장선택 화면과 동일한 우선순위)
@@ -5578,7 +5620,7 @@ async function fnDownloadExcel() {
     pending = pending.filter(r => teamCodes.has(r.storeCode));
   }
   if (_followupFilter.team) pending = pending.filter(r => r.storeTeam === _followupFilter.team);
-  if (_followupFilter.keyword) pending = pending.filter(r => (r.storeName||"").includes(_followupFilter.keyword));
+  if (_followupFilter.keyword) pending = pending.filter(r => (r.storeName||"").toLowerCase().includes(String(_followupFilter.keyword).toLowerCase()));
 
   // SheetJS 동적 로드
   if (!window.XLSX) {
@@ -5664,7 +5706,7 @@ async function fetchRecords() {
 
     // 매장명 검색 (역할 필터 위에 추가 적용)
     if (keyword) {
-      records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+      records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
     }
 
     // 상태 필터 적용
@@ -6080,7 +6122,7 @@ function buildDashboard(root, records) {
   const tabSearch = (window._dashTabSearch || "").trim();
   if (tabSearch && (tab === "팀장확인" || tab === "그룹장확인" || tab === "최종확인")) {
     tableRecords = tableRecords.filter(r =>
-      (r.storeName || "").includes(tabSearch)
+      (r.storeName || "").toLowerCase().includes(String(tabSearch).toLowerCase())
     );
   }
 
@@ -6309,6 +6351,8 @@ async function updateStoreDataStatus() {
 // 매장 컨설팅 리포트 원본 엑셀(매장현황/매출/물대 시트)을 파싱해서 store_reports/{현재코드}
 // 문서로 저장. E코드로 시작하는 행만 채택(D/C/숫자 등 타 브랜드·테스트 코드는 제외), 양도양수로
 // 코드가 바뀐 매장은 구코드 데이터도 _oldToCurrentCodeMap을 거쳐 현재코드로 합쳐서 저장.
+const _REPORT_LEGACY_FIELDS = ["owner_birth_year", "email", "seats", "staff_count", "pos_count", "kiosk_yn", "did_yn", "digital_menu_count",
+  "fryer2_count", "fryer3_count", "patty_warmer", "sealer", "ice_maker", "baemin_delivery", "bangje_yn", "nomu_yn", "semu_yn"];
 async function uploadReportData(file, onProgress) {
   await loadXLSX();
   const buf = await file.arrayBuffer();
@@ -6336,27 +6380,41 @@ async function uploadReportData(file, onProgress) {
   const activeStoreCodes = new Set(); // 매장현황 시트에 실제 등장하는(=현재 조회 가능한) 매장코드만 최종 저장 대상으로 제한
   const wsStore = wb.Sheets["매장현황"];
   if (wsStore) {
-    const rows = XLSX.utils.sheet_to_json(wsStore, { header: 1, range: 4, defval: null });
-    rows.forEach(r => {
-      const raw = r[2];
+    // 2026-11-03 RAW부터 컬럼이 39→22개로 줄고 위치가 바뀜 → 컬럼 위치 대신 "라벨 행(E점포코드가 있는 행)"의 헤더명으로 읽음.
+    // 라벨을 못 찾으면 2026-11-03 RAW 기준 위치(fallback)를 사용. 삭제된 항목(점주 연령/이메일/설비/세무 등)은 더 이상 읽지·저장하지 않음.
+    const all = XLSX.utils.sheet_to_json(wsStore, { header: 1, defval: null });
+    let hr = all.findIndex(r => Array.isArray(r) && r.some(c => String(c == null ? "" : c).trim() === "E점포코드"));
+    if (hr < 0) hr = 3;
+    const hdr = (all[hr] || []).map(c => String(c == null ? "" : c).replace(/\s+/g, " ").trim());
+    const col = (label, fallback, prefix) => {
+      let i = hdr.indexOf(label);
+      if (i < 0 && prefix) i = hdr.findIndex(h => h.startsWith(label));
+      return i >= 0 ? i : fallback;
+    };
+    const C = {
+      code: col("E점포코드", 2), beef: col("BEEF 도입일", 3), pizza: col("피자 도입일", 4),
+      team: col("담당팀", 6), ac: col("담당 AC", 7), rl: col("지역-대분류", 8), rs: col("지역-소분류", 9),
+      open: col("현 점포 오픈일", 10), first: col("최초 오픈일", 11), biz: col("상권분류", 12),
+      pyeong: col("평수", 13), floor: col("층수", 14), dep: col("보증금", 15), rent: col("임대료", 16), prem: col("권리금", 17),
+      owner: col("점주성명", 18), hours: col("영업시간", 19, true), baemin1: col("배민1", 20), coupang: col("쿠팡이츠", 21),
+    };
+    all.slice(hr + 1).forEach(r => {
+      const raw = r[C.code];
       if (!isEcode(raw)) return;
       const code = resolveCode(String(raw).trim());
       activeStoreCodes.add(code);
       const rep = getRep(code);
       Object.assign(rep, {
-        beef_intro_date: toDateStr(r[3]),
-        pizza_intro_date: toDateStr(r[4]),
-        team: r[6], ac_name: r[7],
-        region_large: r[8], region_small: r[9],
-        open_date: toDateStr(r[10]), first_open_date: toDateStr(r[11]),
-        biz_type: r[12], size_pyeong: r[13], floor: r[14],
-        deposit: r[15], rent: r[16], premium: r[17],
-        owner_name: maskName(r[18]), owner_birth_year: r[19], email: r[20], // 점주명은 저장 시점에 마스킹(개인정보), 연락처는 필드 자체 미저장
-        seats: r[21], staff_count: r[22], biz_hours: r[23],
-        pos_count: r[24], kiosk_yn: r[25], did_yn: r[26], digital_menu_count: r[27],
-        fryer2_count: r[28], fryer3_count: r[29], patty_warmer: r[30], sealer: r[31], ice_maker: r[32],
-        baemin_delivery: r[33], baemin1: r[34], coupangeats: r[35],
-        bangje_yn: r[36], nomu_yn: r[37], semu_yn: r[38],
+        beef_intro_date: toDateStr(r[C.beef]),
+        pizza_intro_date: toDateStr(r[C.pizza]),
+        team: r[C.team], ac_name: r[C.ac],
+        region_large: r[C.rl], region_small: r[C.rs],
+        open_date: toDateStr(r[C.open]), first_open_date: toDateStr(r[C.first]),
+        biz_type: r[C.biz], size_pyeong: r[C.pyeong], floor: r[C.floor],
+        deposit: r[C.dep], rent: r[C.rent], premium: r[C.prem],
+        owner_name: maskName(r[C.owner]), // 점주명은 저장 시점에 마스킹(개인정보). 연령/이메일/연락처는 저장하지 않음
+        biz_hours: r[C.hours],
+        baemin1: r[C.baemin1], coupangeats: r[C.coupang],
       });
     });
   }
@@ -6430,6 +6488,128 @@ async function uploadReportData(file, onProgress) {
     });
   }
 
+  // ── 영업일/영업시간 시트(월별) + 치킨/비프/피자 시트(일별 수량) → rep.ops / rep.menu_qty ──
+  // 월별 점포코드가 따로 있는 시트(양도양수 매장은 월마다 코드가 다름)라 월마다 resolveCode로 현재코드에 합침.
+  // 일별 시트는 월 합계 수량만 저장(일 평균 = 월 합계 ÷ 영업일은 화면에서 계산). 값이 전부 비어 있으면 저장하지 않음.
+  window._lastOpsWarning = "";
+  window._lastOpsInfo = null;
+  try {
+    const num = v => { if (v == null || v === "") return null; const n = Number(String(v).replace(/,/g, "")); return Number.isFinite(n) ? n : null; };
+    const pad2 = n => String(n).padStart(2, "0");
+    let salesLatest = "";
+    entries.forEach(([, rep]) => Object.keys(rep.pos_sales || {}).forEach(ym => {
+      if (ym > salesLatest && Number(rep.pos_sales[ym]?.["전체"]?.실매출액) > 0) salesLatest = ym;
+    }));
+    const monthLabel = v => { // 숫자(엑셀 날짜) / "2026-08" / "2026-08-01" / "8월" 모두 인식
+      if (typeof v === "number" && v > 20000) { const s = excelSerialToYMD(v); return s ? { y: +s.slice(0, 4), m: +s.slice(5, 7) } : null; }
+      const s = String(v == null ? "" : v).trim();
+      let mt = s.match(/^(\d{4})[-./](\d{1,2})/); if (mt) return { y: +mt[1], m: +mt[2] };
+      mt = s.match(/^(\d{1,2})\s*월$/); if (mt) return { m: +mt[1] };
+      return null;
+    };
+    const resolveYms = labels => { // 연도 없는 "N월" 헤더는 매출 최신월을 기준으로 연도 추정(뒤에서부터 거슬러 올라감)
+      const out = labels.map(l => ({ ...l }));
+      const last = out[out.length - 1];
+      if (!last.y) {
+        const ay = salesLatest ? +salesLatest.slice(0, 4) : new Date().getFullYear();
+        const am = salesLatest ? +salesLatest.slice(5, 7) : 12;
+        last.y = last.m <= am ? ay : ay - 1;
+      }
+      for (let j = out.length - 2; j >= 0; j--) {
+        if (!out[j].y) out[j].y = out[j].m > out[j + 1].m ? out[j + 1].y - 1 : out[j + 1].y;
+      }
+      return out.map(l => `${l.y}-${pad2(l.m)}`);
+    };
+    const info = { collisions: 0, droppedInactive: 0, months: [], menu: {} };
+    const parseOpsSheet = ws => { // -> Map(현재코드 -> { ym: 값 })
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      const hr = rows.findIndex(r => Array.isArray(r) && r.some(c => String(c == null ? "" : c).trim() === "매장명"));
+      if (hr < 0) return null;
+      const h = rows[hr];
+      const nameCol = h.findIndex(c => String(c == null ? "" : c).trim() === "매장명");
+      let vs = nameCol + 1;
+      if (String(h[vs] == null ? "" : h[vs]).trim() === "자체포스여부") vs++;
+      const labels = [];
+      for (let j = vs; j < h.length; j++) { const l = monthLabel(h[j]); if (!l) break; labels.push(l); }
+      if (!labels.length) return null;
+      const yms = resolveYms(labels);
+      const codeBase = nameCol >= labels.length ? nameCol - labels.length : 0; // 월별 코드 컬럼 시작 위치
+      const res = new Map();
+      rows.slice(hr + 1).forEach(r => {
+        yms.forEach((ym, j) => {
+          const rawCode = String(r[codeBase + j] == null ? "" : r[codeBase + j]).trim();
+          if (!isEcode(rawCode)) return;
+          const v = num(r[vs + j]);
+          if (v == null) return;
+          const code = resolveCode(rawCode);
+          if (!res.has(code)) res.set(code, {});
+          const o = res.get(code);
+          if (o[ym] != null) { o[ym] += v; info.collisions++; } else o[ym] = v;
+        });
+      });
+      res._yms = yms;
+      return res;
+    };
+    const wsDays = wb.Sheets["영업일"], wsHours = wb.Sheets["영업시간"];
+    if (wsDays || wsHours) {
+      const dm = wsDays ? parseOpsSheet(wsDays) : null, hm = wsHours ? parseOpsSheet(wsHours) : null;
+      let latest = "";
+      const apply = (m, field, round) => {
+        if (!m) return;
+        m.forEach((byYm, code) => {
+          if (!activeStoreCodes.has(code)) { info.droppedInactive++; return; }
+          const r = getRep(code);
+          r.ops = r.ops || {};
+          Object.keys(byYm).forEach(ym => {
+            r.ops[ym] = r.ops[ym] || {};
+            r.ops[ym][field] = round(byYm[ym]);
+            if (field === "d" && byYm[ym] > 0 && ym > latest) latest = ym;
+          });
+        });
+        info.months = m._yms;
+      };
+      apply(dm, "d", v => Math.round(v));
+      apply(hm, "h", v => Math.round(v * 100) / 100);
+      info.asOf = latest;
+      if (latest) entries.forEach(([, r]) => { r.ops_asof = latest; });
+    }
+    const menuSheets = [["치킨", "chicken"], ["비프", "beef"], ["피자", "pizza"]];
+    menuSheets.forEach(([sn, key]) => {
+      const ws = wb.Sheets[sn];
+      if (!ws) return;
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      const h = rows[0] || [];
+      const codeCol = h.findIndex(c => String(c == null ? "" : c).trim() === "E코드");
+      if (codeCol < 0) return;
+      const dateCols = [];
+      h.forEach((c, i) => { if (i <= codeCol) return; const l = monthLabel(c); if (l && l.y) dateCols.push([i, `${l.y}-${pad2(l.m)}`]); });
+      const acc = new Map(); // 현재코드 -> { ym: 합계 }
+      rows.slice(1).forEach(r => {
+        const rawCode = String(r[codeCol] == null ? "" : r[codeCol]).trim();
+        if (!isEcode(rawCode)) return;
+        const code = resolveCode(rawCode);
+        dateCols.forEach(([i, ym]) => {
+          const v = num(r[i]);
+          if (v == null) return;
+          if (!acc.has(code)) acc.set(code, {});
+          const o = acc.get(code);
+          o[ym] = (o[ym] || 0) + v;
+        });
+      });
+      let n = 0;
+      acc.forEach((byYm, code) => {
+        if (!activeStoreCodes.has(code)) return;
+        const r = getRep(code);
+        r.menu_qty = r.menu_qty || {};
+        Object.keys(byYm).forEach(ym => { r.menu_qty[ym] = r.menu_qty[ym] || {}; r.menu_qty[ym][key] = Math.round(byYm[ym] * 100) / 100; n++; });
+      });
+      info.menu[key] = n;
+    });
+    window._lastOpsInfo = info;
+  } catch (e) {
+    window._lastOpsWarning = "영업일/영업시간/메뉴 수량 처리 중 오류(나머지 업로드는 계속 진행): " + (e.message || e);
+  }
+
   // ── 지역/팀 집계 계산 (인근 점포 현황·팀별 매출현황용) ──
   // 화면에서 매장별 리포트 문서를 대량으로 읽지 않도록, 업로드 시점에 지역별(area_stats)·팀별
   // (team_stats) 집계 문서를 미리 만들어 저장. 이 계산이 실패해도 매장 리포트 업로드는 계속 진행.
@@ -6489,6 +6669,26 @@ async function uploadReportData(file, onProgress) {
         if (Object.keys(sm).length) t.stores[code] = sm;
       }
     });
+    // 인근점포 비교용 영업지표(영업일/일 평균 영업시간/일 평균 치킨·비프·피자 수량) — 0 이하/없음은 제외(POS·물대와 동일 기준)
+    entries.forEach(([code, rep]) => {
+      const m = masterByCode.get(code);
+      if (!m || !m.area || !rep.ops) return;
+      if (!areaMap.has(m.area)) areaMap.set(m.area, {});
+      const months = areaMap.get(m.area);
+      Object.keys(rep.ops).forEach(ym => {
+        const o = rep.ops[ym] || {};
+        const d = Number(o.d) || 0;
+        if (d <= 0) return;
+        const mo = months[ym] || (months[ym] = { pos: {}, water: {} });
+        mo.days = mo.days || {}; mo.days[code] = d;
+        if (Number(o.h) > 0) { mo.dh = mo.dh || {}; mo.dh[code] = Math.round(Number(o.h) / d * 100) / 100; }
+        const q = rep.menu_qty?.[ym] || {};
+        [["chicken", "chk", true], ["beef", "bef", !!rep.beef_intro_date], ["pizza", "piz", !!rep.pizza_intro_date]].forEach(([k, f, handles]) => {
+          const v = Number(q[k]);
+          if (handles && v > 0) { mo[f] = mo[f] || {}; mo[f][code] = Math.round(v / d * 100) / 100; }
+        });
+      });
+    });
     // 주의: 매장×월 단위의 큰 중첩맵/배열을 Firestore 필드로 그대로 저장하면 문서당 인덱스 항목 한도(약 4만 개)를
     // 넘어 규모가 큰 팀 문서 저장이 실패함 → 큰 구조는 JSON 문자열 1개 필드로 저장(인덱스 항목 1개, 용량도 감소).
     areaMap.forEach((months, area) => aggWrites.push({ col: "area_stats", id: docId(area), payload: { area, monthsJson: JSON.stringify(months), updatedAt: new Date() }, merge: false }));
@@ -6511,7 +6711,8 @@ async function uploadReportData(file, onProgress) {
   let batchBytes = 0;
   let batchCount = 0;
   const writes = [
-    ...entries.map(([code, rep]) => ({ col: "store_reports", id: code, payload: { ...rep, updatedAt: new Date() }, merge: true })),
+    // 삭제된 항목(점주 연령/이메일/설비/세무 등)은 기존 DB 문서에서도 제거(deleteField) — 업로드되는 매장(현재 운영 매장) 대상
+    ...entries.map(([code, rep]) => ({ col: "store_reports", id: code, payload: { ...Object.fromEntries(_REPORT_LEGACY_FIELDS.map(f => [f, deleteField()])), ...rep, updatedAt: new Date() }, merge: true })),
     ...aggWrites,
   ];
   writes.forEach((w) => {
@@ -6627,6 +6828,38 @@ async function uploadReportData(file, onProgress) {
   }
 
   return entries.length;
+}
+
+// 컨설팅 리포트에서 삭제된 항목(점주 생년·이메일·설비·세무 등)을 store_reports 전체 문서(양도양수 구코드 문서 포함)에서 일괄 제거.
+// 해당 필드가 남아 있는 문서만 골라 deleteField로 제거(다른 필드는 건드리지 않음). 관리자만 실행 가능, 몇 번 실행해도 안전.
+async function purgeReportLegacyFields() {
+  if (_authRole !== "admin") { alert("관리자만 실행할 수 있습니다."); return; }
+  if (!confirm("store_reports 전체 문서에서 삭제 항목(점주 생년·이메일·설비·세무 등)을 일괄 제거합니다.\n다른 데이터는 변경되지 않습니다. 계속하시겠습니까?")) return;
+  const st = document.getElementById("reportPurgeStatus");
+  const say = m => { if (st) st.textContent = m; };
+  try {
+    say("문서 조회 중...");
+    const snap = await getDocs(collection(db, "store_reports"));
+    const targets = [];
+    snap.forEach(d => { const data = d.data(); if (_REPORT_LEGACY_FIELDS.some(f => f in data)) targets.push(d.id); });
+    if (targets.length === 0) { say(`✅ 정리할 항목이 없습니다. (전체 ${snap.size}개 문서 확인)`); return; }
+    const batches = [];
+    for (let i = 0; i < targets.length; i += 200) {
+      const b = writeBatch(db);
+      targets.slice(i, i + 200).forEach(id => b.update(doc(db, "store_reports", id), Object.fromEntries(_REPORT_LEGACY_FIELDS.map(f => [f, deleteField()]))));
+      batches.push(b);
+    }
+    let fail = 0; const reasons = new Set();
+    for (let i = 0; i < batches.length; i += 3) {
+      const res = await Promise.allSettled(batches.slice(i, i + 3).map(b => b.commit()));
+      res.forEach(r => { if (r.status === "rejected") { fail++; reasons.add(`${r.reason?.code || ""} ${r.reason?.message || r.reason || ""}`.trim().slice(0, 140)); } });
+      say(`진행 중... ${Math.min(i + 3, batches.length)}/${batches.length}`);
+    }
+    if (fail) say(`⚠️ ${fail}개 배치 실패 (전체 ${batches.length}개). 다시 실행하면 남은 문서만 처리됩니다. [원인] ${[...reasons].join(" / ")}`);
+    else say(`✅ 완료: ${targets.length}개 문서에서 삭제 항목을 제거했습니다. (전체 ${snap.size}개 문서 확인)`);
+  } catch (e) {
+    say("⚠️ 오류: " + (e.message || e));
+  }
 }
 
 async function handleReportDataUpload(input) {
@@ -7880,7 +8113,7 @@ async function fetchRecordsNP() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recNpFilter || "";
 
@@ -7903,7 +8136,7 @@ async function fetchRecordsNP() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresNP(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -8898,7 +9131,7 @@ async function fetchRecordsSpacool() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recSpacoolFilter || "";
 
@@ -8920,7 +9153,7 @@ async function fetchRecordsSpacool() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresSpacool(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -9630,7 +9863,7 @@ async function fetchRecordsGbchicken() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recGbchickenFilter || "";
 
@@ -9653,7 +9886,7 @@ async function fetchRecordsGbchicken() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresNP(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -10560,7 +10793,7 @@ async function fetchRecordsNashville() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recNashvilleFilter || "";
 
@@ -10582,7 +10815,7 @@ async function fetchRecordsNashville() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresNashville(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -14156,7 +14389,7 @@ async function fetchRecordsGk() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recGkFilter || "";
 
@@ -14178,7 +14411,7 @@ async function fetchRecordsGk() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresGk(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -14749,7 +14982,7 @@ async function fetchRecordsBeefRenewal() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recBeefRenewalFilter || "";
 
@@ -14771,7 +15004,7 @@ async function fetchRecordsBeefRenewal() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresBeefRenewal(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -15339,7 +15572,7 @@ async function fetchRecordsChuseok() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recChuseokFilter || "";
 
@@ -15361,7 +15594,7 @@ async function fetchRecordsChuseok() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresChuseok(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -15931,7 +16164,7 @@ async function fetchRecordsGrilledBulgogi() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recGrilledBulgogiFilter || "";
 
@@ -15953,7 +16186,7 @@ async function fetchRecordsGrilledBulgogi() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresGrilledBulgogi(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -16524,7 +16757,7 @@ async function fetchRecordsRehitham() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recRehithamFilter || "";
 
@@ -16546,7 +16779,7 @@ async function fetchRecordsRehitham() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresRehitham(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -17114,7 +17347,7 @@ async function fetchRecordsJjk() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recJjkFilter || "";
 
@@ -17136,7 +17369,7 @@ async function fetchRecordsJjk() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresJjk(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -17704,7 +17937,7 @@ async function fetchRecordsHdj2() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recHdj2Filter || "";
 
@@ -17726,7 +17959,7 @@ async function fetchRecordsHdj2() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresHdj2(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -18357,7 +18590,7 @@ async function fetchRecordsGkpre() {
     });
     records = [...latestByStore.values()].sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
 
-    if (keyword) records = records.filter(r => r.storeName && r.storeName.includes(keyword));
+    if (keyword) records = records.filter(r => r.storeName && r.storeName.toLowerCase().includes(String(keyword).toLowerCase()));
 
     const filter = window._recGkpreFilter || "";
 
@@ -18379,7 +18612,7 @@ async function fetchRecordsGkpre() {
       const activeStores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
       let notInspected = buildMatchedStoresGkpre(activeStores, _authName)
         .filter(s => !latestByStore.has(s.code));
-      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.includes(keyword));
+      if (keyword) notInspected = notInspected.filter(s => s.name && s.name.toLowerCase().includes(String(keyword).toLowerCase()));
       notInspected.sort((a,b) => a.name.localeCompare(b.name));
 
       if (notInspected.length === 0) { recList.innerHTML = `<p class="error-text">미점검 매장이 없습니다.</p>`; return; }
@@ -18911,7 +19144,7 @@ Object.assign(window, {
   startGkpreInspection, goAdminGkpre, toggleGkpreEnabled,
   setGkpreAnswer, toggleGkpreMultiAnswer, handleGkpreImage, removeGkpreImage, updateGkpreQMemo, updateGkpreMemo, submitFormGkpre, downloadExcelGkpre,
   fetchRecordsGkpre, setRecGkpreFilter, viewRecordGkpre, setDashGkpreFilter, viewStoreHistoryGkpre, approveGkpreRecord, rejectGkpreRecord, searchDashGkpre, startInspectionForStoreGkpre,
-  searchReportStores, viewReportDetail, downloadExcelReportDetail,
+  searchReportStores, viewReportDetail, downloadExcelReportDetail, purgeReportLegacyFields,
   startBeefRenewalInspection, goAdminBeefRenewal, toggleBeefRenewalEnabled,
   setBeefRenewalAnswer, handleBeefRenewalImage, removeBeefRenewalImage, updateBeefRenewalQMemo, updateBeefRenewalMemo, submitFormBeefRenewal, downloadExcelBeefRenewal,
   fetchRecordsBeefRenewal, setRecBeefRenewalFilter, viewRecordBeefRenewal, setDashBeefRenewalFilter, viewStoreHistoryBeefRenewal, approveBeefRenewalRecord, rejectBeefRenewalRecord, searchDashBeefRenewal, startInspectionForStoreBeefRenewal,
