@@ -1762,19 +1762,6 @@ async function renderReportDetail(root) {
       </div>
 
       <div class="question-card">
-        <span class="q-title">매장운영정보 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">${opsV.ym ? `*${opsV.ymKo} 기준` : "*전월 데이터 없음"}</span></span>
-        <table style="width:100%;margin-top:8px">
-          ${_reportInfoRow(`월 평균영업일${opsV.ym ? ` <span style="font-size:10.5px;color:#A0AEC0">(${opsV.ymKo} 기준)</span>` : ""}`, opsV.daysTxt)}
-          ${_reportInfoRow(`일 평균 영업시간${opsV.ym ? ` <span style="font-size:10.5px;color:#A0AEC0">(${opsV.ymKo} 기준)</span>` : ""}`, opsV.hrsTxt)}
-          ${_reportInfoRow("일 평균 치킨", escapeHtml(opsV.chicken))}
-          ${_reportInfoRow("일 평균 비프", escapeHtml(opsV.beef))}
-          ${_reportInfoRow("일 평균 피자", escapeHtml(opsV.pizza))}
-        </table>
-      </div>
-
-      <div id="nearbyCard" class="question-card"><p class="loading-text">인근 점포 불러오는 중...</p></div>
-
-      <div class="question-card">
         <span class="q-title">배달앱 가입현황</span>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
           <div style="background:${data.baemin1==='O'?'#EAF3DE':'#F7FAFC'};border-radius:8px;padding:10px">
@@ -1787,6 +1774,19 @@ async function renderReportDetail(root) {
           </div>
         </div>
       </div>
+
+      <div class="question-card">
+        <span class="q-title">매장운영정보 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">${opsV.ym ? `*${opsV.ymKo} 기준` : "*전월 데이터 없음"}</span></span>
+        <table style="width:100%;margin-top:8px">
+          ${_reportInfoRow(`월 평균영업일${opsV.ym ? ` <span style="font-size:10.5px;color:#A0AEC0">(${opsV.ymKo} 기준)</span>` : ""}`, opsV.daysTxt)}
+          ${_reportInfoRow(`일 평균 영업시간${opsV.ym ? ` <span style="font-size:10.5px;color:#A0AEC0">(${opsV.ymKo} 기준)</span>` : ""}`, opsV.hrsTxt)}
+          ${_reportInfoRow("일 평균 치킨", escapeHtml(opsV.chicken))}
+          ${_reportInfoRow("일 평균 비프", escapeHtml(opsV.beef))}
+          ${_reportInfoRow("일 평균 피자", escapeHtml(opsV.pizza))}
+        </table>
+      </div>
+
+      <div id="nearbyCard" class="question-card"><p class="loading-text">인근 점포 불러오는 중...</p></div>
 
       <div class="question-card">
         <span class="q-title">3개년 POS매출 (월별)</span>
