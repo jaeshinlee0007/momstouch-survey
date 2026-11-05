@@ -12848,7 +12848,7 @@ async function submitFormJjk() {
 
 // ── 주술회전 DP 참여점포 조사 문항 구성 (작업지시서 기준) ──
 // Q1 Y/N(사진 1~3장 필수, Y/N 무관), Q2 굿즈 단일선택(메가스탠드/캐주얼스탠드/모두), Q3 수량(EA, 1 이상 정수).
-// Q1=N이면 Q2·Q3는 표시/필수 아님. 판정(재점검)은 문항 답으로 결정되지 않으며, 팀장 반려 시에만 재점검필요.
+// Q1 Y/N 무관하게 Q2·Q3 모두 표시/필수. 판정(재점검)은 문항 답으로 결정되지 않으며, 팀장 반려 시에만 재점검필요.
 const JJKDP_FORM = {
   q1: { label:"해당 매장 고객 노출 동선에 알맞게 DP를 진행하였는가?", hint:"(DP한 굿즈가 보이도록 사진첨부 필수)" },
   q2: { label:"DP 진행한 굿즈 선택", options:["메가스탠드","캐주얼스탠드","모두"] },
@@ -13039,7 +13039,7 @@ function renderFormJjkdp(root) {
         ${memoInput("memoQ1", 1)}
       </div>`;
 
-  const q2Html = a.q1 === "Y" ? `
+  const q2Html = (a.q1 === "Y" || a.q1 === "N") ? `
       <div class="question-card">
         <span class="q-title">Q2. ${F.q2.label}</span>
         <div style="display:flex;gap:6px;margin-top:10px">
@@ -13058,7 +13058,7 @@ function renderFormJjkdp(root) {
             <span style="font-size:13px;color:#4A5568">EA</span>
           </div>
         </div>`;
-  const q3Html = (a.q1 === "Y" && a.q2) ? `
+  const q3Html = ((a.q1 === "Y" || a.q1 === "N") && a.q2) ? `
       <div class="question-card">
         <span class="q-title">Q3. ${F.q3.label}</span>
         <div style="font-size:12px;color:var(--sub);margin-top:4px">${F.q3.hint}</div>
@@ -13191,7 +13191,7 @@ async function submitFormJjkdp() {
   if (a.q1 !== "Y" && a.q1 !== "N") { showWarn("Q1 (DP 진행 여부)를 선택해주세요."); return; }
   if ((a.photos.q1 || []).length === 0) { showWarn("Q1 사진을 최소 1장 첨부해주세요. (Y/N 모두 필수)"); return; }
   let qtyMega = null, qtyCasual = null;
-  if (a.q1 === "Y") {
+  {
     if (!JJKDP_FORM.q2.options.includes(a.q2)) { showWarn("Q2 (DP 진행한 굿즈)를 선택해주세요."); return; }
     const isPosInt = v => /^[1-9]\d*$/.test(String(v ?? "").trim());
     if (jjkdpNeedsMega(a)) {
@@ -13215,7 +13215,6 @@ async function submitFormJjkdp() {
 
   try {
     const trimMemo = v => (v || "").slice(0, JJKDP_FORM.memoMaxLen);
-    const isDp = a.q1 === "Y";
     const payload = {
       storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
       writerName: S.writerName, role: S.role,
@@ -13223,12 +13222,12 @@ async function submitFormJjkdp() {
       visitDate: S.visitDate,
       jjkdpAnswers: {
         q1: a.q1,
-        q2: isDp ? a.q2 : null,
+        q2: a.q2,
         qtyMega, qtyCasual,
         photos: { q1: a.photos.q1 || [] },
         memoQ1: trimMemo(a.memoQ1),
-        memoQ2: isDp ? trimMemo(a.memoQ2) : "",
-        memoQ3: isDp ? trimMemo(a.memoQ3) : "",
+        memoQ2: trimMemo(a.memoQ2),
+        memoQ3: trimMemo(a.memoQ3),
         memo: trimMemo(a.memo),
       },
       needsFollowup: false, // DP 미진행(Q1=N)도 정상 제출 결과 — 재점검은 팀장 반려로만 발생
@@ -18580,7 +18579,7 @@ function renderRecordDetailJjkdp(root) {
       <div class="info-box">${a.q1 || "-"}</div>
       ${thumbs(a.photos?.q1 || [])}
       ${memoLine(a.memoQ1)}`;
-  if (a.q1 === "Y") {
+  if (a.q1 === "Y" || a.q1 === "N") {
     qHtml += `
       <label class="field-label">Q2. ${F.q2.label}</label>
       <div class="info-box">${a.q2 || "-"}</div>
@@ -18730,11 +18729,12 @@ function buildDashboardJjkdp(root, records, scopeStores) {
   const needCount    = rowsDataAll.filter(r => r.status === "needs").length;
   const notYetCount  = rowsDataAll.filter(r => r.status === "none").length;
 
-  // DP 진행 = 최신 점검이 승인완료(done)이고 Q1=Y 인 매장. 진행률 = DP 진행 ÷ 대상(모수) 전체 매장.
-  const dpStores = rowsDataAll.filter(r => r.status === "done" && r.rec?.jjkdpAnswers?.q1 === "Y");
+  // DP 진행 = 최신 점검이 승인완료(done)인 매장 (Q1 Y/N 무관 — Q1은 DP 적정 여부이지 DP 미실시가 아님).
+  // DP 참여율 = DP 진행 ÷ 대상(모수) 전체 매장.
+  const dpStores = rowsDataAll.filter(r => r.status === "done");
   const dpCount = dpStores.length;
   const dpPct = scopeStores.length ? (dpCount / scopeStores.length * 100) : 0;
-  // 굿즈별 평균 수량: 해당 굿즈를 DP한 매장(수량이 입력된 DP 매장)만 대상
+  // 굿즈별 평균 수량: 승인완료(done) 매장 중 해당 굿즈 수량이 입력된 매장만 대상 (Q1 Y/N 무관)
   const avgOf = (field) => {
     const v = dpStores.map(r => r.rec.jjkdpAnswers[field]).filter(x => Number.isInteger(x) && x >= 1);
     return v.length ? { avg: v.reduce((s, x) => s + x, 0) / v.length, n: v.length } : null;
@@ -18744,20 +18744,20 @@ function buildDashboardJjkdp(root, records, scopeStores) {
       <div style="flex:1;background:#F7F8FA;border-radius:12px;padding:12px">
         <div style="font-size:12px;color:#5A6678">${label}</div>
         <div style="font-size:22px;font-weight:800;margin-top:2px">${o ? o.avg.toFixed(1) : "-"}<span style="font-size:12px;font-weight:600;color:#4A5568"> EA</span></div>
-        <div style="font-size:11px;color:#5A6678">${o ? `DP ${o.n}개 매장 기준` : "해당 매장 없음"}</div>
+        <div style="font-size:11px;color:#5A6678">${o ? `${o.n}개 매장 기준` : "해당 매장 없음"}</div>
       </div>`;
   const dpSummaryHtml = `
     <div style="padding:12px 16px;border-bottom:1px solid #E2E8F0">
-      <div style="font-size:12px;color:#718096">DP 진행률</div>
+      <div style="font-size:12px;color:#718096">주술회전 DP 참여율</div>
       <div style="display:flex;align-items:baseline;gap:8px;margin-top:2px">
         <span style="font-size:30px;font-weight:800;color:#C53030">${dpPct.toFixed(1)}%</span>
         <span style="font-size:12px;color:#4A5568">${dpCount} / ${scopeStores.length} 매장</span>
       </div>
       <div style="height:8px;border-radius:4px;background:#EDF2F7;margin-top:8px;overflow:hidden"><div style="width:${Math.min(100, dpPct)}%;height:100%;background:#E53E3E"></div></div>
-      <div style="font-size:11px;color:#718096;margin-top:6px;line-height:1.5">분자: Q1=Y로 제출되어 승인완료된 매장 · 분모: 대상(주술회전 O) 전체 매장</div>
+      <div style="font-size:11px;color:#718096;margin-top:6px;line-height:1.5">분자: 점검이 승인완료된 매장 (Q1 Y/N 무관) · 분모: 대상(주술회전 O) 전체 매장</div>
       <div style="font-size:12px;color:#718096;margin:12px 0 6px">굿즈별 평균 수량 (매장당)</div>
       <div style="display:flex;gap:10px">${avgBox("메가스탠드", avgMega)}${avgBox("캐주얼스탠드", avgCasual)}</div>
-      <div style="font-size:11px;color:#718096;margin-top:6px">해당 굿즈를 DP한 승인완료 매장만 평균에 포함</div>
+      <div style="font-size:11px;color:#718096;margin-top:6px">승인완료 매장 중 해당 굿즈를 선택한 매장만 평균에 포함 (Q1 Y/N 무관)</div>
     </div>`;
 
   const statFilter = window._dashJjkdpStatusFilter || "";
@@ -18789,7 +18789,7 @@ function buildDashboardJjkdp(root, records, scopeStores) {
     const dtStr = dt ? `${dt.getMonth()+1}/${dt.getDate()}` : "-";
     const ra = rec?.jjkdpAnswers || {};
     const dpStr = !rec ? "-" : (ra.q1 === "Y" ? "Y" : ra.q1 === "N" ? "N" : "-");
-    const qtyStr = ra.q1 === "Y"
+    const qtyStr = (ra.q1 === "Y" || ra.q1 === "N")
       ? [Number.isInteger(ra.qtyMega) ? `메가 ${ra.qtyMega}` : "", Number.isInteger(ra.qtyCasual) ? `캐주얼 ${ra.qtyCasual}` : ""].filter(Boolean).join(" / ") || "-"
       : "-";
     const clickAttr = rec ? ` onclick="viewStoreHistoryJjkdp('${store.code}')" style="cursor:pointer"` : "";
