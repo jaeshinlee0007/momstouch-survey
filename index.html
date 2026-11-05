@@ -1044,6 +1044,17 @@ function _rtTotals(ym, teamList) {
   });
   return found ? sum : null;
 }
+// SSSG(동일점 성장률): 당월과 비교월(전월/전년동월) 모두 해당 지표 값이 있는(>0) 매장만 모아 합계 비교.
+// idx: 0=POS 실매출, 4=물대(음료대 제외). 신규·휴업 매장은 비교월 값이 없어 자동 제외, 양도양수 매장은 현재코드로 이력이 이어져 포함.
+function _rtSssg(stores, ym, baseYm, idx) {
+  let cur = 0, base = 0, n = 0;
+  stores.forEach(s => {
+    const d = _rtStoreData(s);
+    const c = d?.[ym]?.[idx], b = d?.[baseYm]?.[idx];
+    if (c > 0 && b > 0) { cur += c; base += b; n++; }
+  });
+  return n ? { cur, base, n } : null;
+}
 function _rtStoreData(store) { return window._rt.docs.get(store.team)?.stores?.[store.code] || null; }
 
 function rtSetScope(v) { const rt = window._rt; rt.scope = v; rt.sel = null; rt.kw = ""; _rtPaint(); }
@@ -1093,32 +1104,42 @@ function _rtPaint() {
   let bodyHtml = "";
   if (rt.tab === "summary") {
     const kpi = (label, val, sub) => `<div style="background:#F7FAFC;border-radius:10px;padding:9px"><div style="font-size:10.5px;color:#718096">${label}</div><b style="font-size:17px">${val}</b><div style="font-size:10.5px;color:#718096;margin-top:2px">${sub}</div></div>`;
-    const chg = (c, p, y) => `전월 ${_pctHtml(c, p)} · 전년동월 ${_pctHtml(c, y)}`;
+    const chg = (c, p, y, idx) => {
+      let s = `전월 ${_pctHtml(c, p)} · 전년동월 ${_pctHtml(c, y)}`;
+      if (idx != null) {
+        const a = _rtSssg(scopeStores, ym, pm, idx), b = _rtSssg(scopeStores, ym, py, idx);
+        s += `<br><span style="color:#4A5568">동일점 전월 ${_pctHtml(a?.cur, a?.base)}${a ? ` (${a.n}개)` : ""} · 전년동월 ${_pctHtml(b?.cur, b?.base)}${b ? ` (${b.n}개)` : ""}</span>`;
+      }
+      return s;
+    };
     const share = (v) => cur && cur.pos ? `전체 대비 ${(v / cur.pos * 100).toFixed(1)}%` : "-";
     let cmp = "";
     if (rt.scope === "ALL" && rt.teams.length > 1) {
       const rowsT = rt.teams.map(t => {
         const c = _rtTotals(ym, [t]), p = _rtTotals(pm, [t]), y = _rtTotals(py, [t]);
+        const ts = rt.stores.filter(s => s.team === t), sp = _rtSssg(ts, ym, pm, 4), sy = _rtSssg(ts, ym, py, 4);
         return `<tr onclick="rtPickTeam('${escapeHtml(t)}')" style="cursor:pointer"><td style="padding:7px 4px;border-bottom:1px solid var(--border)">${escapeHtml(t)}</td>
           <td style="text-align:right;border-bottom:1px solid var(--border)">${_fmtMil0(c?.pos)}</td><td style="text-align:right;border-bottom:1px solid var(--border)">${_fmtMil0(c?.inn)}</td>
           <td style="text-align:right;border-bottom:1px solid var(--border)">${_fmtMil0(c?.del)}</td><td style="text-align:right;border-bottom:1px solid var(--border)">${_fmtMil0(c?.tak)}</td>
-          <td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(c?.water, p?.water)}</td><td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(c?.water, y?.water)}</td></tr>`;
+          <td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(c?.water, p?.water)}</td><td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(c?.water, y?.water)}</td>
+          <td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(sp?.cur, sp?.base)}</td><td style="text-align:right;border-bottom:1px solid var(--border)">${_pctHtml(sy?.cur, sy?.base)}</td></tr>`;
       }).join("");
       const th = (t, al) => `<th style="text-align:${al || "right"};font-size:10.5px;color:#718096;padding:6px 4px;border-bottom:1px solid var(--border);white-space:nowrap">${t}</th>`;
       cmp = `<div style="font-size:12px;font-weight:700;margin:12px 0 4px;color:#718096">팀 비교 (단위: 백만원 · 물대 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 제외</span>)</div>
-        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${th("팀", "left")}${th("실매출")}${th("내점")}${th("배달")}${th("포장")}${th("물대 전월")}${th("물대 전년")}</tr>${rowsT}</table></div>
-        <div style="font-size:11px;color:#A0AEC0;margin-top:4px">팀 행을 누르면 해당 팀으로 전환됩니다.</div>`;
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${th("팀", "left")}${th("실매출")}${th("내점")}${th("배달")}${th("포장")}${th("물대 전월")}${th("물대 전년")}${th("SSSG 물대 전월")}${th("SSSG 물대 전년")}</tr>${rowsT}</table></div>
+        <div style="font-size:11px;color:#A0AEC0;margin-top:4px">팀 행을 누르면 해당 팀으로 전환됩니다. SSSG는 당월과 비교월 모두 물대가 있는 매장만 비교한 동일점 증감입니다.</div>`;
     }
     bodyHtml = `
       <div style="border:1px solid var(--border);border-radius:12px;padding:12px;background:white">
         <div style="display:flex;justify-content:space-between;align-items:baseline"><b>${escapeHtml(scopeLabel)} · 매장 ${scopeStores.length}개</b><span style="font-size:11px;color:#718096">${ym} 합계 (단위: 백만원)</span></div>
         ${cur ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
-          ${kpi("POS 실매출", _fmtMil0(cur.pos), chg(cur.pos, prv?.pos, yoy?.pos))}
-          ${kpi(`물대 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 제외</span>`, _fmtMil0(cur.water), chg(cur.water, prv?.water, yoy?.water))}
+          ${kpi("POS 실매출", _fmtMil0(cur.pos), chg(cur.pos, prv?.pos, yoy?.pos, 0))}
+          ${kpi(`물대 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*음료대 제외</span>`, _fmtMil0(cur.water), chg(cur.water, prv?.water, yoy?.water, 4))}
           ${kpi("내점매출", _fmtMil0(cur.inn), share(cur.inn))}
           ${kpi("배달매출", _fmtMil0(cur.del), share(cur.del))}
           <div style="grid-column:span 2">${kpi("포장매출", _fmtMil0(cur.tak), share(cur.tak))}</div>
-        </div>` : `<div style="margin-top:8px;font-size:12px;color:#A0AEC0">${ym} 데이터가 없습니다.</div>`}
+        </div>
+        <div style="font-size:10.5px;color:#A0AEC0;margin-top:6px">동일점: 당월과 비교월 모두 매출이 있는 매장만 비교 (신규·휴업 제외, 양도양수 매장 포함) · ( )는 비교 대상 매장 수</div>` : `<div style="margin-top:8px;font-size:12px;color:#A0AEC0">${ym} 데이터가 없습니다.</div>`}
       </div>
       ${cmp}`;
   } else {
