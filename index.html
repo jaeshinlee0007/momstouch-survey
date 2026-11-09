@@ -75,7 +75,7 @@ onAuthStateChanged(auth, async user => {
       _photoSettingsLoaded = false;
       _npEnabledLoaded = false;
       _spacoolEnabledLoaded = false;
-      await Promise.all([loadPhotoSettings(), loadDateLimitSetting(), loadNpEnabled(), loadSpacoolEnabled(), loadGbchickenEnabled(), loadNashvilleEnabled(), loadGkEnabled(), loadGkpreEnabled(), loadBeefRenewalEnabled(), loadChuseokEnabled(), loadGrilledBulgogiEnabled(), loadRehithamEnabled(), loadHdj2Enabled(), loadJjkEnabled(), loadJjkdpEnabled()]);
+      await Promise.all([loadPhotoSettings(), loadDateLimitSetting(), loadNpEnabled(), loadSpacoolEnabled(), loadGbchickenEnabled(), loadNashvilleEnabled(), loadGkEnabled(), loadGkpreEnabled(), loadBeefRenewalEnabled(), loadChuseokEnabled(), loadGrilledBulgogiEnabled(), loadRehithamEnabled(), loadHdj2Enabled(), loadJjkEnabled(), loadJjkdpEnabled(), loadSubmitLocks()]);
       // sessionStorage에 점검 중 데이터가 있으면 home으로 이동하지 않음
       // (이어서 점검하기 팝업이 뜰 것이므로)
       const _hasPendingSession = (() => {
@@ -2361,6 +2361,13 @@ function filterStoreList(keyword) {
 // 최초점검 중에도 신규플랫폼(surveys) 컬렉션 기준 "보완점검 필요" 팝업이 잘못 뜬 적 있음 —
 // 도메인 전용 로직을 절대 이 함수 안에 직접 넣지 말고 반드시 selectStoreDefault() 쪽에 추가할 것)
 async function selectStore(code, name, team) {
+  { // 제출 잠금(실적 마감) 사전 안내 — 실제 차단은 제출 시점에도 한 번 더 확인
+    const _lockKey = ["np","spacool","gbchicken","nashville","gk","gkpre","beefRenewal","chuseok","grilledBulgogi","rehitham","hdj2","jjk","jjkdp"].includes(S.category) ? S.category : "default";
+    if (isSubmitLocked(_lockKey)) {
+      alert("🔒 실적 마감으로 점검 제출이 잠겨 있습니다.\n제출이 필요하면 관리자에게 문의해주세요.");
+      return;
+    }
+  }
   S.storeCode = code; S.storeName = name; S.storeTeam = team;
   S.storeObj = (window._activeStores||[]).find(s => s.code === code) || null;
 
@@ -3084,6 +3091,7 @@ function updateProgress() {
 
 // ── SUBMIT ─────────────────────────────────────────
 async function submitForm() {
+  if (await checkSubmitLock("default")) return;
   // photoSettings 미로드 시 재시도 (로그인 후 로드 보장)
   if (!_photoSettingsLoaded) await loadPhotoSettings();
   if (!_dateLimitLoaded) await loadDateLimitSetting();
@@ -4172,6 +4180,7 @@ async function renderPhotoSetting(root) {
   _hdj2EnabledLoaded = false;
   _jjkEnabledLoaded = false;
   _jjkdpEnabledLoaded = false;
+  await loadSubmitLocks();
   await loadGrilledBulgogiEnabled();
   await loadRehithamEnabled();
   await loadHdj2Enabled();
@@ -4288,6 +4297,7 @@ async function renderPhotoSetting(root) {
     </div>`;
 
   const defaultCategoryHtml = `
+    ${submitLockRowHtml("default")}
     <div style="background:#EBF8FF;border:1px solid #90CDF4;border-radius:8px;padding:10px 12px;font-size:12px;color:#2C5282;margin-bottom:16px">
       ON: 해당 항목 사진 첨부 필수<br>
       OFF: 사진 첨부 선택사항
@@ -4336,6 +4346,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_npEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("np")}
     <div style="font-size:12px;color:#718096;margin:6px 0 16px">OFF 시 허브 화면의 갓빠삭치킨 출시 교육점검 카드가 비활성 처리됩니다.</div>
 
     <div style="font-weight:600;font-size:13px;color:var(--sub);margin-bottom:4px">신제품 사진 첨부 필수 (배터링/브래딩/완조리 3장)</div>
@@ -4364,6 +4375,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_spacoolEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("spacool")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 스파쿨 프로모션 현장점검 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   const gbchickenCategoryHtml = `
@@ -4378,6 +4390,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_gbchickenEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("gbchicken")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 갓빠삭치킨 홍보물 부착 현장점검 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   const nashvilleCategoryHtml = `
@@ -4392,6 +4405,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_nashvilleEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("nashville")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 내슈빌 핫치킨버거 홍보물 부착 현장점검 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   const gkCategoryHtml = `
@@ -4406,6 +4420,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_gkEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("gk")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 귀멸의칼날 필수 체크리스트 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   const gkpreCategoryHtml = `
@@ -4420,6 +4435,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_gkpreEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("gkpre")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 귀멸의칼날 사전 체크리스트 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   const beefRenewalCategoryHtml = `
@@ -4434,6 +4450,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_beefRenewalEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("beefRenewal")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 비프 리뉴얼 체크리스트 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   const chuseokCategoryHtml = `
@@ -4448,6 +4465,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_chuseokEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("chuseok")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 추석굿즈/싱글피자 체크리스트 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   const grilledBulgogiCategoryHtml = `
@@ -4462,6 +4480,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_grilledBulgogiEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("grilledBulgogi")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 그릴드불고기버거/갓빠삭(뼈) 체크리스트 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   const rehithamCategoryHtml = `
@@ -4476,6 +4495,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_rehithamEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("rehitham")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 RE-HIT 2종(햄치즈휠렛/베이컨치폴레) 체크리스트 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   const jjkCategoryHtml = `
@@ -4490,6 +4510,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_jjkEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("jjk")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 주술회전 체크리스트 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>
   `;
 
@@ -4505,6 +4526,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_jjkdpEnabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("jjkdp")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 주술회전 DP 참여점포 조사 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>
   `;
 
@@ -4520,6 +4542,7 @@ async function renderPhotoSetting(root) {
                  top:3px;left:${_hdj2Enabled?"23px":"3px"};transition:left .2s"></div>
       </div>
     </div>
+    ${submitLockRowHtml("hdj2")}
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 후덕죽 2차 체크리스트 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>`;
 
   root.innerHTML = `
@@ -4703,6 +4726,7 @@ async function applyAdminSettings() {
     await setDoc(doc(db, "settings", "hdj2Enabled"), { value: _hdj2Enabled });
     await setDoc(doc(db, "settings", "jjkEnabled"), { value: _jjkEnabled });
     await setDoc(doc(db, "settings", "jjkdpEnabled"), { value: _jjkdpEnabled });
+    await setDoc(doc(db, "settings", "submitLocks"), { locks: _submitLocks, updatedAt: new Date(), updatedBy: _authName || "" });
     await setDoc(doc(db, "settings", "adminMeta"), { lastSavedAt: new Date(), lastSavedBy: _authName || "" });
     _dateLimitSetting = _dateLimitUIValue;
     alert("✅ 설정이 저장되었습니다.");
@@ -7635,6 +7659,7 @@ function removeNpImage(slotKey) {
 }
 
 async function submitFormNP() {
+  if (await checkSubmitLock("np")) return;
   if (!_npEnabled) {
     alert("현재 갓빠삭치킨 출시 교육점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -8733,6 +8758,7 @@ function removeSpacoolImage(qKey, idx) {
 }
 
 async function submitFormSpacool() {
+  if (await checkSubmitLock("spacool")) return;
   if (!_spacoolEnabled) {
     alert("현재 스파쿨 프로모션 현장점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -9767,6 +9793,7 @@ function removeGbchickenImage(qKey, idx) {
 }
 
 async function submitFormGbchicken() {
+  if (await checkSubmitLock("gbchicken")) return;
   if (!_gbchickenEnabled) {
     alert("현재 갓빠삭치킨 홍보물 부착 현장점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -10700,6 +10727,7 @@ function removeNashvilleImage(qKey, idx) {
 }
 
 async function submitFormNashville() {
+  if (await checkSubmitLock("nashville")) return;
   if (!_nashvilleEnabled) {
     alert("현재 내슈빌 핫치킨버거 홍보물 부착 현장점검 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -11659,6 +11687,7 @@ function updateChuseokMemo(val) {
 }
 
 async function submitFormChuseok() {
+  if (await checkSubmitLock("chuseok")) return;
   if (!_chuseokEnabled) {
     alert("현재 추석굿즈/싱글피자 체크리스트 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -12034,6 +12063,7 @@ function updateGrilledBulgogiMemo(val) {
 }
 
 async function submitFormGrilledBulgogi() {
+  if (await checkSubmitLock("grilledBulgogi")) return;
   if (!_grilledBulgogiEnabled) {
     alert("현재 그릴드불고기버거/갓빠삭(뼈) 체크리스트 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -12409,6 +12439,7 @@ function updateRehithamMemo(val) {
 }
 
 async function submitFormRehitham() {
+  if (await checkSubmitLock("rehitham")) return;
   if (!_rehithamEnabled) {
     alert("현재 RE-HIT 2종(햄치즈휠렛/베이컨치폴레) 체크리스트 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -12782,6 +12813,7 @@ function updateJjkMemo(val) {
 }
 
 async function submitFormJjk() {
+  if (await checkSubmitLock("jjk")) return;
   if (!_jjkEnabled) {
     alert("현재 주술회전 체크리스트 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -13177,6 +13209,7 @@ function updateJjkdpMemo(val) {
 }
 
 async function submitFormJjkdp() {
+  if (await checkSubmitLock("jjkdp")) return;
   if (!_jjkdpEnabled) {
     alert("현재 주술회전 DP 참여점포 조사 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -13562,6 +13595,7 @@ function updateHdj2Memo(val) {
 }
 
 async function submitFormHdj2() {
+  if (await checkSubmitLock("hdj2")) return;
   if (!_hdj2Enabled) {
     alert("현재 후덕죽 2차 체크리스트 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -13896,6 +13930,7 @@ function updateBeefRenewalMemo(val) {
 }
 
 async function submitFormBeefRenewal() {
+  if (await checkSubmitLock("beefRenewal")) return;
   if (!_beefRenewalEnabled) {
     alert("현재 비프 리뉴얼 체크리스트 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -14282,6 +14317,7 @@ function updateGkpreMemo(val) {
 }
 
 async function submitFormGkpre() {
+  if (await checkSubmitLock("gkpre")) return;
   if (!_gkpreEnabled) {
     alert("현재 귀멸의칼날 사전 체크리스트 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -14629,6 +14665,7 @@ function removeGkImage(qKey, idx) {
 }
 
 async function submitFormGk() {
+  if (await checkSubmitLock("gk")) return;
   if (!_gkEnabled) {
     alert("현재 귀멸의칼날 필수 체크리스트 기능이 비활성화되어 제출할 수 없습니다.\n관리자에게 문의해주세요.");
     return;
@@ -14752,6 +14789,52 @@ function toggleJjkEnabled() {
   const thumb = document.getElementById("toggle_thumb_jjkEnabled");
   if (wrap)  wrap.style.background = _jjkEnabled ? "#553C9A" : "#CBD5E0";
   if (thumb) thumb.style.left      = _jjkEnabled ? "23px" : "3px";
+}
+
+// ── 제출 잠금 (실적 마감용) — 카테고리별로 켜면 admin 외 역할의 신규 점검 제출이 차단됨.
+// 팀장 승인/반려 등 기존 건 처리는 영향 없음. 저장: settings/submitLocks { locks:{카테고리키:true} }
+let _submitLocks = {};
+async function loadSubmitLocks() {
+  try {
+    const snap = await getDoc(doc(db, "settings", "submitLocks"));
+    _submitLocks = snap.exists() ? (snap.data().locks || {}) : {};
+  } catch(e) { /* 읽기 실패 시 기존 상태 유지 */ }
+}
+function isSubmitLocked(cat) {
+  return _submitLocks[cat] === true && _authRole !== "admin";
+}
+// 제출 직전 최신 잠금 상태를 다시 읽어서 확인 (페이지를 열어둔 채 잠금이 켜진 경우 대비)
+async function checkSubmitLock(cat) {
+  if (_authRole === "admin") return false;
+  await loadSubmitLocks();
+  if (isSubmitLocked(cat)) {
+    alert("🔒 실적 마감으로 점검 제출이 잠겨 있습니다.\n제출이 필요하면 관리자에게 문의해주세요.");
+    return true;
+  }
+  return false;
+}
+function submitLockRowHtml(cat) {
+  const on = _submitLocks[cat] === true;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">🔒 제출 잠금 <span style="font-size:11px;color:#718096">(실적 마감 · admin 외 신규 제출 차단)</span></span>
+      <div id="toggle_wrap_lock_${cat}"
+        onclick="toggleSubmitLock('${cat}')"
+        style="width:44px;height:24px;border-radius:12px;background:${on?"#C53030":"#CBD5E0"};
+               position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+        <div id="toggle_thumb_lock_${cat}"
+          style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
+                 top:3px;left:${on?"23px":"3px"};transition:left .2s"></div>
+      </div>
+    </div>`;
+}
+function toggleSubmitLock(cat) {
+  _submitLocks[cat] = !(_submitLocks[cat] === true);
+  const on = _submitLocks[cat];
+  const wrap  = document.getElementById("toggle_wrap_lock_" + cat);
+  const thumb = document.getElementById("toggle_thumb_lock_" + cat);
+  if (wrap)  wrap.style.background = on ? "#C53030" : "#CBD5E0";
+  if (thumb) thumb.style.left      = on ? "23px" : "3px";
 }
 
 function toggleJjkdpEnabled() {
@@ -20259,7 +20342,7 @@ Object.assign(window, {
   startJjkInspection, goAdminJjk, toggleJjkEnabled,
   setJjkAnswer, handleJjkImage, removeJjkImage, updateJjkQMemo, updateJjkMemo, submitFormJjk, downloadExcelJjk,
   fetchRecordsJjk, setRecJjkFilter, viewRecordJjk, setDashJjkFilter, viewStoreHistoryJjk, approveJjkRecord, rejectJjkRecord, searchDashJjk, startInspectionForStoreJjk,
-  startJjkdpInspection, goAdminJjkdp, toggleJjkdpEnabled,
+  startJjkdpInspection, goAdminJjkdp, toggleJjkdpEnabled, toggleSubmitLock,
   setJjkdpAnswer, handleJjkdpImage, removeJjkdpImage, updateJjkdpQMemo, updateJjkdpQty, updateJjkdpMemo, submitFormJjkdp, downloadExcelJjkdp,
   fetchRecordsJjkdp, setRecJjkdpFilter, viewRecordJjkdp, setDashJjkdpFilter, viewStoreHistoryJjkdp, approveJjkdpRecord, rejectJjkdpRecord, searchDashJjkdp, startInspectionForStoreJjkdp,
   startHdj2Inspection, goAdminHdj2, toggleHdj2Enabled,
