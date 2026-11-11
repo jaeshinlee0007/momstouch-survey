@@ -20326,6 +20326,7 @@ const RV = {
   detail: null, cssOn: false,
 };
 const _RV_TTL = 10 * 60 * 1000;
+const RV_PHOTO_CONC = 6; // 사진 업로드 동시 처리 리뷰 수(브라우저 CPU·회선 기준 적정값)
 
 function rvEnsureCss() {
   if (RV.cssOn) return;
@@ -20758,6 +20759,12 @@ function renderReviewAdmin(root) {
       <div id="rvPhotoBar" style="display:none;margin-top:10px"><div class="rv-bar" style="height:8px"><div id="rvPhotoBarIn" style="width:0%"></div></div></div>
       <div id="rvPhotoMsg" style="margin-top:10px;font-size:13px;line-height:1.7"></div>
     </div>
+    <div class="rv-card" style="border-color:#FEB2B2">
+      <div style="font-size:14px;font-weight:800;margin-bottom:6px;color:#C53030">3. 전체 데이터 삭제 (테스트 정리용)</div>
+      <div class="rv-note" style="line-height:1.6;margin-bottom:10px">리뷰 원본, 팀·매장 집계, 반영 이력, 업로드한 리뷰 사진(압축본·썸네일)을 <b>모두 삭제</b>합니다. 되돌릴 수 없습니다. 점검 데이터 등 다른 데이터는 건드리지 않습니다.</div>
+      <button class="btn-ghost" style="color:#C53030;border-color:#FEB2B2" onclick="rvWipeAll()">리뷰 데이터 전체 삭제</button>
+      <div id="rvWipeMsg" style="margin-top:10px;font-size:13px;line-height:1.7"></div>
+    </div>
   </div>`;
 }
 function rvToDateStr(v) {
@@ -20853,6 +20860,53 @@ async function rvUploadRaw(file) {
       (unmatched.size ? `<br><span style="color:#C53030">매장 미매칭 ${unmatched.size}개 코드: ${[...unmatched.entries()].map(([c, n]) => escapeHtml(c) + "(" + n + ")").join(", ")}</span>` : `<br>모든 매장 매칭 완료`));
   } catch (e) { say(`<span style="color:#C53030">업로드 실패: ${escapeHtml(e.message || e)}</span>`); }
 }
+// 리뷰 관련 데이터 전체 삭제(관리자) — baemin_reviews / baemin_stats / settings/baeminMeta / Storage review_photos
+async function rvWipeAll() {
+  const msg = document.getElementById("rvWipeMsg");
+  if (_authRole !== "admin" || !msg) return;
+  if (!confirm("배달의민족 리뷰 데이터(리뷰·집계·사진)를 전부 삭제합니다.\n되돌릴 수 없습니다. 계속할까요?")) return;
+  const t = prompt("확인을 위해 '전체삭제'를 입력하세요.");
+  if (t !== "전체삭제") { msg.textContent = "취소되었습니다."; return; }
+  const say = x => { msg.innerHTML = x; };
+  try {
+    say("삭제 대상 확인 중...");
+    const revSnap = await getDocs(collection(db, "baemin_reviews"));
+    // 1) Storage 사진 삭제 (리뷰 문서에 기록된 사진 경로 기준)
+    const paths = [];
+    revSnap.forEach(d => {
+      const x = d.data(), n = (x.photoUrls || []).length || (x.photoUrl ? 1 : 0);
+      for (let i = 1; i <= n; i++) paths.push(`review_photos/${d.id}/${i}.jpg`);
+      if (n) paths.push(`review_photos/${d.id}/thumb.jpg`);
+    });
+    let pDone = 0;
+    const q = paths.slice();
+    const w = async () => {
+      while (q.length) {
+        const pth = q.shift();
+        try { await deleteObject(storageRef(storage, pth)); } catch (e) { /* 이미 없으면 무시 */ }
+        pDone++;
+        if (pDone % 20 === 0) say(`사진 삭제 중... ${pDone} / ${paths.length}`);
+      }
+    };
+    await Promise.all(Array.from({ length: RV_PHOTO_CONC }, w));
+    // 2) 리뷰 문서 삭제
+    const docs = revSnap.docs;
+    for (let i = 0; i < docs.length; i += 400) {
+      say(`리뷰 삭제 중... ${Math.min(i + 400, docs.length)} / ${docs.length}`);
+      const b = writeBatch(db);
+      docs.slice(i, i + 400).forEach(d => b.delete(d.ref));
+      await b.commit();
+    }
+    // 3) 집계 문서 + 반영 이력 삭제
+    const stSnap = await getDocs(collection(db, "baemin_stats"));
+    const sb = writeBatch(db);
+    stSnap.forEach(d => sb.delete(d.ref));
+    sb.delete(doc(db, "settings", "baeminMeta"));
+    await sb.commit();
+    RV.statsAt = 0; RV.stats = new Map(); RV.months = []; RV.meta = null; RV.revs = null; RV.revsCode = null; RV.detail = null;
+    say(`<b>삭제 완료</b> — 리뷰 ${docs.length}건 · 사진 ${paths.length}개 · 집계 문서 ${stSnap.size}개`);
+  } catch (e) { say(`<span style="color:#C53030">삭제 실패: ${escapeHtml(e.message || e)}</span> (일부만 삭제됐을 수 있으니 다시 실행하세요)`); }
+}
 // 사진 JPG 압축(워터마크 없음)
 function rvCompressJpg(file, maxW, quality) {
   return new Promise((resolve, reject) => {
@@ -20929,14 +20983,14 @@ async function rvUploadPhotos(files) {
       msg.textContent = `${done} / ${ids.length} 리뷰 처리 중...`;
     }
   };
-  await Promise.all([worker(), worker(), worker()]);
+  await Promise.all(Array.from({ length: RV_PHOTO_CONC }, worker));
   msg.innerHTML = `<b>완료</b> — 리뷰 ${okRev}건 · 사진 ${okPic}장 등록 · 리뷰ID 없음 ${noId.length}건 · 형식/오류 ${bad.length}건${ignored ? ` · 이미지 아님 ${ignored}개 제외` : ""}` +
     (noId.length ? `<br><span style="color:#C53030">리뷰ID 없음: ${noId.slice(0, 30).map(escapeHtml).join(", ")}${noId.length > 30 ? " …" : ""}</span>` : "") +
     (bad.length ? `<br><span style="color:#C53030">오류: ${bad.slice(0, 30).map(escapeHtml).join(", ")}${bad.length > 30 ? " …" : ""}</span>` : "");
 }
 
 Object.assign(window, {
-  openReview, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
+  openReview, rvWipeAll, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
   go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, handleReportDataUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
   removeImage, submitForm, fetchRecords, viewRecord, viewRecordDash,
