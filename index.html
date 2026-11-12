@@ -75,7 +75,7 @@ onAuthStateChanged(auth, async user => {
       _photoSettingsLoaded = false;
       _npEnabledLoaded = false;
       _spacoolEnabledLoaded = false;
-      await Promise.all([loadPhotoSettings(), loadDateLimitSetting(), loadNpEnabled(), loadSpacoolEnabled(), loadGbchickenEnabled(), loadNashvilleEnabled(), loadGkEnabled(), loadGkpreEnabled(), loadBeefRenewalEnabled(), loadChuseokEnabled(), loadGrilledBulgogiEnabled(), loadRehithamEnabled(), loadHdj2Enabled(), loadJjkEnabled(), loadJjkdpEnabled(), loadSubmitLocks()]);
+      await Promise.all([loadPhotoSettings(), loadDateLimitSetting(), loadBaeminEnabled(), loadNpEnabled(), loadSpacoolEnabled(), loadGbchickenEnabled(), loadNashvilleEnabled(), loadGkEnabled(), loadGkpreEnabled(), loadBeefRenewalEnabled(), loadChuseokEnabled(), loadGrilledBulgogiEnabled(), loadRehithamEnabled(), loadHdj2Enabled(), loadJjkEnabled(), loadJjkdpEnabled(), loadSubmitLocks()]);
       // sessionStorage에 점검 중 데이터가 있으면 home으로 이동하지 않음
       // (이어서 점검하기 팝업이 뜰 것이므로)
       const _hasPendingSession = (() => {
@@ -680,7 +680,7 @@ function render() {
   root.innerHTML = ""; window.scrollTo(0,0);
   const scr = S.screen;
   // 미로그인 상태에서 보호 화면 접근 시 로그인으로 리디렉션
-  const protectedScreens = ["topHub","hub","home","homeNP","homeSpacool","homeGbchicken","homeNashville","homeGk","homeGkpre","homeBeefRenewal","homeChuseok","homeGrilledBulgogi","homeReport","reportStoreSel","reportTeam","reportDetail","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP","approvalNP","dashboardSpacool","recordsSpacool","recordDetailSpacool","storeHistorySpacool","approvalSpacool","dashboardGbchicken","recordsGbchicken","recordDetailGbchicken","storeHistoryGbchicken","approvalGbchicken","dashboardNashville","recordsNashville","recordDetailNashville","storeHistoryNashville","approvalNashville","dashboardGk","recordsGk","recordDetailGk","storeHistoryGk","approvalGk","dashboardGkpre","recordsGkpre","recordDetailGkpre","storeHistoryGkpre","approvalGkpre","dashboardBeefRenewal","recordsBeefRenewal","recordDetailBeefRenewal","storeHistoryBeefRenewal","approvalBeefRenewal","dashboardChuseok","recordsChuseok","recordDetailChuseok","storeHistoryChuseok","approvalChuseok","dashboardGrilledBulgogi","recordsGrilledBulgogi","recordDetailGrilledBulgogi","storeHistoryGrilledBulgogi","approvalGrilledBulgogi","homeRehitham","dashboardRehitham","recordsRehitham","recordDetailRehitham","storeHistoryRehitham","approvalRehitham","mobileDash","homeHdj2","dashboardHdj2","recordsHdj2","recordDetailHdj2","storeHistoryHdj2","approvalHdj2","homeJjk","dashboardJjk","recordsJjk","recordDetailJjk","storeHistoryJjk","approvalJjk","homeJjkdp","dashboardJjkdp","recordsJjkdp","recordDetailJjkdp","storeHistoryJjkdp","approvalJjkdp"];
+  const protectedScreens = ["topHub","hub","home","homeNP","homeSpacool","homeGbchicken","homeNashville","homeGk","homeGkpre","homeBeefRenewal","homeChuseok","homeGrilledBulgogi","homeReport","reportStoreSel","reportTeam","reportDetail","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP","approvalNP","dashboardSpacool","recordsSpacool","recordDetailSpacool","storeHistorySpacool","approvalSpacool","dashboardGbchicken","recordsGbchicken","recordDetailGbchicken","storeHistoryGbchicken","approvalGbchicken","dashboardNashville","recordsNashville","recordDetailNashville","storeHistoryNashville","approvalNashville","dashboardGk","recordsGk","recordDetailGk","storeHistoryGk","approvalGk","dashboardGkpre","recordsGkpre","recordDetailGkpre","storeHistoryGkpre","approvalGkpre","dashboardBeefRenewal","recordsBeefRenewal","recordDetailBeefRenewal","storeHistoryBeefRenewal","approvalBeefRenewal","dashboardChuseok","recordsChuseok","recordDetailChuseok","storeHistoryChuseok","approvalChuseok","dashboardGrilledBulgogi","recordsGrilledBulgogi","recordDetailGrilledBulgogi","storeHistoryGrilledBulgogi","approvalGrilledBulgogi","homeRehitham","dashboardRehitham","recordsRehitham","recordDetailRehitham","storeHistoryRehitham","approvalRehitham","mobileDash","homeHdj2","dashboardHdj2","recordsHdj2","recordDetailHdj2","storeHistoryHdj2","approvalHdj2","homeJjk","dashboardJjk","recordsJjk","recordDetailJjk","storeHistoryJjk","approvalJjk","review","reviewStore","reviewDetail","reviewAdmin","homeJjkdp","dashboardJjkdp","recordsJjkdp","recordDetailJjkdp","storeHistoryJjkdp","approvalJjkdp"];
   if (!_currentUser && protectedScreens.includes(scr)) {
     renderLogin(root);
     return;
@@ -689,6 +689,10 @@ function render() {
   else if (scr==="homeReport") renderHomeReport(root);
   else if (scr==="reportTeam") renderReportTeam(root); // async
   else if (scr==="mobileDash") renderMobileDash(root); // async
+  else if (scr==="review")       renderReview(root);
+  else if (scr==="reviewStore")  renderReviewStore(root);
+  else if (scr==="reviewDetail") renderReviewDetail(root);
+  else if (scr==="reviewAdmin")  renderReviewAdmin(root);
   else if (scr==="reportStoreSel") renderReportStoreSel(root);
   else if (scr==="reportDetail")   renderReportDetail(root); // async
   else if (scr==="hub")        renderHub(root); // npEnabled는 로그인 시 캐시됨
@@ -808,6 +812,13 @@ function renderTopHub(root) {
           <span class="hub-card-title">매장 컨설팅 리포트<span style="font-size:10px;background:#1A202C;color:white;padding:1px 6px;border-radius:8px;margin-left:6px">NEW</span></span>
         </span>
       </button>
+      <button class="hub-card${rvAllowed() ? "" : " disabled"}" onclick="openReview()">
+        <span class="hub-card-icon" style="background:#FFF5F5;color:#C53030"><span style="font-size:16px">💬</span></span>
+        <span>
+          <span class="hub-card-title">배달의민족 리뷰 관리<span style="font-size:10px;background:#1A202C;color:white;padding:1px 6px;border-radius:8px;margin-left:6px">NEW</span></span>
+          ${!_baeminEnabled ? `<span class="hub-card-sub" style="display:block">${_authRole === "admin" ? "OFF · 관리자만 진입 가능" : "준비중"}</span>` : ""}
+        </span>
+      </button>
       <button class="hub-card" onclick="openMobileDash()">
         <span class="hub-card-icon" style="background:#FFF5F5;color:#C8102E"><span style="font-size:16px">📱</span></span>
         <span>
@@ -919,6 +930,18 @@ async function renderNearbyCard(code) {
     el.innerHTML = shell(`<div style="font-size:12px;color:#C53030;margin-top:8px">인근 점포 정보를 불러오지 못했습니다: ${escapeHtml(e.message || e)}</div>`);
   }
 }
+// 인근 점포 매출 100만원당 판매갯수 — area_stats에 이미 있는 값(pos=월 실매출(부가세 제외), days=영업일,
+// chk/bef/piz=일 평균 수량)으로 계산. 월 판매수량 = 일 평균 수량 × 영업일, ÷ (월 실매출 ÷ 100만원).
+// 업로드 시점에 비프/피자는 취급 매장만 수량이 들어가 있으므로 미취급 매장은 자동으로 평균에서 빠짐.
+function _per1mMap(mo, field) {
+  const out = {};
+  const q = mo?.[field] || {}, d = mo?.days || {}, p = mo?.pos || {};
+  Object.keys(q).forEach(code => {
+    const dq = Number(q[code]), dd = Number(d[code]), pp = Number(p[code]);
+    if (dq > 0 && dd > 0 && pp > 0) out[code] = Math.round(dq * dd / (pp / 1e6) * 10) / 10;
+  });
+  return out;
+}
 function changeNearbyMonth(ym) {
   if (!window._nearby) return;
   window._nearby.ym = ym;
@@ -971,6 +994,27 @@ function _paintNearby() {
     ? opsRow("영업일", mo.days, fDay, "days") + opsRow("일 평균 영업시간", mo.dh, fHr, "dh")
       + opsRow("일 평균 치킨", mo.chk, fQty, "chk") + opsRow("일 평균 비프", mo.bef, fQty, "beef") + opsRow("일 평균 피자", mo.piz, fQty, "pizza")
     : "";
+  // 매출 100만원당 판매갯수 (치킨/비프/피자) — 한 표로 묶어서 표시
+  let per1mHtml = "";
+  if (hasOps) {
+    const pRow = (label, field, kind) => {
+      const s = stat(_per1mMap(mo, field));
+      let mineTxt;
+      if (s.mine != null) mineTxt = fQty(s.mine);
+      else if (kind === "beef" && !own.beef_intro_date) mineTxt = "미취급";
+      else if (kind === "pizza" && !own.pizza_intro_date) mineTxt = "미취급";
+      else mineTxt = "-";
+      const cell = v => v == null ? "-" : fQty(v);
+      return `<tr><td style="padding:6px 2px">${label}</td><td style="text-align:right"><b>${mineTxt}</b></td><td style="text-align:right">${cell(s.avg)}</td><td style="text-align:right">${cell(s.med)}</td></tr>`;
+    };
+    per1mHtml = `
+    <div class="sec" style="font-size:12px;font-weight:700;margin:12px 0 2px;color:#718096">매출 100만원당 판매갯수 (${_ymKo(n.ym)} 기준)</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr style="color:#718096;font-size:10.5px"><th style="text-align:left;padding:4px 2px;border-bottom:1px solid var(--border)"></th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">내 매장</th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">인근 평균</th><th style="text-align:right;padding:4px 2px;border-bottom:1px solid var(--border)">인근 중앙값</th></tr>
+      ${pRow("치킨", "chk", "chk")}${pRow("비프", "bef", "beef")}${pRow("피자", "piz", "pizza")}
+    </table>
+    <div style="font-size:10.5px;color:#A0AEC0;margin-top:4px">*월 판매수량 ÷ (월 POS 실매출 ÷ 100만원) · 미취급 매장은 평균에서 제외</div>`;
+  }
   const rankTxt = (s) => s.rank != null ? `${s.rank}위 <small style="font-size:11px;font-weight:500">/ ${s.total}개 중</small>` : `-`;
   el.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -992,6 +1036,7 @@ function _paintNearby() {
       ${row("물대", wat)}
       <div style="margin-top:8px"><span style="display:inline-block;font-size:11px;border-radius:6px;padding:1px 7px;background:#F7FAFC;border:1px solid var(--border);color:#718096">물대 순위 ${rankTxt(wat)}</span></div>
       ${opsHtml}
+      ${per1mHtml}
     `;
 }
 
@@ -1727,6 +1772,59 @@ function _opsView(rep) {
   };
 }
 
+// 매출 현황 카드 계산 — _fetchReportData가 이미 부가세 제외(÷1.1) 처리한 pos_sales 사용.
+// 기준월 = 전체 실매출이 0보다 큰 최신월. 연 월평균 = 같은 연도 중 매출이 있는 월만(휴점월 제외).
+// 채널 비중 = 내점+배달+포장 합계 대비(모바일 대시보드와 동일 정의).
+function _salesView(rep) {
+  const ps = rep?.pos_sales || {};
+  const tot = ym => Number(ps[ym]?.["전체"]?.실매출액) || 0;
+  const yms = Object.keys(ps).filter(ym => /^\d{4}-\d{2}$/.test(ym) && tot(ym) > 0).sort();
+  if (!yms.length) return null;
+  const ym = yms[yms.length - 1], yr = ym.slice(0, 4);
+  const cur = tot(ym), prev = tot(_ymAdd(ym, -1)) || null;
+  const yrYms = yms.filter(m => m.startsWith(yr));
+  const yrAvg = yrYms.reduce((a, m) => a + tot(m), 0) / yrYms.length;
+  const ch = ["내점", "배달", "포장"].map(k => ({ k, v: Number(ps[ym]?.[k]?.실매출액) || 0, tc: Number(ps[ym]?.[k]?.영수건수) || 0 }));
+  const chSum = ch.reduce((a, c) => a + c.v, 0);
+  ch.forEach(c => { c.pct = chSum ? c.v / chSum * 100 : null; });
+  return { ym, yr, cur, prev, yrAvg, yrMonths: yrYms.length, ch };
+}
+function _salesCardHtml(rep) {
+  const sv = _salesView(rep);
+  if (!sv) return `<div class="question-card"><span class="q-title">매출 현황</span><div style="font-size:12px;color:#A0AEC0;margin-top:8px">매출 데이터가 없습니다.</div></div>`;
+  const box = (label, val, sub) => `<div style="background:#F7FAFC;border-radius:10px;padding:9px;text-align:center"><div style="font-size:10.5px;color:#718096">${label}</div><b style="font-size:15px">${val}</b><div style="font-size:10.5px;color:#718096;margin-top:2px">${sub}</div></div>`;
+  const th = (s, al) => `<th style="text-align:${al || "right"};padding:4px 2px;border-bottom:1px solid var(--border);font-size:10.5px;color:#718096;font-weight:600">${s}</th>`;
+  const rows = sv.ch.map(c => `<tr><td style="padding:6px 2px">${c.k}</td><td style="text-align:right">${_fmtWon(c.v)}</td><td style="text-align:right">${c.pct == null ? "-" : c.pct.toFixed(1) + "%"}</td><td style="text-align:right">${c.tc ? c.tc.toLocaleString() : "-"}</td></tr>`).join("");
+  return `
+      <div class="question-card">
+        <span class="q-title">매출 현황 <span style="font-size:10.5px;font-weight:500;color:#A0AEC0">*부가세 제외 · ${_ymKo(sv.ym)} 기준</span></span>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+          ${box("전월 매출", _fmtWon(sv.cur), `전월 대비 ${_pctHtml(sv.cur, sv.prev)}`)}
+          ${box(`${sv.yr}년 월평균`, _fmtWon(sv.yrAvg), `*휴점월 제외 (${sv.yrMonths}개월)`)}
+        </div>
+        <div style="font-size:12px;font-weight:700;margin:12px 0 2px;color:#718096">채널별 매출 (${_ymKo(sv.ym)})</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <tr>${th("", "left")}${th("월매출")}${th("비중")}${th("TC")}</tr>
+          ${rows}
+        </table>
+      </div>`;
+}
+// 매장운영정보 카드의 매출 100만원당 판매갯수 — 기준월은 _opsView와 동일(ops_asof).
+// 해당월 판매수량 ÷ (해당월 POS 실매출(부가세 제외, _fetchReportData에서 ÷1.1 처리됨) ÷ 100만원).
+function _per1mView(rep) {
+  const ym = rep?.ops_asof || "";
+  const pos = ym ? Number(rep?.pos_sales?.[ym]?.["전체"]?.실매출액) || 0 : 0;
+  const txt = (key) => {
+    if (key === "beef" && !rep?.beef_intro_date) return "미취급";
+    if (key === "pizza" && !rep?.pizza_intro_date) return "미취급";
+    const q = ym ? rep?.menu_qty?.[ym]?.[key] : null;
+    if (q == null) return "업데이트 예정";
+    if (!(pos > 0)) return "-";
+    return (Number(q) / (pos / 1e6)).toFixed(1) + "개";
+  };
+  return { chicken: txt("chicken"), beef: txt("beef"), pizza: txt("pizza") };
+}
+
 function _reportInfoRow(label, val) {
   return `<tr><td style="color:#718096;font-size:13px;padding:4px 0;width:42%">${label}</td><td style="text-align:right;padding:4px 0;font-size:13px">${val ?? "-"}</td></tr>`;
 }
@@ -1754,6 +1852,7 @@ async function renderReportDetail(root) {
     window._reportDetailData = data; // Excel 다운로드 시 참조
     const fmtDate2 = v => v ? String(v).slice(0,10) : "-";
     const opsV = _opsView(data);
+    const p1m = _per1mView(data); // 매출 100만원당 판매갯수(매장운영정보 카드 전용)
     const fmtMoney = v => (v == null || v === "") ? "-" : (() => {
       const n = Number(String(v).replace(/,/g, "")); // "7,000" 같은 콤마 포함 문자열도 처리
       return Number.isNaN(n) ? String(v) : n.toLocaleString();
@@ -1810,8 +1909,13 @@ async function renderReportDetail(root) {
           ${_reportInfoRow("일 평균 치킨", escapeHtml(opsV.chicken))}
           ${_reportInfoRow("일 평균 비프", escapeHtml(opsV.beef))}
           ${_reportInfoRow("일 평균 피자", escapeHtml(opsV.pizza))}
+          ${_reportInfoRow("100만원당 치킨", escapeHtml(p1m.chicken))}
+          ${_reportInfoRow("100만원당 비프", escapeHtml(p1m.beef))}
+          ${_reportInfoRow("100만원당 피자", escapeHtml(p1m.pizza))}
         </table>
       </div>
+
+      ${_salesCardHtml(data)}
 
       <div id="nearbyCard" class="question-card"><p class="loading-text">인근 점포 불러오는 중...</p></div>
 
@@ -1865,8 +1969,49 @@ function _drawReportChart(canvasId, monthMap, extractVal) {
   });
 }
 
-// 매장 컨설팅 리포트 상세화면의 Excel 다운로드 — 기본정보(구분/값 세로형) / POS매출(월별×채널) /
+// 매장 컨설팅 리포트 상세화면의 Excel 다운로드 — POS매출(월별×채널) / 물대(월별금액) / 인근점포비교 3개 시트. (기본정보 시트는 제외)
+// (이전 구성: 기본정보 /
 // 물대(월별금액) 3개 시트로 구성. 화면에 이미 로드된 데이터(window._reportDetailData)를 그대로 씀.
+// 인근점포비교 시트 — 화면의 인근 점포 카드가 이미 불러온 area_stats(window._nearby)만 사용(추가 읽기 없음).
+// 기준월 = 카드에서 선택한 월. 해당점 1행 → 인근점(실매출 높은순) → 평균·중앙값(본인 포함, 화면과 동일 기준).
+function _nearbyExcelRows(code) {
+  const n = window._nearby;
+  if (!n || n.code !== code || !n.data?.months?.[n.ym]) return [["인근 점포 비교 데이터가 없습니다. (지역 정보 또는 지역별 집계 없음)"]];
+  const mo = n.data.months[n.ym];
+  const stores = window._activeStores || [];
+  const byCode = new Map(stores.map(s => [s.code, s]));
+  const pC = _per1mMap(mo, "chk"), pB = _per1mMap(mo, "bef"), pP = _per1mMap(mo, "piz");
+  const num = (map, c) => { const v = map?.[c]; return v == null || !(Number(v) > 0) ? "" : Number(v); };
+  const codes = new Set();
+  ["pos", "water", "days"].forEach(f => Object.keys(mo[f] || {}).forEach(c => codes.add(c)));
+  codes.add(code);
+  const mkRow = (c, label) => {
+    const s = byCode.get(c);
+    return [label, c, s?.name || "-", s?.team || "-",
+      num(mo.pos, c), num(mo.water, c), num(mo.days, c), num(mo.dh, c),
+      num(mo.chk, c), num(mo.bef, c), num(mo.piz, c), num(pC, c), num(pB, c), num(pP, c)];
+  };
+  const header = ["구분", "매장코드", "매장명", "팀", "POS 실매출(부가세 제외)", "물대(음료대 제외)", "영업일",
+    "일 평균 영업시간", "일 평균 치킨", "일 평균 비프", "일 평균 피자", "100만원당 치킨", "100만원당 비프", "100만원당 피자"];
+  const others = [...codes].filter(c => c !== code).sort((a, b) => (Number(mo.pos?.[b]) || 0) - (Number(mo.pos?.[a]) || 0));
+  const body = [mkRow(code, "해당점"), ...others.map(c => mkRow(c, "인근점"))];
+  const agg = (fn, label) => {
+    const r = [label, "", "", ""];
+    for (let i = 4; i < header.length; i++) {
+      const vals = body.map(x => x[i]).filter(v => typeof v === "number" && v > 0);
+      const v = vals.length ? fn(vals) : null;
+      r.push(v == null ? "" : Math.round(v * 10) / 10);
+    }
+    return r;
+  };
+  return [
+    [`기준월 ${n.ym} · 권역 ${n.area} · 평균·중앙값은 본인 포함 · 0/미취급 제외`],
+    header, ...body,
+    agg(a => a.reduce((x, y) => x + y, 0) / a.length, "평균"),
+    agg(_median, "중앙값"),
+  ];
+}
+
 async function downloadExcelReportDetail() {
   const data = window._reportDetailData;
   const target = window._reportTarget;
@@ -1877,31 +2022,6 @@ async function downloadExcelReportDetail() {
     alert("엑셀 라이브러리 로드 실패: " + e.message);
     return;
   }
-
-  const fmtDate2 = v => v ? String(v).slice(0,10) : "";
-  const opsV = _opsView(data);
-  const infoRows = [
-    ["구분","값"],
-    ["매장코드", target.code],
-    ["매장명", target.name],
-    ["점주명", data.owner_name || ""],
-    ["최초 오픈일", fmtDate2(data.first_open_date)],
-    ["현재점 오픈일", fmtDate2(data.open_date)],
-    ["영업시간", data.biz_hours || ""],
-    ["담당AC/팀", `${data.ac_name||""} / ${data.team||""}`],
-    ["지역", `${data.region_large||""} ${data.region_small||""}`.trim()],
-    ["층수/평수", `${data.floor??""}층 · ${data.size_pyeong??""}평`],
-    ["보증금/임대료", `${data.deposit??""} / ${data.rent??""}`],
-    ["비프 도입", data.beef_intro_date ? `도입 · ${fmtDate2(data.beef_intro_date)}` : "미도입"],
-    ["피자 도입", data.pizza_intro_date ? `도입 · ${fmtDate2(data.pizza_intro_date)}` : "미도입"],
-    ["배민1 가입", data.baemin1 === "O" ? "가입" : "미가입"],
-    ["쿠팡이츠 가입", data.coupangeats === "O" ? "가입" : "미가입"],
-    [`전월 영업일${opsV.ym ? ` (${opsV.ymKo} 기준)` : ""}`, opsV.daysTxt],
-    [`전월 일 평균 영업시간${opsV.ym ? ` (${opsV.ymKo} 기준)` : ""}`, opsV.hrsTxt],
-    ["일 평균 치킨", opsV.chicken],
-    ["일 평균 비프", opsV.beef],
-    ["일 평균 피자", opsV.pizza],
-  ];
 
   const channels = ["전체","내점","배달","포장"]; // 다운로드용은 이 4개 채널의 실매출액만 노출
   const salesHeader = ["연월"];
@@ -1922,10 +2042,12 @@ async function downloadExcelReportDetail() {
     waterRows.push([ym, data.water_sales[ym] || 0]);
   });
 
+  const nearbyRows = _nearbyExcelRows(target.code);
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(infoRows), "기본정보");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(salesRows), "POS매출");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(waterRows), "물대");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(nearbyRows), "인근점포비교");
   const dateStr = new Date().toISOString().slice(0,10);
   XLSX.writeFile(wb, `${target.name}_${target.code}_컨설팅리포트_${dateStr}.xlsx`);
 }
@@ -4156,6 +4278,8 @@ async function renderPhotoSetting(root) {
   _dateLimitLoaded = false;
   await loadDateLimitSetting();
   _dateLimitUIValue = _dateLimitSetting;
+  _baeminEnabledLoaded = false;
+  await loadBaeminEnabled();
   _npEnabledLoaded = false;
   await loadNpEnabled();
   _npPhotoRequiredLoaded = false;
@@ -4513,6 +4637,21 @@ async function renderPhotoSetting(root) {
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 허브 화면의 주술회전 체크리스트 카드가 비활성 처리됩니다. 기존 점검 데이터/이력은 그대로 보존됩니다.</div>
   `;
 
+  const baeminCategoryHtml = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">배달의민족 리뷰 관리 사용</span>
+      <div id="toggle_wrap_baeminEnabled"
+        onclick="toggleBaeminEnabled()"
+        style="width:44px;height:24px;border-radius:12px;background:${_baeminEnabled?"#C53030":"#CBD5E0"};
+               position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+        <div id="toggle_thumb_baeminEnabled"
+          style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
+                 top:3px;left:${_baeminEnabled?"23px":"3px"};transition:left .2s"></div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 메인 화면의 배달의민족 리뷰 관리 카드가 비활성 처리됩니다(관리자는 계속 진입 가능). 리뷰·집계·사진 데이터는 그대로 보존됩니다.</div>
+  `;
+
   const jjkdpCategoryHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
       <span style="font-size:14px">주술회전 DP 참여점포 조사 사용</span>
@@ -4554,6 +4693,7 @@ async function renderPhotoSetting(root) {
 
       ${section("📋", "매장 데이터 관리", storeDataHtml, true)}
       ${section("📊", "매장 컨설팅 리포트 데이터", reportDataHtml, false)}
+      ${section("💬", "배달의민족 리뷰 관리", baeminCategoryHtml, false)}
       ${section("🍔", "신규플랫폼 현장점검", defaultCategoryHtml, false)}
       ${section("🆕", "갓빠삭치킨 출시 교육점검", npCategoryHtml, false)}
       ${section("🧊", "스파쿨 프로모션 현장점검", spacoolCategoryHtml, false)}
@@ -4711,6 +4851,7 @@ async function applyAdminSettings() {
     });
     await setDoc(doc(db, "settings", "photoRequired"), _photoSettings);
     await setDoc(doc(db, "settings", "dateLimit"), { value: _dateLimitUIValue });
+    await setDoc(doc(db, "settings", "baeminEnabled"), { value: _baeminEnabled });
     await setDoc(doc(db, "settings", "npEnabled"), { value: _npEnabled });
     await setDoc(doc(db, "settings", "npPhotoRequired"), { value: _npPhotoRequired });
     await setDoc(doc(db, "settings", "spacoolEnabled"), { value: _spacoolEnabled });
@@ -20299,7 +20440,715 @@ async function downloadExcelGkpre() {
 
 
 
+// ════════════════════════════════════════════════════════════
+// 배달의민족 리뷰 관리
+//  - baemin_reviews/{리뷰ID}   : 리뷰 원본(관리자 RAW 업로드, 리뷰ID 기준 누적 반영)
+//  - baemin_stats/{팀}         : 팀별 매장 집계(리뷰수·별점합·별점분포·월별) — 업로드 시 계산해 저장, 조회는 팀 문서만 읽음
+//  - settings/baeminMeta       : 마지막 반영 정보
+//  - Storage review_photos/{리뷰ID}.jpg : 관리자 벌크 업로드(파일명=리뷰ID)
+//  조회범위(앱 단): AC=본인 매장 / TL=본인 팀 / GL·ADMIN=전 매장, 팀별 현황은 TL 이상
+// ════════════════════════════════════════════════════════════
+// ── 사용 ON/OFF (settings/baeminEnabled) — 문서가 없으면 ON(기존 운영 상태 유지).
+//    OFF 시 최상위 HUB 카드 비활성 + 진입 차단. ADMIN은 데이터 준비를 위해 OFF여도 진입 가능. 리뷰 데이터는 그대로 보존.
+let _baeminEnabled = true;
+let _baeminEnabledLoaded = false;
+async function loadBaeminEnabled() {
+  if (_baeminEnabledLoaded) return;
+  try {
+    const snap = await getDoc(doc(db, "settings", "baeminEnabled"));
+    _baeminEnabled = snap.exists() ? snap.data().value !== false : true;
+  } catch (e) {
+    _baeminEnabled = true;
+  }
+  _baeminEnabledLoaded = true;
+}
+function rvAllowed() { return _baeminEnabled || _authRole === "admin"; }
+function toggleBaeminEnabled() {
+  _baeminEnabled = !_baeminEnabled;
+  const wrap  = document.getElementById("toggle_wrap_baeminEnabled");
+  const thumb = document.getElementById("toggle_thumb_baeminEnabled");
+  if (wrap)  wrap.style.background = _baeminEnabled ? "#C53030" : "#CBD5E0";
+  if (thumb) thumb.style.left      = _baeminEnabled ? "23px" : "3px";
+}
+
+const RV_STATUS = { DISPLAY: "노출", TEMPORARY_BLOCK: "임시 차단", OPERATE_BLOCK: "운영 차단" };
+const RV = {
+  tab: "search", kw: "", sort: "name", ym: "all",
+  team: "all", tsort: "asc", tym: "all",
+  scope: null, stats: new Map(), statsAt: 0, months: [], meta: null,
+  sel: null, view: "summary", revs: null, revsCode: null, fStatus: "all", fYm: "all", fSort: "new",
+  detail: null, cssOn: false,
+};
+const _RV_TTL = 10 * 60 * 1000;
+const RV_PHOTO_CONC = 6; // 사진 업로드 동시 처리 리뷰 수(브라우저 CPU·회선 기준 적정값)
+
+function rvEnsureCss() {
+  if (RV.cssOn) return;
+  RV.cssOn = true;
+  const st = document.createElement("style");
+  st.textContent = `
+.rv-tabs{display:flex;background:white;border-bottom:1px solid var(--border)}
+.rv-tab{flex:1;height:46px;border:0;border-bottom:3px solid transparent;background:none;font-size:15px;font-weight:600;color:var(--sub);cursor:pointer}
+.rv-tab.on{border-bottom-color:#1A202C;color:#1A202C;font-weight:800}
+.rv-card{background:white;border:1.5px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
+.rv-kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.rv-kpi{background:white;border:1.5px solid var(--border);border-radius:14px;padding:12px}
+.rv-kpi .l{font-size:12px;color:var(--sub)}
+.rv-kpi .v{font-size:24px;font-weight:800;margin-top:2px;color:#1A202C}
+.rv-kpi .v small{font-size:12px;font-weight:600;color:#4A5568}
+.rv-kpi .d{font-size:11px;color:#718096;margin-top:2px;min-height:14px}
+.rv-sel{height:40px;border:1.5px solid var(--border);border-radius:10px;background:white;padding:0 10px;font-size:13px;color:#2D3748}
+.rv-row{display:flex;align-items:center;gap:8px;width:100%;padding:11px 2px;border:0;border-bottom:1px solid #EDF2F7;background:none;text-align:left;cursor:pointer}
+.rv-row:last-child{border-bottom:0}
+.rv-chip{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;background:#EDF2F7;color:#2D3748}
+.rv-chip.blk{background:#1A202C;color:#fff}
+.rv-btn{height:36px;padding:0 12px;border-radius:10px;border:1.5px solid var(--border);background:white;font-size:12px;color:#4A5568;cursor:pointer}
+.rv-btn.on{border:2px solid #1A202C;color:#1A202C;font-weight:700}
+.rv-pill{height:34px;padding:0 13px;border-radius:999px;border:1.5px solid var(--border);background:white;font-size:13px;color:#4A5568;cursor:pointer;white-space:nowrap}
+.rv-pill.on{border:2px solid #1A202C;color:#1A202C;font-weight:700}
+.rv-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.rv-tbl th{font-size:11px;color:var(--sub);font-weight:600;text-align:right;padding:5px 3px;border-bottom:1px solid var(--border)}
+.rv-tbl td{text-align:right;padding:8px 3px;border-bottom:1px solid #EDF2F7}
+.rv-tbl th:first-child,.rv-tbl td:first-child{text-align:left}
+.rv-rev{background:white;border:1.5px solid var(--border);border-radius:14px;padding:13px;margin-bottom:10px;width:100%;text-align:left;cursor:pointer;display:block}
+.rv-clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rv-kv{display:flex;gap:12px;padding:6px 0}
+.rv-kv .k{width:84px;flex-shrink:0;font-size:13px;color:var(--sub)}
+.rv-kv .v{font-size:14px;font-weight:600;word-break:break-all}
+.rv-note{font-size:11px;color:var(--sub)}
+.rv-bar{height:8px;border-radius:4px;background:#EDF2F7;overflow:hidden;flex:1}
+.rv-bar>div{height:100%;background:#1A202C}
+`;
+  document.head.appendChild(st);
+}
+
+// ── 공용 헬퍼 ──
+function rvStatusLabel(s) { return RV_STATUS[s] || s || "-"; }
+function rvIsTlUp() { return ["tl", "gl", "admin"].includes(_authRole); }
+function rvFmtAvg(st) { return st && st.n > 0 ? (st.s / st.n).toFixed(1) : "-"; }
+function rvFmtDt(s) { return s ? String(s).slice(0, 16).replace(/-/g, ".") : "-"; }
+function rvYmLabel(ym) { return /^\d{4}-\d{2}$/.test(ym || "") ? `${ym.slice(0, 4)}.${ym.slice(5, 7)}` : "전체 기간"; }
+function rvScopeText() {
+  return _authRole === "sv" ? "AC: 본인 담당 매장" : _authRole === "tl" ? "TL: 본인 팀 매장" : "GL·ADMIN: 전 매장";
+}
+function rvScopeStores(all) {
+  if (_authRole === "sv") return all.filter(s => s.sv === _authName);
+  if (_authRole === "tl") return all.filter(s => s.tl === _authName || s.sv === _authName);
+  return all.slice();
+}
+function rvStat(code, ym) {
+  const o = RV.stats.get(code);
+  if (!o) return { n: 0, s: 0 };
+  if (ym === "all") return { n: o.n || 0, s: o.s || 0 };
+  const m = o.m && o.m[ym];
+  return m ? { n: m[0], s: m[1] } : { n: 0, s: 0 };
+}
+function rvAggStores(list, ym) {
+  let n = 0, s = 0, withRev = 0;
+  list.forEach(st => { const x = rvStat(st.code, ym); if (x.n > 0) { withRev++; n += x.n; s += x.s; } });
+  return { stores: withRev, total: list.length, n, s };
+}
+// 평점 낮은순/높은순 정렬 — 리뷰 없는 매장은 항상 최하단
+function rvSortStores(list, ym, mode) {
+  const nm = (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko");
+  const arr = list.map(st => ({ st, x: rvStat(st.code, ym) }));
+  const has = arr.filter(o => o.x.n > 0), none = arr.filter(o => o.x.n === 0);
+  const avg = o => o.x.s / o.x.n;
+  if (mode === "asc") has.sort((a, b) => avg(a) - avg(b) || b.x.n - a.x.n || nm(a.st, b.st));
+  else if (mode === "desc") has.sort((a, b) => avg(b) - avg(a) || b.x.n - a.x.n || nm(a.st, b.st));
+  else if (mode === "cnt") has.sort((a, b) => b.x.n - a.x.n || avg(a) - avg(b) || nm(a.st, b.st));
+  else has.sort((a, b) => nm(a.st, b.st));
+  none.sort((a, b) => nm(a.st, b.st));
+  return has.concat(none);
+}
+function rvPrevYm(ym) { return /^\d{4}-\d{2}$/.test(ym) ? _ymAdd(ym, -1) : null; }
+function rvDeltaCnt(cur, prev) {
+  const d = cur - prev;
+  return `<span style="color:#4A5568">${d > 0 ? "▲" : d < 0 ? "▼" : "-"}${d !== 0 ? Math.abs(d) : ""}</span>`;
+}
+function rvDeltaAvg(curSt, prevSt) {
+  if (!(curSt.n > 0) || !(prevSt.n > 0)) return `<span style="color:#A0AEC0">-</span>`;
+  const d = Math.round((curSt.s / curSt.n - prevSt.s / prevSt.n) * 10) / 10;
+  if (d === 0) return `<span style="color:#718096">±0.0</span>`;
+  return `<span style="color:${d > 0 ? "#2F855A" : "#C53030"};font-weight:700">${d > 0 ? "▲" : "▼"}${Math.abs(d).toFixed(1)}</span>`;
+}
+function rvMonthOptions(sel, withAll = true) {
+  return (withAll ? [`<option value="all" ${sel === "all" ? "selected" : ""}>전체 기간</option>`] : [])
+    .concat(RV.months.map(m => `<option value="${m}" ${m === sel ? "selected" : ""}>${rvYmLabel(m)}</option>`)).join("");
+}
+
+// ── 데이터 로드 ──
+async function rvLoad(force) {
+  const all = window._activeStores && window._activeStores.length ? window._activeStores : await getActiveStoreData();
+  RV.scope = rvScopeStores(all);
+  if (!force && RV.statsAt && Date.now() - RV.statsAt < _RV_TTL) return;
+  const teams = [...new Set(RV.scope.map(s => s.team).filter(Boolean))];
+  const snaps = await Promise.all(teams.map(t => getDoc(doc(db, "baemin_stats", _statsDocId(t))).catch(() => null)));
+  const map = new Map(), months = new Set();
+  snaps.forEach(sn => {
+    if (!sn || !sn.exists()) return;
+    const d = sn.data();
+    let stores = {};
+    try { stores = JSON.parse(d.storesJson || "{}"); } catch (e) {}
+    Object.entries(stores).forEach(([code, o]) => {
+      map.set(code, o);
+      Object.keys(o.m || {}).forEach(ym => months.add(ym));
+    });
+  });
+  RV.stats = map;
+  RV.months = [...months].sort().reverse();
+  try { const ms = await getDoc(doc(db, "settings", "baeminMeta")); RV.meta = ms.exists() ? ms.data() : null; } catch (e) { RV.meta = null; }
+  RV.statsAt = Date.now();
+}
+
+// ── 진입 ──
+function openReview() {
+  if (!rvAllowed()) { alert("현재 관리자 설정에서 비활성화되어 있습니다."); return; }
+  RV.tab = "search"; RV.kw = ""; RV.sort = "name"; RV.ym = "all"; RV.team = "all"; RV.tsort = "asc"; RV.tym = "all"; RV.statsAt = 0; RV.scope = null;
+  go("review");
+}
+function rvHeader(title, backFn, extra) {
+  return `<div class="page-header">
+      <button class="btn-back" onclick="${backFn}">←</button>
+      <h2 style="flex:1;font-size:16px">${title}</h2>${extra || ""}
+    </div>`;
+}
+
+// ── 화면 1: 매장별 검색 / 팀별 현황 ──
+function renderReview(root) {
+  if (!rvAllowed()) { go("topHub"); return; }
+  rvEnsureCss();
+  if (!rvIsTlUp() && RV.tab === "team") RV.tab = "search";
+  const adminBtn = _authRole === "admin" ? `<button class="rv-btn" onclick="go('reviewAdmin')">데이터 관리</button>` : "";
+  root.innerHTML = rvHeader("배달의민족 리뷰 관리", "go('topHub')", adminBtn) + `
+    <div class="rv-tabs">
+      <button class="rv-tab ${RV.tab === "search" ? "on" : ""}" onclick="rvSetTab('search')">매장별 검색</button>
+      ${rvIsTlUp() ? `<button class="rv-tab ${RV.tab === "team" ? "on" : ""}" onclick="rvSetTab('team')">팀별 현황</button>` : ""}
+    </div>
+    <div class="card-section" id="rvBody"><p class="loading-text">불러오는 중...</p></div>`;
+  rvLoad(false).then(() => { if (S.screen === "review") rvPaint(); })
+    .catch(e => { const b = document.getElementById("rvBody"); if (b) b.innerHTML = `<p class="error-text">불러오기 실패: ${escapeHtml(e.message || e)}</p>`; });
+}
+function rvSetTab(t) { RV.tab = t; render(); }
+function rvPaint() {
+  const b = document.getElementById("rvBody");
+  if (!b) return;
+  const metaTxt = RV.meta && RV.meta.updatedAt
+    ? `<div class="rv-note" style="margin-bottom:8px">데이터 기준: ${escapeHtml(RV.meta.minDate || "")} ~ ${escapeHtml(RV.meta.maxDate || "")} · 최종 반영 ${escapeHtml(fmtDateExcel(RV.meta.updatedAt))}</div>`
+    : `<div class="rv-note" style="margin-bottom:8px">아직 반영된 리뷰 데이터가 없습니다.</div>`;
+  b.innerHTML = metaTxt + (RV.tab === "team" ? rvTeamHtml() : rvSearchHtml());
+  if (RV.tab === "search") rvPaintList(); else rvPaintTeamStores();
+}
+
+// 매장별 검색 탭
+function rvSearchHtml() {
+  return `
+    <input type="text" id="rvKw" class="input-field" placeholder="매장명 또는 E CODE 검색" value="${escapeHtml(RV.kw)}" oninput="rvKwInput(this.value)" style="margin:0 0 6px" />
+    <div class="rv-note" style="margin-bottom:10px">${rvScopeText()}</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <select class="rv-sel" style="flex:1" onchange="rvSetYm(this.value)">${rvMonthOptions(RV.ym)}</select>
+      <select class="rv-sel" style="flex:1" onchange="rvSetSort(this.value)">
+        <option value="name" ${RV.sort === "name" ? "selected" : ""}>매장명순</option>
+        <option value="asc" ${RV.sort === "asc" ? "selected" : ""}>평점 낮은순</option>
+        <option value="desc" ${RV.sort === "desc" ? "selected" : ""}>평점 높은순</option>
+        <option value="cnt" ${RV.sort === "cnt" ? "selected" : ""}>리뷰 많은순</option>
+      </select>
+    </div>
+    <div id="rvList"></div>`;
+}
+let _rvKwTimer = null;
+function rvKwInput(v) { RV.kw = v; clearTimeout(_rvKwTimer); _rvKwTimer = setTimeout(rvPaintList, 200); }
+function rvSetYm(v) { RV.ym = v; rvPaintList(); }
+function rvSetSort(v) { RV.sort = v; rvPaintList(); }
+function rvPaintList() {
+  const el = document.getElementById("rvList");
+  if (!el) return;
+  const kw = RV.kw.trim().toLowerCase();
+  let list = RV.scope || [];
+  if (kw) list = list.filter(s => String(s.name || "").toLowerCase().includes(kw) || String(s.code || "").toLowerCase().includes(kw));
+  if (list.length === 0) { el.innerHTML = `<p class="error-text">검색 결과가 없습니다.</p>`; return; }
+  const sorted = rvSortStores(list, RV.ym, RV.sort);
+  const LIM = 100;
+  const rows = sorted.slice(0, LIM).map(({ st, x }) => `
+    <button class="rv-row" onclick="rvOpenStore('${escapeHtml(st.code)}')">
+      <span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700">${escapeHtml(st.name)}</span>
+        <span style="display:block;font-size:12px;color:var(--sub)">${escapeHtml(st.code)} · ${escapeHtml(st.team || "-")}</span></span>
+      ${x.n > 0 ? `<span style="text-align:right"><span style="display:block;font-size:12px;color:#4A5568">리뷰 ${x.n}건</span><span style="display:block;font-size:14px;font-weight:800">★ ${rvFmtAvg(x)}</span></span>`
+                : `<span style="font-size:12px;color:#A0AEC0">리뷰 없음</span>`}
+    </button>`).join("");
+  el.innerHTML = `<div class="store-count" style="padding:0 2px 6px">${list.length}개 매장 · ${rvYmLabel(RV.ym)}${list.length > LIM ? ` (상위 ${LIM}개 표시 — 검색어로 좁혀주세요)` : ""}</div>
+    <div class="rv-card" style="padding:4px 12px">${rows}</div>`;
+}
+function rvOpenStore(code) {
+  RV.sel = code; RV.view = "summary"; RV.revs = null; RV.revsCode = null; RV.fStatus = "all"; RV.fYm = "all"; RV.fSort = "new";
+  go("reviewStore");
+}
+
+// 팀별 현황 탭
+function rvTeamList() {
+  const scope = RV.scope || [];
+  return RV.team === "all" ? scope : scope.filter(s => s.team === RV.team);
+}
+function rvTeamHtml() {
+  const scope = RV.scope || [];
+  const teams = [...new Set(scope.map(s => s.team).filter(Boolean))].sort(_teamNameSort);
+  if (_authRole === "tl" && teams.length === 1) RV.team = teams[0];
+  if (RV.team !== "all" && !teams.includes(RV.team)) RV.team = "all";
+  const list = rvTeamList();
+  const ym = RV.tym, prev = ym === "all" ? null : rvPrevYm(ym);
+  const cur = rvAggStores(list, ym), pv = prev ? rvAggStores(list, prev) : null;
+  const dTxt = (c, p, unit) => pv ? `전월 ${p}${unit} → ${c > p ? "▲" : c < p ? "▼" : "-"}${c !== p ? Math.abs(c - p) : ""}` : "";
+  const perStore = cur.stores ? (cur.n / cur.stores) : 0;
+  const perStorePrev = pv && pv.stores ? (pv.n / pv.stores) : 0;
+  const avgCur = cur.n ? cur.s / cur.n : null, avgPrev = pv && pv.n ? pv.s / pv.n : null;
+  const avgD = pv ? (avgCur != null && avgPrev != null ? (() => { const d = Math.round((avgCur - avgPrev) * 10) / 10; return `전월 ${avgPrev.toFixed(1)} → ${d > 0 ? "▲" : d < 0 ? "▼" : "-"}${d !== 0 ? Math.abs(d).toFixed(1) : ""}`; })() : "전월 -") : "";
+  const teamSel = teams.length > 1 || _authRole !== "tl"
+    ? `<select class="rv-sel" style="flex:1" onchange="rvSetTeam(this.value)">${_authRole === "tl" ? "" : `<option value="all" ${RV.team === "all" ? "selected" : ""}>전체 팀</option>`}${teams.map(t => `<option value="${escapeHtml(t)}" ${RV.team === t ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}</select>`
+    : `<div class="rv-sel" style="flex:1;display:flex;align-items:center;font-weight:700">${escapeHtml(teams[0] || "-")}</div>`;
+  // 팀별 비교(전체 팀 선택 시)
+  let cmp = "";
+  if (RV.team === "all" && teams.length > 1) {
+    const rows = teams.map(t => {
+      const a = rvAggStores(scope.filter(s => s.team === t), ym);
+      return `<tr><td><b>${escapeHtml(t)}</b></td><td>${a.stores}/${a.total}</td><td>${a.n}</td><td>${a.stores ? (a.n / a.stores).toFixed(1) : "-"}</td><td><b>${a.n ? (a.s / a.n).toFixed(1) : "-"}</b></td></tr>`;
+    }).join("");
+    cmp = `<div class="rv-card"><div style="font-size:13px;font-weight:700;margin-bottom:8px">팀별 비교 (${rvYmLabel(ym)})</div>
+      <table class="rv-tbl"><tr><th>팀</th><th>리뷰매장</th><th>총리뷰</th><th>매장당</th><th>평점</th></tr>${rows}</table></div>`;
+  }
+  // 월별 추이
+  const mrows = RV.months.map(m => {
+    const a = rvAggStores(list, m), p = rvAggStores(list, _ymAdd(m, -1));
+    const hasPrev = RV.months.includes(_ymAdd(m, -1));
+    const aSt = { n: a.n, s: a.s }, pSt = { n: p.n, s: p.s };
+    return `<tr><td><b>${rvYmLabel(m)}</b></td><td>${a.stores}</td><td>${a.n}${hasPrev ? ` ${rvDeltaCnt(a.n, p.n)}` : ""}</td><td><b>${rvFmtAvg(aSt)}</b>${hasPrev ? ` ${rvDeltaAvg(aSt, pSt)}` : ""}</td></tr>`;
+  }).join("");
+  const trend = RV.months.length ? `<div class="rv-card"><div style="font-size:13px;font-weight:700;margin-bottom:8px">월별 추이 (${RV.team === "all" ? "전체" : escapeHtml(RV.team)})</div>
+      <table class="rv-tbl"><tr><th>월</th><th>리뷰매장</th><th>총리뷰 (전월대비)</th><th>평균 평점 (전월대비)</th></tr>${mrows}</table>
+      <div class="rv-note" style="margin-top:6px">월은 리뷰 작성일 기준입니다.</div></div>` : "";
+  return `
+    <div style="display:flex;gap:8px;margin-bottom:6px">${teamSel}
+      <select class="rv-sel" style="flex:1" onchange="rvSetTYm(this.value)">${rvMonthOptions(ym)}</select></div>
+    <div class="rv-note" style="margin-bottom:10px">${_authRole === "tl" ? "TL: 본인 팀" : "GL·ADMIN: 전체 팀 / 팀 선택"} · 기간: ${rvYmLabel(ym)}</div>
+    <div class="rv-kpis">
+      <div class="rv-kpi"><div class="l">리뷰 매장수</div><div class="v">${cur.stores}<small> / ${cur.total}개</small></div><div class="d">${dTxt(cur.stores, pv ? pv.stores : 0, "개")}</div></div>
+      <div class="rv-kpi"><div class="l">총 리뷰수</div><div class="v">${cur.n.toLocaleString()}<small> 건</small></div><div class="d">${dTxt(cur.n, pv ? pv.n : 0, "건")}</div></div>
+      <div class="rv-kpi"><div class="l">매장당 리뷰수</div><div class="v">${cur.stores ? perStore.toFixed(1) : "-"}<small> 건</small></div><div class="d">${pv ? `전월 ${pv.stores ? perStorePrev.toFixed(1) : "-"}` : "리뷰 매장 기준"}</div></div>
+      <div class="rv-kpi"><div class="l">평균 평점</div><div class="v">★ ${avgCur != null ? avgCur.toFixed(1) : "-"}</div><div class="d">${pv ? avgD : "전체 리뷰 기준"}</div></div>
+    </div>
+    ${cmp}${trend}
+    <div class="rv-card">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="flex:1;font-size:13px;font-weight:700;min-width:90px">매장 목록</span>
+        <button class="rv-btn ${RV.tsort === "asc" ? "on" : ""}" onclick="rvSetTSort('asc')">평점 낮은순 ↑</button>
+        <button class="rv-btn ${RV.tsort === "desc" ? "on" : ""}" onclick="rvSetTSort('desc')">높은순 ↓</button>
+        <button class="rv-btn ${RV.tsort === "cnt" ? "on" : ""}" onclick="rvSetTSort('cnt')">리뷰 많은순</button>
+      </div>
+      <div id="rvTeamStores"></div>
+      <div class="rv-note" style="margin-top:8px">평점이 같으면 리뷰수 많은 순 · 리뷰 없는 매장은 맨 아래 · 매장 터치 시 상세</div>
+    </div>`;
+}
+function rvPaintTeamStores() {
+  const el = document.getElementById("rvTeamStores");
+  if (!el) return;
+  const sorted = rvSortStores(rvTeamList(), RV.tym, RV.tsort);
+  el.innerHTML = `<div style="display:flex;font-size:11px;color:var(--sub);padding-bottom:5px;border-bottom:1px solid var(--border)"><span style="flex:1">매장</span><span style="width:52px;text-align:right">리뷰수</span><span style="width:48px;text-align:right">평균</span></div>` +
+    sorted.map(({ st, x }) => `
+    <button class="rv-row" onclick="rvOpenStore('${escapeHtml(st.code)}')">
+      <span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700">${escapeHtml(st.name)}</span>
+        <span style="display:block;font-size:11px;color:var(--sub)">${escapeHtml(st.code)}${RV.team === "all" ? " · " + escapeHtml(st.team || "-") : ""}${st.sv ? " · AC " + escapeHtml(st.sv) : ""}</span></span>
+      <span style="width:52px;text-align:right;font-size:13px;${x.n ? "" : "color:#A0AEC0"}">${x.n ? x.n : "없음"}</span>
+      <span style="width:48px;text-align:right;font-size:13px;font-weight:700">${rvFmtAvg(x)}</span>
+    </button>`).join("");
+}
+function rvSetTeam(v) { RV.team = v; rvPaint(); }
+function rvSetTYm(v) { RV.tym = v; rvPaint(); }
+function rvSetTSort(v) { RV.tsort = v; rvPaint(); }
+
+// ── 화면 2: 매장 상세(요약 / 리뷰별 보기) ──
+function rvSelStore() { return (RV.scope || []).find(s => s.code === RV.sel) || { code: RV.sel, name: RV.sel, team: "" }; }
+function renderReviewStore(root) {
+  if (!rvAllowed()) { go("topHub"); return; }
+  rvEnsureCss();
+  if (!RV.sel) { go("review"); return; }
+  root.innerHTML = rvHeader("리뷰 상세", "goBack()") + `<div class="rv-tabs">
+      <button class="rv-tab ${RV.view === "summary" ? "on" : ""}" onclick="rvSetView('summary')">매장 요약</button>
+      <button class="rv-tab ${RV.view === "list" ? "on" : ""}" onclick="rvSetView('list')">리뷰별 보기</button></div>
+    <div class="card-section" id="rvBody"><p class="loading-text">불러오는 중...</p></div>`;
+  (RV.scope ? Promise.resolve() : rvLoad(false)).then(() => { if (S.screen === "reviewStore") rvPaintStore(); })
+    .catch(e => { const b = document.getElementById("rvBody"); if (b) b.innerHTML = `<p class="error-text">불러오기 실패: ${escapeHtml(e.message || e)}</p>`; });
+}
+function rvSetView(v) { RV.view = v; render(); }
+function rvStoreHead() {
+  const st = rvSelStore();
+  return `<div style="margin-bottom:10px"><div style="font-size:17px;font-weight:800">${escapeHtml(st.name)}</div>
+    <div class="rv-note">${escapeHtml(st.code)} · ${escapeHtml(st.team || "-")}${st.sv ? " · AC " + escapeHtml(st.sv) : ""}</div></div>`;
+}
+async function rvPaintStore() {
+  const b = document.getElementById("rvBody");
+  if (!b) return;
+  if (RV.view === "summary") { b.innerHTML = rvStoreSummaryHtml(); return; }
+  b.innerHTML = rvStoreHead() + `<p class="loading-text">리뷰 불러오는 중...</p>`;
+  try {
+    if (RV.revsCode !== RV.sel || !RV.revs) {
+      const chain = getStoreCodeChain(RV.sel).slice(0, 30);
+      const q = chain.length > 1 ? query(collection(db, "baemin_reviews"), where("storeCode", "in", chain)) : query(collection(db, "baemin_reviews"), where("storeCode", "==", RV.sel));
+      const snap = await getDocs(q);
+      RV.revs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      RV.revsCode = RV.sel;
+    }
+    if (S.screen === "reviewStore") rvPaintReviews();
+  } catch (e) { b.innerHTML = rvStoreHead() + `<p class="error-text">리뷰를 불러오지 못했습니다: ${escapeHtml(e.message || e)}</p>`; }
+}
+function rvStoreSummaryHtml() {
+  const code = RV.sel, o = RV.stats.get(code) || { n: 0, s: 0, d: [0, 0, 0, 0, 0], m: {} };
+  const ym = RV.ym, cur = rvStat(code, ym), prevYm = ym === "all" ? null : rvPrevYm(ym), pv = prevYm ? rvStat(code, prevYm) : null;
+  const dist = o.d || [0, 0, 0, 0, 0], tot = dist.reduce((a, b) => a + b, 0) || 1;
+  const bars = [5, 4, 3, 2, 1].map(r => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#4A5568;margin-bottom:5px"><span style="width:26px">${r}점</span><div class="rv-bar"><div style="width:${Math.round(dist[r - 1] / tot * 100)}%"></div></div><span style="width:30px;text-align:right">${dist[r - 1]}</span></div>`).join("");
+  const rows = RV.months.map(m => {
+    const c = rvStat(code, m), p = rvStat(code, _ymAdd(m, -1)), hasPrev = RV.months.includes(_ymAdd(m, -1));
+    return `<tr><td><b>${rvYmLabel(m)}</b></td><td>${c.n}${hasPrev ? ` ${rvDeltaCnt(c.n, p.n)}` : ""}</td><td><b>${rvFmtAvg(c)}</b>${hasPrev ? ` ${rvDeltaAvg(c, p)}` : ""}</td></tr>`;
+  }).join("");
+  return rvStoreHead() + `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><span style="font-size:13px;color:var(--sub)">기간</span>
+      <select class="rv-sel" style="flex:1" onchange="rvSetYmStore(this.value)">${rvMonthOptions(ym)}</select></div>
+    <div class="rv-kpis">
+      <div class="rv-kpi"><div class="l">리뷰 수</div><div class="v">${cur.n}<small> 건</small></div><div class="d">${pv ? `전월 ${pv.n}건 ${rvDeltaCnt(cur.n, pv.n)}` : ""}</div></div>
+      <div class="rv-kpi"><div class="l">평균 평점</div><div class="v">★ ${rvFmtAvg(cur)}</div><div class="d">${pv ? `전월 ${rvFmtAvg(pv)} ${rvDeltaAvg(cur, pv)}` : ""}</div></div>
+    </div>
+    <div class="rv-card"><div style="font-size:13px;font-weight:700;margin-bottom:8px">월별 추이</div>
+      ${RV.months.length ? `<table class="rv-tbl"><tr><th>월</th><th>리뷰수 (전월대비)</th><th>평균 평점 (전월대비)</th></tr>${rows}</table><div class="rv-note" style="margin-top:6px">월은 리뷰 작성일 기준입니다.</div>` : `<div class="rv-note">집계된 데이터가 없습니다.</div>`}</div>
+    <div class="rv-card"><div style="font-size:13px;font-weight:700;margin-bottom:8px">별점 분포 (전체 기간)</div>${bars}</div>
+    <button class="btn-ghost" onclick="rvSetView('list')">리뷰별 보기</button>`;
+}
+function rvSetYmStore(v) { RV.ym = v; const b = document.getElementById("rvBody"); if (b) b.innerHTML = rvStoreSummaryHtml(); }
+function rvFilteredReviews() {
+  let r = (RV.revs || []).slice();
+  if (RV.fYm !== "all") r = r.filter(x => x.ym === RV.fYm);
+  if (RV.fStatus !== "all") r = r.filter(x => x.status === RV.fStatus);
+  if (RV.fSort === "low") r.sort((a, b) => (a.rating || 0) - (b.rating || 0) || String(b.createdAt).localeCompare(String(a.createdAt)));
+  else r.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return r;
+}
+function rvPaintReviews() {
+  const b = document.getElementById("rvBody");
+  if (!b) return;
+  const base = (RV.revs || []).filter(x => RV.fYm === "all" || x.ym === RV.fYm);
+  const cnt = k => k === "all" ? base.length : base.filter(x => x.status === k).length;
+  const chips = [["all", "전체"], ["DISPLAY", "노출"], ["TEMPORARY_BLOCK", "임시 차단"], ["OPERATE_BLOCK", "운영 차단"]]
+    .map(([k, l]) => `<button class="rv-pill ${RV.fStatus === k ? "on" : ""}" onclick="rvSetFStatus('${k}')">${l} ${cnt(k)}</button>`).join("");
+  const list = rvFilteredReviews();
+  const agg = { n: list.length, s: list.reduce((a, x) => a + (Number(x.rating) || 0), 0) };
+  const cards = list.map(r => `
+    <button class="rv-rev" onclick="rvOpenDetail('${escapeHtml(r.id)}')">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:14px">★ ${escapeHtml(r.rating)}</b>
+        <span class="rv-chip ${r.status === "DISPLAY" ? "" : "blk"}">${escapeHtml(rvStatusLabel(r.status))}</span><span style="flex:1"></span>
+        <span style="font-size:12px;color:var(--sub)">${escapeHtml(rvFmtDt(r.createdAt))}</span></div>
+      ${r.menu ? `<div style="font-size:12.5px;color:#4A5568;margin-bottom:5px">${escapeHtml(r.menu)}</div>` : ""}
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <div class="rv-clamp" style="flex:1;font-size:14px;line-height:1.5;${r.text ? "" : "color:#718096"}">${r.text ? escapeHtml(r.text) : "리뷰 내용 없음 (별점만 등록)"}</div>
+        ${r.photoUrl ? `<span style="position:relative;flex-shrink:0"><img src="${escapeHtml(r.thumbUrl || r.photoUrl)}" loading="lazy" style="width:60px;height:60px;border-radius:10px;object-fit:cover;display:block" alt="">${(r.photoUrls || []).length > 1 ? `<span style="position:absolute;right:3px;bottom:3px;background:rgba(26,32,44,.85);color:#fff;font-size:10px;font-weight:700;border-radius:8px;padding:1px 6px">+${r.photoUrls.length - 1}</span>` : ""}</span>` : ""}
+      </div>
+      ${r.ownerComment ? `<div style="font-size:12px;color:var(--sub);margin-top:6px">사장님 댓글 있음</div>` : ""}
+    </button>`).join("");
+  b.innerHTML = rvStoreHead() + `
+    <div class="rv-kpis" style="margin-bottom:10px">
+      <div class="rv-kpi"><div class="l">리뷰 수</div><div class="v">${agg.n}<small> 건</small></div></div>
+      <div class="rv-kpi"><div class="l">평균 평점</div><div class="v">★ ${rvFmtAvg(agg)}</div></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <select class="rv-sel" style="flex:1" onchange="rvSetFYm(this.value)">${rvMonthOptions(RV.fYm)}</select>
+      <select class="rv-sel" style="flex:1" onchange="rvSetFSort(this.value)"><option value="new" ${RV.fSort === "new" ? "selected" : ""}>최신순</option><option value="low" ${RV.fSort === "low" ? "selected" : ""}>평점 낮은순</option></select>
+    </div>
+    <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px">${chips}</div>
+    ${cards || `<p class="error-text">해당 조건의 리뷰가 없습니다.</p>`}`;
+}
+function rvSetFStatus(v) { RV.fStatus = v; rvPaintReviews(); }
+function rvSetFYm(v) { RV.fYm = v; rvPaintReviews(); }
+function rvSetFSort(v) { RV.fSort = v; rvPaintReviews(); }
+function rvOpenDetail(id) { RV.detail = (RV.revs || []).find(r => r.id === id) || null; go("reviewDetail"); }
+
+// ── 화면 3: 리뷰 상세 ──
+function renderReviewDetail(root) {
+  if (!rvAllowed()) { go("topHub"); return; }
+  rvEnsureCss();
+  const r = RV.detail;
+  if (!r) { go("reviewStore"); return; }
+  const st = (RV.scope || []).find(s => s.code === r.storeCode) || { name: r.storeCode };
+  const kv = (k, v) => `<div class="rv-kv"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  root.innerHTML = rvHeader("리뷰 정보 상세", "goBack()") + `<div class="card-section">
+    <div class="rv-card">
+      ${kv("브랜드", escapeHtml(r.brand || "-"))}${kv("가게명", `${escapeHtml(st.name)} (${escapeHtml(r.storeCode)})`)}
+      ${kv("메뉴명", escapeHtml(r.menu || "-"))}
+      ${kv("리뷰 상태", `<span class="rv-chip ${r.status === "DISPLAY" ? "" : "blk"}">${escapeHtml(rvStatusLabel(r.status))}</span>`)}
+      ${kv("별점", `★ ${escapeHtml(r.rating)}`)}
+    </div>
+    <div class="rv-card"><div style="font-size:13px;font-weight:700;margin-bottom:8px">리뷰 내용</div>
+      <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;${r.text ? "" : "color:#718096"}">${r.text ? escapeHtml(r.text) : "리뷰 내용 없음 (별점만 등록)"}</div>
+      <div class="rv-note" style="margin-top:8px">개인정보 보호를 위해 숫자는 모두 0으로 표시합니다.</div>
+      ${(r.photoUrls && r.photoUrls.length ? r.photoUrls : (r.photoUrl ? [r.photoUrl] : [])).map(u => `<img src="${escapeHtml(u)}" onclick="openImageModal(this.src)" style="width:100%;border-radius:10px;margin-top:10px;cursor:pointer" alt="리뷰 사진">`).join("")}
+    </div>
+    ${r.ownerComment ? `<div class="rv-card"><div style="font-size:13px;font-weight:700;margin-bottom:6px">사장님 댓글 <span class="rv-note">${escapeHtml(rvFmtDt(r.ownerAt))}</span></div>
+      <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;color:#4A5568">${escapeHtml(r.ownerComment)}</div></div>` : ""}
+    <div class="rv-card">${kv("리뷰번호", escapeHtml(r.id))}${kv("작성일시", escapeHtml(rvFmtDt(r.createdAt)))}${kv("데이터 반영", r.updatedAt ? escapeHtml(fmtDateExcel(r.updatedAt)) : "-")}</div>
+    <button class="btn-ghost" onclick="goBack()">이전 페이지</button></div>`;
+}
+
+// ── 화면 4: 관리자 업로드 ──
+function renderReviewAdmin(root) {
+  rvEnsureCss();
+  if (_authRole !== "admin") { go("review"); return; }
+  root.innerHTML = rvHeader("리뷰 데이터 관리", "goBack()", `<span class="rv-chip blk">ADMIN</span>`) + `<div class="card-section">
+    <div class="rv-card">
+      <div style="font-size:14px;font-weight:800;margin-bottom:6px">1. 리뷰 RAW 업로드 (.xlsx)</div>
+      <div class="rv-note" style="line-height:1.6;margin-bottom:10px">리뷰ID 기준 누적 반영 — 새 리뷰는 추가, 기존 리뷰는 내용이 달라진 경우에만 갱신됩니다. 사진은 유지됩니다. 반영 후 팀·매장 집계가 자동 갱신됩니다.</div>
+      <input type="file" id="rvRawFile" accept=".xlsx,.xls" style="display:none" onchange="rvUploadRaw(this.files[0]); this.value=''">
+      <button class="btn-ghost" onclick="document.getElementById('rvRawFile').click()">RAW 파일 선택</button>
+      <div id="rvRawMsg" style="margin-top:10px;font-size:13px;line-height:1.7"></div>
+    </div>
+    <div class="rv-card">
+      <div style="font-size:14px;font-weight:800;margin-bottom:6px">2. 리뷰 사진 벌크 업로드</div>
+      <div class="rv-note" style="line-height:1.6;margin-bottom:10px">리뷰ID 이름의 <b>폴더</b>(예: images/26189098/사진들) 또는 리뷰ID가 파일명인 사진(예: 26189098.jpg)을 지원합니다. 상위 폴더(images)를 통째로 선택하면 하위 폴더를 모두 읽어 리뷰ID로 매칭합니다. 한 리뷰에 사진이 여러 장이면 파일명 순서대로 등록하고, 이미 등록된 리뷰는 새 사진으로 교체됩니다. JPG로 압축해 올립니다.</div>
+      <input type="file" id="rvPhotoDir" webkitdirectory directory multiple style="display:none" onchange="rvUploadPhotos(Array.from(this.files)); this.value=''">
+      <input type="file" id="rvPhotoFiles" accept="image/*" multiple style="display:none" onchange="rvUploadPhotos(Array.from(this.files)); this.value=''">
+      <div style="display:flex;gap:8px">
+        <button class="btn-ghost" style="flex:1" onclick="document.getElementById('rvPhotoDir').click()">폴더 선택</button>
+        <button class="btn-ghost" style="flex:1" onclick="document.getElementById('rvPhotoFiles').click()">사진 여러 장 선택</button>
+      </div>
+      <div id="rvPhotoBar" style="display:none;margin-top:10px"><div class="rv-bar" style="height:8px"><div id="rvPhotoBarIn" style="width:0%"></div></div></div>
+      <div id="rvPhotoMsg" style="margin-top:10px;font-size:13px;line-height:1.7"></div>
+    </div>
+    <div class="rv-card" style="border-color:#FEB2B2">
+      <div style="font-size:14px;font-weight:800;margin-bottom:6px;color:#C53030">3. 전체 데이터 삭제 (테스트 정리용)</div>
+      <div class="rv-note" style="line-height:1.6;margin-bottom:10px">리뷰 원본, 팀·매장 집계, 반영 이력, 업로드한 리뷰 사진(압축본·썸네일)을 <b>모두 삭제</b>합니다. 되돌릴 수 없습니다. 점검 데이터 등 다른 데이터는 건드리지 않습니다.</div>
+      <button class="btn-ghost" style="color:#C53030;border-color:#FEB2B2" onclick="rvWipeAll()">리뷰 데이터 전체 삭제</button>
+      <div id="rvWipeMsg" style="margin-top:10px;font-size:13px;line-height:1.7"></div>
+    </div>
+  </div>`;
+}
+function rvToDateStr(v) {
+  if (v == null || v === "") return "";
+  if (typeof v === "number" && window.XLSX && XLSX.SSF) {
+    const p = XLSX.SSF.parse_date_code(v);
+    if (p) { const z = n => String(n).padStart(2, "0"); return `${p.y}-${z(p.m)}-${z(p.d)} ${z(p.H)}:${z(p.M)}:${z(Math.floor(p.S))}`; }
+  }
+  if (v instanceof Date) { const z = n => String(n).padStart(2, "0"); return `${v.getFullYear()}-${z(v.getMonth() + 1)}-${z(v.getDate())} ${z(v.getHours())}:${z(v.getMinutes())}:${z(v.getSeconds())}`; }
+  return String(v).trim();
+}
+// 리뷰 전체(Map id→data)로 팀별 매장 집계 계산
+function rvBuildStats(reviewMap, storeByCode) {
+  const teams = new Map();
+  reviewMap.forEach(r => {
+    const st = storeByCode.get(r.storeCode);
+    const team = st && st.team ? st.team : "(미매칭)";
+    if (!teams.has(team)) teams.set(team, {});
+    const t = teams.get(team);
+    const o = t[r.storeCode] || (t[r.storeCode] = { n: 0, s: 0, d: [0, 0, 0, 0, 0], m: {} });
+    const rt = Number(r.rating) || 0;
+    o.n++; o.s += rt;
+    if (rt >= 1 && rt <= 5) o.d[rt - 1]++;
+    if (r.ym) { const m = o.m[r.ym] || (o.m[r.ym] = [0, 0]); m[0]++; m[1] += rt; }
+  });
+  return teams;
+}
+async function rvUploadRaw(file) {
+  const msg = document.getElementById("rvRawMsg");
+  if (!file || !msg) return;
+  if (_authRole !== "admin") { msg.textContent = "관리자만 사용할 수 있습니다."; return; }
+  const say = t => { msg.innerHTML = t; };
+  try {
+    say("파일 읽는 중...");
+    await loadXLSX();
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const ws = wb.Sheets["변환"] || wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+    if (!rows.length) throw new Error("데이터가 없습니다.");
+    const need = ["E CODE", "리뷰ID", "별점", "작성일시"];
+    const miss = need.filter(h => !(h in rows[0]));
+    if (miss.length) throw new Error("필수 열이 없습니다: " + miss.join(", "));
+    const stores = await getActiveStoreData();
+    const storeByCode = new Map(stores.map(s => [s.code, s]));
+    const o2c = window._oldToCurrentCodeMap || new Map();
+    say("기존 리뷰 확인 중...");
+    const existing = new Map();
+    (await getDocs(collection(db, "baemin_reviews"))).forEach(d => existing.set(d.id, d.data()));
+    const incoming = new Map(); let skipped = 0;
+    rows.forEach(r => {
+      const id = String(r["리뷰ID"] ?? "").trim(), raw = String(r["E CODE"] ?? "").trim();
+      const rating = Number(r["별점"]);
+      if (!id || !raw || !(rating >= 1 && rating <= 5)) { skipped++; return; }
+      const createdAt = rvToDateStr(r["작성일시"]);
+      const code = o2c.get(raw) || raw;
+      incoming.set(id, {
+        storeCode: code, rawCode: raw, brand: String(r["브랜드명"] ?? "").trim(), menu: String(r["메뉴명"] ?? "").trim(),
+        rating, text: String(r["리뷰내용"] ?? "").trim(), status: String(r["리뷰상태"] ?? "").trim(),
+        createdAt, ym: /^\d{4}-\d{2}/.test(createdAt) ? createdAt.slice(0, 7) : "",
+        ownerAt: rvToDateStr(r["사장님댓글작성일자"]), ownerComment: String(r["사장님댓글"] ?? "").trim(),
+      });
+    });
+    const KEYS = ["storeCode", "menu", "rating", "text", "status", "createdAt", "ownerAt", "ownerComment", "brand"];
+    let nNew = 0, nUpd = 0, nSame = 0; const writes = [];
+    incoming.forEach((d, id) => {
+      const ex = existing.get(id);
+      if (!ex) { nNew++; writes.push([id, d]); }
+      else if (KEYS.some(k => String(ex[k] ?? "") !== String(d[k] ?? ""))) { nUpd++; writes.push([id, d]); }
+      else nSame++;
+    });
+    const now = new Date();
+    for (let i = 0; i < writes.length; i += 400) {
+      say(`저장 중... ${Math.min(i + 400, writes.length)} / ${writes.length}`);
+      const b = writeBatch(db);
+      writes.slice(i, i + 400).forEach(([id, d]) => b.set(doc(db, "baemin_reviews", id), { ...d, updatedAt: now }, { merge: true }));
+      await b.commit();
+    }
+    say("집계 갱신 중...");
+    const merged = new Map();
+    existing.forEach((d, id) => merged.set(id, d));
+    incoming.forEach((d, id) => merged.set(id, d));
+    const teams = rvBuildStats(merged, storeByCode);
+    for (const [team, st] of teams) {
+      await setDoc(doc(db, "baemin_stats", _statsDocId(team)), { team, storesJson: JSON.stringify(st), updatedAt: now }, { merge: false });
+    }
+    const dates = [...merged.values()].map(d => String(d.createdAt || "").slice(0, 10)).filter(Boolean).sort();
+    await setDoc(doc(db, "settings", "baeminMeta"), { updatedAt: now, total: merged.size, minDate: dates[0] || "", maxDate: dates[dates.length - 1] || "" }, { merge: true });
+    const unmatched = new Map();
+    incoming.forEach(d => { if (!storeByCode.has(d.storeCode)) unmatched.set(d.rawCode, (unmatched.get(d.rawCode) || 0) + 1); });
+    RV.statsAt = 0;
+    say(`<b>업로드 완료</b><br>신규 ${nNew}건 · 갱신 ${nUpd}건 · 변경없음 ${nSame}건${skipped ? ` · 제외(필수값 누락) ${skipped}건` : ""}<br>누적 리뷰 ${merged.size.toLocaleString()}건 · 팀 집계 ${teams.size}개 갱신` +
+      (unmatched.size ? `<br><span style="color:#C53030">매장 미매칭 ${unmatched.size}개 코드: ${[...unmatched.entries()].map(([c, n]) => escapeHtml(c) + "(" + n + ")").join(", ")}</span>` : `<br>모든 매장 매칭 완료`));
+  } catch (e) { say(`<span style="color:#C53030">업로드 실패: ${escapeHtml(e.message || e)}</span>`); }
+}
+// 리뷰 관련 데이터 전체 삭제(관리자) — baemin_reviews / baemin_stats / settings/baeminMeta / Storage review_photos
+async function rvWipeAll() {
+  const msg = document.getElementById("rvWipeMsg");
+  if (_authRole !== "admin" || !msg) return;
+  if (!confirm("배달의민족 리뷰 데이터(리뷰·집계·사진)를 전부 삭제합니다.\n되돌릴 수 없습니다. 계속할까요?")) return;
+  const t = prompt("확인을 위해 '전체삭제'를 입력하세요.");
+  if (t !== "전체삭제") { msg.textContent = "취소되었습니다."; return; }
+  const say = x => { msg.innerHTML = x; };
+  try {
+    say("삭제 대상 확인 중...");
+    const revSnap = await getDocs(collection(db, "baemin_reviews"));
+    // 1) Storage 사진 삭제 (리뷰 문서에 기록된 사진 경로 기준)
+    const paths = [];
+    revSnap.forEach(d => {
+      const x = d.data(), n = (x.photoUrls || []).length || (x.photoUrl ? 1 : 0);
+      for (let i = 1; i <= n; i++) paths.push(`review_photos/${d.id}/${i}.jpg`);
+      if (n) paths.push(`review_photos/${d.id}/thumb.jpg`);
+    });
+    let pDone = 0;
+    const q = paths.slice();
+    const w = async () => {
+      while (q.length) {
+        const pth = q.shift();
+        try { await deleteObject(storageRef(storage, pth)); } catch (e) { /* 이미 없으면 무시 */ }
+        pDone++;
+        if (pDone % 20 === 0) say(`사진 삭제 중... ${pDone} / ${paths.length}`);
+      }
+    };
+    await Promise.all(Array.from({ length: RV_PHOTO_CONC }, w));
+    // 2) 리뷰 문서 삭제
+    const docs = revSnap.docs;
+    for (let i = 0; i < docs.length; i += 400) {
+      say(`리뷰 삭제 중... ${Math.min(i + 400, docs.length)} / ${docs.length}`);
+      const b = writeBatch(db);
+      docs.slice(i, i + 400).forEach(d => b.delete(d.ref));
+      await b.commit();
+    }
+    // 3) 집계 문서 + 반영 이력 삭제
+    const stSnap = await getDocs(collection(db, "baemin_stats"));
+    const sb = writeBatch(db);
+    stSnap.forEach(d => sb.delete(d.ref));
+    sb.delete(doc(db, "settings", "baeminMeta"));
+    await sb.commit();
+    RV.statsAt = 0; RV.stats = new Map(); RV.months = []; RV.meta = null; RV.revs = null; RV.revsCode = null; RV.detail = null;
+    say(`<b>삭제 완료</b> — 리뷰 ${docs.length}건 · 사진 ${paths.length}개 · 집계 문서 ${stSnap.size}개`);
+  } catch (e) { say(`<span style="color:#C53030">삭제 실패: ${escapeHtml(e.message || e)}</span> (일부만 삭제됐을 수 있으니 다시 실행하세요)`); }
+}
+// 사진 JPG 압축(워터마크 없음)
+function rvCompressJpg(file, maxW, quality) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const MAX = maxW || 1280; let w = img.width, h = img.height;
+      if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      c.toBlob(b => b ? resolve(b) : reject(new Error("변환 실패")), "image/jpeg", quality || 0.8);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("이미지 형식 오류")); };
+    img.src = url;
+  });
+}
+// 사진 → 리뷰ID 판정: 바로 위 폴더명이 숫자면 그 폴더명, 아니면 파일명(확장자 제외)이 숫자일 때 파일명
+function rvPhotoId(f) {
+  const parts = String(f.webkitRelativePath || "").split("/").filter(Boolean);
+  if (parts.length >= 2 && /^\d+$/.test(parts[parts.length - 2])) return parts[parts.length - 2];
+  const stem = f.name.replace(/\.[^.]+$/, "").trim();
+  return /^\d+$/.test(stem) ? stem : "";
+}
+async function rvUploadPhotos(files) {
+  const msg = document.getElementById("rvPhotoMsg"), bar = document.getElementById("rvPhotoBar"), barIn = document.getElementById("rvPhotoBarIn");
+  if (!files || !files.length || !msg) return;
+  if (_authRole !== "admin") { msg.textContent = "관리자만 사용할 수 있습니다."; return; }
+  const isImg = f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|gif|bmp)$/i.test(f.name);
+  const groups = new Map(); const bad = []; let ignored = 0;
+  files.forEach(f => {
+    if (!isImg(f)) { ignored++; return; }
+    const id = rvPhotoId(f);
+    if (!id) { bad.push(f.webkitRelativePath || f.name); return; }
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(f);
+  });
+  groups.forEach(arr => arr.sort((a, b) => a.name.localeCompare(b.name, "ko", { numeric: true })));
+  const ids = [...groups.keys()];
+  if (!ids.length) { msg.innerHTML = `<span style="color:#C53030">리뷰ID를 알 수 없는 파일뿐입니다. (폴더명 또는 파일명이 숫자 리뷰ID여야 합니다)</span>`; return; }
+  bar.style.display = "block"; barIn.style.width = "0%";
+  let done = 0, okRev = 0, okPic = 0; const noId = [];
+  const queue = ids.slice();
+  const worker = async () => {
+    while (queue.length) {
+      const id = queue.shift();
+      try {
+        const ref = doc(db, "baemin_reviews", id);
+        const sn = await getDoc(ref);
+        if (!sn.exists()) noId.push(id + ` (${groups.get(id).length}장)`);
+        else {
+          const urls = []; let thumbUrl = "";
+          const arr = groups.get(id), ts = Date.now();
+          // 브라우저 캐시 1년(review_photos 파일에만 적용) + 교체 시 옛 캐시를 피하려고 URL에 버전값(v) 부여
+          const META = { contentType: "image/jpeg", cacheControl: "public,max-age=31536000" };
+          const withV = u => u + (u.includes("?") ? "&" : "?") + "v=" + ts;
+          for (let i = 0; i < arr.length; i++) {
+            const blob = await rvCompressJpg(arr[i], 1280, 0.8);
+            const sref = storageRef(storage, `review_photos/${id}/${i + 1}.jpg`);
+            await uploadBytes(sref, blob, META);
+            urls.push(withV(await getDownloadURL(sref)));
+            if (i === 0) { // 목록용 작은 썸네일(가로 240px, 약 10KB) — 첫 사진만
+              const tb = await rvCompressJpg(arr[0], 240, 0.7);
+              const tref = storageRef(storage, `review_photos/${id}/thumb.jpg`);
+              await uploadBytes(tref, tb, META);
+              thumbUrl = withV(await getDownloadURL(tref));
+            }
+          }
+          await updateDoc(ref, { photoUrls: urls, photoUrl: urls[0], thumbUrl, photoAt: new Date() });
+          okRev++; okPic += urls.length;
+        }
+      } catch (e) { bad.push(`${id} (${e.message || e})`); }
+      done++;
+      barIn.style.width = Math.round(done / ids.length * 100) + "%";
+      msg.textContent = `${done} / ${ids.length} 리뷰 처리 중...`;
+    }
+  };
+  await Promise.all(Array.from({ length: RV_PHOTO_CONC }, worker));
+  msg.innerHTML = `<b>완료</b> — 리뷰 ${okRev}건 · 사진 ${okPic}장 등록 · 리뷰ID 없음 ${noId.length}건 · 형식/오류 ${bad.length}건${ignored ? ` · 이미지 아님 ${ignored}개 제외` : ""}` +
+    (noId.length ? `<br><span style="color:#C53030">리뷰ID 없음: ${noId.slice(0, 30).map(escapeHtml).join(", ")}${noId.length > 30 ? " …" : ""}</span>` : "") +
+    (bad.length ? `<br><span style="color:#C53030">오류: ${bad.slice(0, 30).map(escapeHtml).join(", ")}${bad.length > 30 ? " …" : ""}</span>` : "");
+}
+
 Object.assign(window, {
+  openReview, toggleBaeminEnabled, rvWipeAll, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
   go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, handleReportDataUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
   removeImage, submitForm, fetchRecords, viewRecord, viewRecordDash,
