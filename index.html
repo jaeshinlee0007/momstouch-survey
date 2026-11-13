@@ -20477,7 +20477,7 @@ const RV = {
   team: "all", tsort: "asc", tym: "all",
   scope: null, stats: new Map(), statsAt: 0, months: [], meta: null,
   sel: null, view: "summary", revs: null, revsCode: null, fStatus: "all", fYm: "all", fSort: "new",
-  detail: null, cssOn: false,
+  detail: null, cssOn: false, days: new Set(), hasDy: false,
 };
 const _RV_TTL = 10 * 60 * 1000;
 const RV_PHOTO_CONC = 6; // 사진 업로드 동시 처리 리뷰 수(브라우저 CPU·회선 기준 적정값)
@@ -20525,9 +20525,12 @@ function rvEnsureCss() {
 // ── 공용 헬퍼 ──
 function rvStatusLabel(s) { return RV_STATUS[s] || s || "-"; }
 function rvIsTlUp() { return ["tl", "gl", "admin"].includes(_authRole); }
-function rvFmtAvg(st) { return st && st.n > 0 ? (st.s / st.n).toFixed(1) : "-"; }
+function rvFmtAvg(st) { return st && st.n > 0 ? (st.s / st.n).toFixed(2) : "-"; }
 function rvFmtDt(s) { return s ? String(s).slice(0, 16).replace(/-/g, ".") : "-"; }
-function rvYmLabel(ym) { return /^\d{4}-\d{2}$/.test(ym || "") ? `${ym.slice(0, 4)}.${ym.slice(5, 7)}` : "전체 기간"; }
+function rvYmLabel(k) {
+  k = String(k || "");
+  return /^\d{4}$/.test(k) ? `${k}년` : /^\d{4}-\d{2}$/.test(k) ? `${k.slice(0, 4)}.${k.slice(5, 7)}` : /^\d{4}-\d{2}-\d{2}$/.test(k) ? k.replace(/-/g, ".") : "전체 기간";
+}
 function rvScopeText() {
   return _authRole === "sv" ? "AC: 본인 담당 매장" : _authRole === "tl" ? "TL: 본인 팀 매장" : "GL·ADMIN: 전 매장";
 }
@@ -20540,7 +20543,12 @@ function rvStat(code, ym) {
   const o = RV.stats.get(code);
   if (!o) return { n: 0, s: 0 };
   if (ym === "all") return { n: o.n || 0, s: o.s || 0 };
-  const m = o.m && o.m[ym];
+  if (ym.length === 4) { // 연 단위: 해당 연도의 월 합산
+    let n = 0, sum = 0;
+    Object.keys(o.m || {}).forEach(k => { if (k.startsWith(ym)) { n += o.m[k][0]; sum += o.m[k][1]; } });
+    return { n, s: sum };
+  }
+  const m = ym.length === 10 ? (o.dy && o.dy[ym]) : (o.m && o.m[ym]);
   return m ? { n: m[0], s: m[1] } : { n: 0, s: 0 };
 }
 function rvAggStores(list, ym) {
@@ -20562,19 +20570,71 @@ function rvSortStores(list, ym, mode) {
   return has.concat(none);
 }
 function rvPrevYm(ym) { return /^\d{4}-\d{2}$/.test(ym) ? _ymAdd(ym, -1) : null; }
+// ── 기간(연/월/일) 키: "all" | "2026" | "2026-11" | "2026-11-11" ──
+function rvPeriodType(k) { return k === "all" ? "all" : String(k).length === 4 ? "y" : String(k).length === 7 ? "m" : "d"; }
+function rvPrevKey(k) {
+  const t = rvPeriodType(k);
+  if (t === "y") return String(Number(k) - 1);
+  if (t === "m") return _ymAdd(k, -1);
+  if (t === "d") { const d = new Date(k + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); }
+  return null;
+}
+function rvPrevWord(k) { const t = rvPeriodType(k); return t === "y" ? "전년" : t === "d" ? "전일" : "전월"; }
+function rvPeriodRange(k) {
+  const t = rvPeriodType(k);
+  return t === "y" ? [k + "-01-01", k + "-12-31"] : t === "m" ? [k + "-01", k + "-31"] : [k, k];
+}
+// 비교 대상 기간에 데이터가 있는지 — 해당 기간에 리뷰가 있거나, 반영된 데이터 범위(minDate~maxDate)가 그 기간을 완전히 포함할 때만 true
+function rvHasData(k) {
+  if (!k) return false;
+  const t = rvPeriodType(k);
+  const hit = t === "y" ? RV.months.some(m => m.startsWith(k)) : t === "m" ? RV.months.includes(k) : RV.days.has(k);
+  const [a, b] = rvPeriodRange(k);
+  const mt = RV.meta;
+  const cov = !!(mt && mt.minDate && mt.maxDate && a >= mt.minDate && b <= mt.maxDate);
+  return hit || cov;
+}
+function rvYears() { return [...new Set(RV.months.map(m => m.slice(0, 4)))].sort().reverse(); }
+function rvLatestDay() { return (RV.meta && RV.meta.maxDate) || [...RV.days].sort().pop() || ""; }
+function rvMatchPeriod(r, k) { return k === "all" || String(r.createdAt || "").startsWith(k); }
+// 기간 선택 UI: [전체/연도별/월별/일별] + 값 선택 (target: RV의 상태 키 이름)
+function rvPeriodHtml(target) {
+  const k = RV[target], t = rvPeriodType(k);
+  const types = [["all", "전체 기간"], ["y", "연도별"], ["m", "월별"], ["d", "일별"]];
+  let val = "";
+  if (t === "y") val = `<select class="rv-sel" style="flex:1" onchange="rvPickVal('${target}',this.value)">${rvYears().map(y => `<option value="${y}" ${y === k ? "selected" : ""}>${y}년</option>`).join("")}${rvYears().includes(k) ? "" : `<option value="${k}" selected>${k}년</option>`}</select>`;
+  else if (t === "m") val = `<select class="rv-sel" style="flex:1" onchange="rvPickVal('${target}',this.value)">${RV.months.map(m => `<option value="${m}" ${m === k ? "selected" : ""}>${rvYmLabel(m)}</option>`).join("")}${RV.months.includes(k) ? "" : `<option value="${k}" selected>${rvYmLabel(k)}</option>`}</select>`;
+  else if (t === "d") val = `<input type="date" class="rv-sel" style="flex:1;min-width:0" value="${k}" ${RV.meta && RV.meta.minDate ? `min="${RV.meta.minDate}"` : ""} ${RV.meta && RV.meta.maxDate ? `max="${RV.meta.maxDate}"` : ""} onchange="rvPickVal('${target}',this.value)">`;
+  return `<div style="display:flex;gap:6px;flex:1;min-width:0"><select class="rv-sel" style="flex:0 0 96px" onchange="rvPickType('${target}',this.value)">${types.map(([v, l]) => `<option value="${v}" ${v === t ? "selected" : ""}>${l}</option>`).join("")}</select>${val}</div>` +
+    (t === "d" && !RV.hasDy && RV.stats.size ? `<div class="rv-note" style="width:100%;margin-top:4px">일별 집계가 아직 없습니다. 관리자가 "집계 다시 계산"을 실행하면 사용할 수 있습니다.</div>` : "");
+}
+function rvPickType(target, type) {
+  const cur = RV[target], t0 = rvPeriodType(cur);
+  const latestM = RV.months[0] || "", latestD = rvLatestDay();
+  let k = "all";
+  if (type === "y") k = t0 !== "all" ? cur.slice(0, 4) : (rvYears()[0] || (latestD ? latestD.slice(0, 4) : "all"));
+  else if (type === "m") k = t0 === "m" ? cur : t0 === "d" ? cur.slice(0, 7) : (t0 === "y" ? (RV.months.find(m => m.startsWith(cur)) || latestM) : latestM);
+  else if (type === "d") k = t0 === "d" ? cur : (latestD && (t0 === "all" || latestD.startsWith(cur)) ? latestD : (t0 === "m" ? cur + "-01" : t0 === "y" ? cur + "-01-01" : latestD));
+  if (!k) k = "all";
+  rvApplyPeriod(target, k);
+}
+function rvPickVal(target, val) { if (val) rvApplyPeriod(target, val); }
+function rvApplyPeriod(target, k) {
+  RV[target] = k;
+  if (target === "fYm") rvPaintReviews();
+  else if (target === "tym") rvPaint();
+  else if (S.screen === "reviewStore") { const b = document.getElementById("rvBody"); if (b) b.innerHTML = rvStoreSummaryHtml(); }
+  else rvPaint();
+}
 function rvDeltaCnt(cur, prev) {
   const d = cur - prev;
   return `<span style="color:#4A5568">${d > 0 ? "▲" : d < 0 ? "▼" : "-"}${d !== 0 ? Math.abs(d) : ""}</span>`;
 }
 function rvDeltaAvg(curSt, prevSt) {
   if (!(curSt.n > 0) || !(prevSt.n > 0)) return `<span style="color:#A0AEC0">-</span>`;
-  const d = Math.round((curSt.s / curSt.n - prevSt.s / prevSt.n) * 10) / 10;
-  if (d === 0) return `<span style="color:#718096">±0.0</span>`;
-  return `<span style="color:${d > 0 ? "#2F855A" : "#C53030"};font-weight:700">${d > 0 ? "▲" : "▼"}${Math.abs(d).toFixed(1)}</span>`;
-}
-function rvMonthOptions(sel, withAll = true) {
-  return (withAll ? [`<option value="all" ${sel === "all" ? "selected" : ""}>전체 기간</option>`] : [])
-    .concat(RV.months.map(m => `<option value="${m}" ${m === sel ? "selected" : ""}>${rvYmLabel(m)}</option>`)).join("");
+  const d = Math.round((curSt.s / curSt.n - prevSt.s / prevSt.n) * 100) / 100;
+  if (d === 0) return `<span style="color:#718096">±0.00</span>`;
+  return `<span style="color:${d > 0 ? "#2F855A" : "#C53030"};font-weight:700">${d > 0 ? "▲" : "▼"}${Math.abs(d).toFixed(2)}</span>`;
 }
 
 // ── 데이터 로드 ──
@@ -20584,7 +20644,7 @@ async function rvLoad(force) {
   if (!force && RV.statsAt && Date.now() - RV.statsAt < _RV_TTL) return;
   const teams = [...new Set(RV.scope.map(s => s.team).filter(Boolean))];
   const snaps = await Promise.all(teams.map(t => getDoc(doc(db, "baemin_stats", _statsDocId(t))).catch(() => null)));
-  const map = new Map(), months = new Set();
+  const map = new Map(), months = new Set(), days = new Set();
   snaps.forEach(sn => {
     if (!sn || !sn.exists()) return;
     const d = sn.data();
@@ -20593,10 +20653,12 @@ async function rvLoad(force) {
     Object.entries(stores).forEach(([code, o]) => {
       map.set(code, o);
       Object.keys(o.m || {}).forEach(ym => months.add(ym));
+      Object.keys(o.dy || {}).forEach(d => days.add(d));
     });
   });
   RV.stats = map;
   RV.months = [...months].sort().reverse();
+  RV.days = days; RV.hasDy = days.size > 0;
   try { const ms = await getDoc(doc(db, "settings", "baeminMeta")); RV.meta = ms.exists() ? ms.data() : null; } catch (e) { RV.meta = null; }
   RV.statsAt = Date.now();
 }
@@ -20645,8 +20707,8 @@ function rvSearchHtml() {
   return `
     <input type="text" id="rvKw" class="input-field" placeholder="매장명 또는 E CODE 검색" value="${escapeHtml(RV.kw)}" oninput="rvKwInput(this.value)" style="margin:0 0 6px" />
     <div class="rv-note" style="margin-bottom:10px">${rvScopeText()}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${rvPeriodHtml("ym")}</div>
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <select class="rv-sel" style="flex:1" onchange="rvSetYm(this.value)">${rvMonthOptions(RV.ym)}</select>
       <select class="rv-sel" style="flex:1" onchange="rvSetSort(this.value)">
         <option value="name" ${RV.sort === "name" ? "selected" : ""}>매장명순</option>
         <option value="asc" ${RV.sort === "asc" ? "selected" : ""}>평점 낮은순</option>
@@ -20695,13 +20757,14 @@ function rvTeamHtml() {
   if (_authRole === "tl" && teams.length === 1) RV.team = teams[0];
   if (RV.team !== "all" && !teams.includes(RV.team)) RV.team = "all";
   const list = rvTeamList();
-  const ym = RV.tym, prev = ym === "all" ? null : rvPrevYm(ym);
-  const cur = rvAggStores(list, ym), pv = prev ? rvAggStores(list, prev) : null;
-  const dTxt = (c, p, unit) => pv ? `전월 ${p}${unit} → ${c > p ? "▲" : c < p ? "▼" : "-"}${c !== p ? Math.abs(c - p) : ""}` : "";
+  const ym = RV.tym, prev = ym === "all" ? null : rvPrevKey(ym), pw = rvPrevWord(ym);
+  const cur = rvAggStores(list, ym), pv = prev && rvHasData(prev) ? rvAggStores(list, prev) : null;
+  const noPrev = ym !== "all" && !pv ? `${pw} 데이터 없음` : "";
+  const dTxt = (c, p, unit) => pv ? `${pw} ${p}${unit} → ${c > p ? "▲" : c < p ? "▼" : "-"}${c !== p ? Math.abs(c - p) : ""}` : noPrev;
   const perStore = cur.stores ? (cur.n / cur.stores) : 0;
   const perStorePrev = pv && pv.stores ? (pv.n / pv.stores) : 0;
   const avgCur = cur.n ? cur.s / cur.n : null, avgPrev = pv && pv.n ? pv.s / pv.n : null;
-  const avgD = pv ? (avgCur != null && avgPrev != null ? (() => { const d = Math.round((avgCur - avgPrev) * 10) / 10; return `전월 ${avgPrev.toFixed(1)} → ${d > 0 ? "▲" : d < 0 ? "▼" : "-"}${d !== 0 ? Math.abs(d).toFixed(1) : ""}`; })() : "전월 -") : "";
+  const avgD = pv ? (avgCur != null && avgPrev != null ? (() => { const d = Math.round((avgCur - avgPrev) * 100) / 100; return `${pw} ${avgPrev.toFixed(2)} → ${d > 0 ? "▲" : d < 0 ? "▼" : "-"}${d !== 0 ? Math.abs(d).toFixed(2) : ""}`; })() : `${pw} -`) : noPrev;
   const teamSel = teams.length > 1 || _authRole !== "tl"
     ? `<select class="rv-sel" style="flex:1" onchange="rvSetTeam(this.value)">${_authRole === "tl" ? "" : `<option value="all" ${RV.team === "all" ? "selected" : ""}>전체 팀</option>`}${teams.map(t => `<option value="${escapeHtml(t)}" ${RV.team === t ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}</select>`
     : `<div class="rv-sel" style="flex:1;display:flex;align-items:center;font-weight:700">${escapeHtml(teams[0] || "-")}</div>`;
@@ -20710,10 +20773,10 @@ function rvTeamHtml() {
   if (RV.team === "all" && teams.length > 1) {
     const rows = teams.map(t => {
       const a = rvAggStores(scope.filter(s => s.team === t), ym);
-      return `<tr><td><b>${escapeHtml(t)}</b></td><td>${a.stores}/${a.total}</td><td>${a.n}</td><td>${a.stores ? (a.n / a.stores).toFixed(1) : "-"}</td><td><b>${a.n ? (a.s / a.n).toFixed(1) : "-"}</b></td></tr>`;
+      return `<tr><td><b>${escapeHtml(t)}</b></td><td>${a.stores}/${a.total}</td><td>${a.n}</td><td>${a.stores ? (a.n / a.stores).toFixed(1) : "-"}</td><td><b>${a.n ? (a.s / a.n).toFixed(2) : "-"}</b></td></tr>`;
     }).join("");
     cmp = `<div class="rv-card"><div style="font-size:13px;font-weight:700;margin-bottom:8px">팀별 비교 (${rvYmLabel(ym)})</div>
-      <table class="rv-tbl"><tr><th>팀</th><th>리뷰매장</th><th>총리뷰</th><th>매장당</th><th>평점</th></tr>${rows}</table></div>`;
+      <table class="rv-tbl"><tr><th>팀</th><th>리뷰매장</th><th>총리뷰</th><th>점 평균</th><th>평점</th></tr>${rows}</table></div>`;
   }
   // 월별 추이
   const mrows = RV.months.map(m => {
@@ -20726,14 +20789,14 @@ function rvTeamHtml() {
       <table class="rv-tbl"><tr><th>월</th><th>리뷰매장</th><th>총리뷰 (전월대비)</th><th>평균 평점 (전월대비)</th></tr>${mrows}</table>
       <div class="rv-note" style="margin-top:6px">월은 리뷰 작성일 기준입니다.</div></div>` : "";
   return `
-    <div style="display:flex;gap:8px;margin-bottom:6px">${teamSel}
-      <select class="rv-sel" style="flex:1" onchange="rvSetTYm(this.value)">${rvMonthOptions(ym)}</select></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">${teamSel}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px">${rvPeriodHtml("tym")}</div>
     <div class="rv-note" style="margin-bottom:10px">${_authRole === "tl" ? "TL: 본인 팀" : "GL·ADMIN: 전체 팀 / 팀 선택"} · 기간: ${rvYmLabel(ym)}</div>
     <div class="rv-kpis">
       <div class="rv-kpi"><div class="l">리뷰 매장수</div><div class="v">${cur.stores}<small> / ${cur.total}개</small></div><div class="d">${dTxt(cur.stores, pv ? pv.stores : 0, "개")}</div></div>
       <div class="rv-kpi"><div class="l">총 리뷰수</div><div class="v">${cur.n.toLocaleString()}<small> 건</small></div><div class="d">${dTxt(cur.n, pv ? pv.n : 0, "건")}</div></div>
-      <div class="rv-kpi"><div class="l">매장당 리뷰수</div><div class="v">${cur.stores ? perStore.toFixed(1) : "-"}<small> 건</small></div><div class="d">${pv ? `전월 ${pv.stores ? perStorePrev.toFixed(1) : "-"}` : "리뷰 매장 기준"}</div></div>
-      <div class="rv-kpi"><div class="l">평균 평점</div><div class="v">★ ${avgCur != null ? avgCur.toFixed(1) : "-"}</div><div class="d">${pv ? avgD : "전체 리뷰 기준"}</div></div>
+      <div class="rv-kpi"><div class="l">점 평균 리뷰수</div><div class="v">${cur.stores ? perStore.toFixed(1) : "-"}<small> 건</small></div><div class="d">${pv ? `${pw} ${pv.stores ? perStorePrev.toFixed(1) : "-"}` : (noPrev || "리뷰 매장 기준")}</div></div>
+      <div class="rv-kpi"><div class="l">평균 평점</div><div class="v">★ ${avgCur != null ? avgCur.toFixed(2) : "-"}</div><div class="d">${pv ? avgD : (noPrev || "전체 리뷰 기준")}</div></div>
     </div>
     ${cmp}${trend}
     <div class="rv-card">
@@ -20801,7 +20864,8 @@ async function rvPaintStore() {
 }
 function rvStoreSummaryHtml() {
   const code = RV.sel, o = RV.stats.get(code) || { n: 0, s: 0, d: [0, 0, 0, 0, 0], m: {} };
-  const ym = RV.ym, cur = rvStat(code, ym), prevYm = ym === "all" ? null : rvPrevYm(ym), pv = prevYm ? rvStat(code, prevYm) : null;
+  const ym = RV.ym, cur = rvStat(code, ym), prevK = ym === "all" ? null : rvPrevKey(ym), pw = rvPrevWord(ym), pv = prevK && rvHasData(prevK) ? rvStat(code, prevK) : null;
+  const noPrev = ym !== "all" && !pv ? `${pw} 데이터 없음` : "";
   const dist = o.d || [0, 0, 0, 0, 0], tot = dist.reduce((a, b) => a + b, 0) || 1;
   const bars = [5, 4, 3, 2, 1].map(r => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#4A5568;margin-bottom:5px"><span style="width:26px">${r}점</span><div class="rv-bar"><div style="width:${Math.round(dist[r - 1] / tot * 100)}%"></div></div><span style="width:30px;text-align:right">${dist[r - 1]}</span></div>`).join("");
   const rows = RV.months.map(m => {
@@ -20810,10 +20874,10 @@ function rvStoreSummaryHtml() {
   }).join("");
   return rvStoreHead() + `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><span style="font-size:13px;color:var(--sub)">기간</span>
-      <select class="rv-sel" style="flex:1" onchange="rvSetYmStore(this.value)">${rvMonthOptions(ym)}</select></div>
+      ${rvPeriodHtml("ym")}</div>
     <div class="rv-kpis">
-      <div class="rv-kpi"><div class="l">리뷰 수</div><div class="v">${cur.n}<small> 건</small></div><div class="d">${pv ? `전월 ${pv.n}건 ${rvDeltaCnt(cur.n, pv.n)}` : ""}</div></div>
-      <div class="rv-kpi"><div class="l">평균 평점</div><div class="v">★ ${rvFmtAvg(cur)}</div><div class="d">${pv ? `전월 ${rvFmtAvg(pv)} ${rvDeltaAvg(cur, pv)}` : ""}</div></div>
+      <div class="rv-kpi"><div class="l">리뷰 수</div><div class="v">${cur.n}<small> 건</small></div><div class="d">${pv ? `${pw} ${pv.n}건 ${rvDeltaCnt(cur.n, pv.n)}` : noPrev}</div></div>
+      <div class="rv-kpi"><div class="l">평균 평점</div><div class="v">★ ${rvFmtAvg(cur)}</div><div class="d">${pv ? `${pw} ${rvFmtAvg(pv)} ${rvDeltaAvg(cur, pv)}` : noPrev}</div></div>
     </div>
     <div class="rv-card"><div style="font-size:13px;font-weight:700;margin-bottom:8px">월별 추이</div>
       ${RV.months.length ? `<table class="rv-tbl"><tr><th>월</th><th>리뷰수 (전월대비)</th><th>평균 평점 (전월대비)</th></tr>${rows}</table><div class="rv-note" style="margin-top:6px">월은 리뷰 작성일 기준입니다.</div>` : `<div class="rv-note">집계된 데이터가 없습니다.</div>`}</div>
@@ -20823,7 +20887,7 @@ function rvStoreSummaryHtml() {
 function rvSetYmStore(v) { RV.ym = v; const b = document.getElementById("rvBody"); if (b) b.innerHTML = rvStoreSummaryHtml(); }
 function rvFilteredReviews() {
   let r = (RV.revs || []).slice();
-  if (RV.fYm !== "all") r = r.filter(x => x.ym === RV.fYm);
+  if (RV.fYm !== "all") r = r.filter(x => rvMatchPeriod(x, RV.fYm));
   if (RV.fStatus !== "all") r = r.filter(x => x.status === RV.fStatus);
   if (RV.fSort === "low") r.sort((a, b) => (a.rating || 0) - (b.rating || 0) || String(b.createdAt).localeCompare(String(a.createdAt)));
   else r.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -20832,7 +20896,7 @@ function rvFilteredReviews() {
 function rvPaintReviews() {
   const b = document.getElementById("rvBody");
   if (!b) return;
-  const base = (RV.revs || []).filter(x => RV.fYm === "all" || x.ym === RV.fYm);
+  const base = (RV.revs || []).filter(x => rvMatchPeriod(x, RV.fYm));
   const cnt = k => k === "all" ? base.length : base.filter(x => x.status === k).length;
   const chips = [["all", "전체"], ["DISPLAY", "노출"], ["TEMPORARY_BLOCK", "임시 차단"], ["OPERATE_BLOCK", "운영 차단"]]
     .map(([k, l]) => `<button class="rv-pill ${RV.fStatus === k ? "on" : ""}" onclick="rvSetFStatus('${k}')">${l} ${cnt(k)}</button>`).join("");
@@ -20855,8 +20919,8 @@ function rvPaintReviews() {
       <div class="rv-kpi"><div class="l">리뷰 수</div><div class="v">${agg.n}<small> 건</small></div></div>
       <div class="rv-kpi"><div class="l">평균 평점</div><div class="v">★ ${rvFmtAvg(agg)}</div></div>
     </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${rvPeriodHtml("fYm")}</div>
     <div style="display:flex;gap:8px;margin-bottom:8px">
-      <select class="rv-sel" style="flex:1" onchange="rvSetFYm(this.value)">${rvMonthOptions(RV.fYm)}</select>
       <select class="rv-sel" style="flex:1" onchange="rvSetFSort(this.value)"><option value="new" ${RV.fSort === "new" ? "selected" : ""}>최신순</option><option value="low" ${RV.fSort === "low" ? "selected" : ""}>평점 낮은순</option></select>
     </div>
     <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px">${chips}</div>
@@ -20903,6 +20967,7 @@ function renderReviewAdmin(root) {
       <div class="rv-note" style="line-height:1.6;margin-bottom:10px">리뷰ID 기준 누적 반영 — 새 리뷰는 추가, 기존 리뷰는 내용이 달라진 경우에만 갱신됩니다. 사진은 유지됩니다. 반영 후 팀·매장 집계가 자동 갱신됩니다.</div>
       <input type="file" id="rvRawFile" accept=".xlsx,.xls" style="display:none" onchange="rvUploadRaw(this.files[0]); this.value=''">
       <button class="btn-ghost" onclick="document.getElementById('rvRawFile').click()">RAW 파일 선택</button>
+      <button class="btn-ghost" style="margin-top:8px" onclick="rvRebuildStats()">집계 다시 계산 (업로드 없이)</button>
       <div id="rvRawMsg" style="margin-top:10px;font-size:13px;line-height:1.7"></div>
     </div>
     <div class="rv-card">
@@ -20947,8 +21012,37 @@ function rvBuildStats(reviewMap, storeByCode) {
     o.n++; o.s += rt;
     if (rt >= 1 && rt <= 5) o.d[rt - 1]++;
     if (r.ym) { const m = o.m[r.ym] || (o.m[r.ym] = [0, 0]); m[0]++; m[1] += rt; }
+    const dk = String(r.createdAt || "").slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dk)) { if (!o.dy) o.dy = {}; const dd = o.dy[dk] || (o.dy[dk] = [0, 0]); dd[0]++; dd[1] += rt; }
   });
   return teams;
+}
+// 집계 문서(팀별) + 반영 이력 저장
+async function rvWriteStats(merged, storeByCode, now) {
+  const teams = rvBuildStats(merged, storeByCode);
+  for (const [team, st] of teams) {
+    await setDoc(doc(db, "baemin_stats", _statsDocId(team)), { team, storesJson: JSON.stringify(st), updatedAt: now }, { merge: false });
+  }
+  const dates = [...merged.values()].map(d => String(d.createdAt || "").slice(0, 10)).filter(Boolean).sort();
+  await setDoc(doc(db, "settings", "baeminMeta"), { updatedAt: now, total: merged.size, minDate: dates[0] || "", maxDate: dates[dates.length - 1] || "" }, { merge: true });
+  return teams;
+}
+// 업로드 없이 저장된 리뷰 전체로 집계만 다시 계산(관리자)
+async function rvRebuildStats() {
+  const msg = document.getElementById("rvRawMsg");
+  if (_authRole !== "admin" || !msg) return;
+  try {
+    msg.textContent = "리뷰 읽는 중...";
+    const stores = await getActiveStoreData();
+    const storeByCode = new Map(stores.map(s => [s.code, s]));
+    const merged = new Map();
+    (await getDocs(collection(db, "baemin_reviews"))).forEach(d => merged.set(d.id, d.data()));
+    if (!merged.size) { msg.textContent = "저장된 리뷰가 없습니다."; return; }
+    msg.textContent = "집계 계산 중...";
+    const teams = await rvWriteStats(merged, storeByCode, new Date());
+    RV.statsAt = 0;
+    msg.innerHTML = `<b>집계 완료</b> — 리뷰 ${merged.size.toLocaleString()}건 · 팀 집계 ${teams.size}개 갱신`;
+  } catch (e) { msg.innerHTML = `<span style="color:#C53030">집계 실패: ${escapeHtml(e.message || e)}</span>`; }
 }
 async function rvUploadRaw(file) {
   const msg = document.getElementById("rvRawMsg");
@@ -21005,12 +21099,7 @@ async function rvUploadRaw(file) {
     const merged = new Map();
     existing.forEach((d, id) => merged.set(id, d));
     incoming.forEach((d, id) => merged.set(id, d));
-    const teams = rvBuildStats(merged, storeByCode);
-    for (const [team, st] of teams) {
-      await setDoc(doc(db, "baemin_stats", _statsDocId(team)), { team, storesJson: JSON.stringify(st), updatedAt: now }, { merge: false });
-    }
-    const dates = [...merged.values()].map(d => String(d.createdAt || "").slice(0, 10)).filter(Boolean).sort();
-    await setDoc(doc(db, "settings", "baeminMeta"), { updatedAt: now, total: merged.size, minDate: dates[0] || "", maxDate: dates[dates.length - 1] || "" }, { merge: true });
+    const teams = await rvWriteStats(merged, storeByCode, now);
     const unmatched = new Map();
     incoming.forEach(d => { if (!storeByCode.has(d.storeCode)) unmatched.set(d.rawCode, (unmatched.get(d.rawCode) || 0) + 1); });
     RV.statsAt = 0;
@@ -21148,7 +21237,7 @@ async function rvUploadPhotos(files) {
 }
 
 Object.assign(window, {
-  openReview, toggleBaeminEnabled, rvWipeAll, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
+  openReview, toggleBaeminEnabled, rvWipeAll, rvRebuildStats, rvPickType, rvPickVal, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
   go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, handleReportDataUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
   removeImage, submitForm, fetchRecords, viewRecord, viewRecordDash,
