@@ -20776,7 +20776,7 @@ function rvTeamHtml() {
       return `<tr><td><b>${escapeHtml(t)}</b></td><td>${a.stores}/${a.total}</td><td>${a.n}</td><td>${a.stores ? (a.n / a.stores).toFixed(1) : "-"}</td><td><b>${a.n ? (a.s / a.n).toFixed(2) : "-"}</b></td></tr>`;
     }).join("");
     cmp = `<div class="rv-card"><div style="font-size:13px;font-weight:700;margin-bottom:8px">팀별 비교 (${rvYmLabel(ym)})</div>
-      <table class="rv-tbl"><tr><th>팀</th><th>리뷰매장</th><th>총리뷰</th><th>점 평균</th><th>평점</th></tr>${rows}</table></div>`;
+      <table class="rv-tbl"><tr><th>팀</th><th>리뷰매장</th><th>총리뷰</th><th>점당 리뷰수</th><th>평점</th></tr>${rows}</table></div>`;
   }
   // 월별 추이
   const mrows = RV.months.map(m => {
