@@ -20477,7 +20477,8 @@ const RV = {
   team: "all", tsort: "asc", tym: "all",
   scope: null, stats: new Map(), statsAt: 0, months: [], meta: null,
   sel: null, view: "summary", revs: null, revsCode: null, fStatus: "all", fYm: "all", fSort: "new",
-  detail: null, cssOn: false, days: new Set(), hasDy: false,
+  detail: null, cssOn: false, days: new Set(), hasDy: false, hasStar: false,
+  sStars: new Set(), tStars: new Set(), fStars: new Set(),
 };
 const _RV_TTL = 10 * 60 * 1000;
 const RV_PHOTO_CONC = 6; // 사진 업로드 동시 처리 리뷰 수(브라우저 CPU·회선 기준 적정값)
@@ -20539,27 +20540,40 @@ function rvScopeStores(all) {
   if (_authRole === "tl") return all.filter(s => s.tl === _authName || s.sv === _authName);
   return all.slice();
 }
-function rvStat(code, ym) {
+// [n, 별점합, 1점수, 2점수, 3점수, 4점수, 5점수] 중에서 선택한 별점(Set)만 집계 — 선택 없으면 전체
+function rvPick(e, stars) {
+  if (!stars || !stars.size) return { n: e[0], s: e[1] };
+  if (e.length < 7) return { n: 0, s: 0 };
+  let n = 0, sum = 0;
+  stars.forEach(r => { const c = e[1 + r] || 0; n += c; sum += c * r; });
+  return { n, s: sum };
+}
+function rvStat(code, ym, stars) {
   const o = RV.stats.get(code);
   if (!o) return { n: 0, s: 0 };
-  if (ym === "all") return { n: o.n || 0, s: o.s || 0 };
-  if (ym.length === 4) { // 연 단위: 해당 연도의 월 합산
+  if (ym === "all") {
+    if (!stars || !stars.size) return { n: o.n || 0, s: o.s || 0 };
     let n = 0, sum = 0;
-    Object.keys(o.m || {}).forEach(k => { if (k.startsWith(ym)) { n += o.m[k][0]; sum += o.m[k][1]; } });
+    stars.forEach(r => { const c = (o.d && o.d[r - 1]) || 0; n += c; sum += c * r; });
     return { n, s: sum };
   }
-  const m = ym.length === 10 ? (o.dy && o.dy[ym]) : (o.m && o.m[ym]);
-  return m ? { n: m[0], s: m[1] } : { n: 0, s: 0 };
+  if (ym.length === 4) { // 연 단위: 해당 연도의 월 합산
+    let n = 0, sum = 0;
+    Object.keys(o.m || {}).forEach(k => { if (k.startsWith(ym)) { const x = rvPick(o.m[k], stars); n += x.n; sum += x.s; } });
+    return { n, s: sum };
+  }
+  const e = ym.length === 10 ? (o.dy && o.dy[ym]) : (o.m && o.m[ym]);
+  return e ? rvPick(e, stars) : { n: 0, s: 0 };
 }
-function rvAggStores(list, ym) {
+function rvAggStores(list, ym, stars) {
   let n = 0, s = 0, withRev = 0;
-  list.forEach(st => { const x = rvStat(st.code, ym); if (x.n > 0) { withRev++; n += x.n; s += x.s; } });
+  list.forEach(st => { const x = rvStat(st.code, ym, stars); if (x.n > 0) { withRev++; n += x.n; s += x.s; } });
   return { stores: withRev, total: list.length, n, s };
 }
 // 평점 낮은순/높은순 정렬 — 리뷰 없는 매장은 항상 최하단
-function rvSortStores(list, ym, mode) {
+function rvSortStores(list, ym, mode, stars) {
   const nm = (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko");
-  const arr = list.map(st => ({ st, x: rvStat(st.code, ym) }));
+  const arr = list.map(st => ({ st, x: rvStat(st.code, ym, stars) }));
   const has = arr.filter(o => o.x.n > 0), none = arr.filter(o => o.x.n === 0);
   const avg = o => o.x.s / o.x.n;
   if (mode === "asc") has.sort((a, b) => avg(a) - avg(b) || b.x.n - a.x.n || nm(a.st, b.st));
@@ -20594,6 +20608,31 @@ function rvHasData(k) {
   const cov = !!(mt && mt.minDate && mt.maxDate && a >= mt.minDate && b <= mt.maxDate);
   return hit || cov;
 }
+// ── 별점 필터(다중 선택) ──
+function rvStarLabel(set) { return set && set.size ? [...set].sort().join("·") + "점" : "전체"; }
+function rvStarCounts(list, ym) { return [1, 2, 3, 4, 5].map(r => list.reduce((a, st) => a + rvStat(st.code, ym, new Set([r])).n, 0)); }
+// target: "sStars" | "tStars" | "fStars", counts: 별점별 건수 배열(5)
+function rvStarCardHtml(target, counts, needAgg) {
+  if (needAgg && !RV.hasStar) return `<div class="rv-card"><div style="font-size:13px;font-weight:700;margin-bottom:4px">별점</div><div class="rv-note">별점 필터는 관리자가 "집계 다시 계산"을 실행하면 사용할 수 있습니다.</div></div>`;
+  const sel = RV[target];
+  const btn = r => {
+    const on = sel.has(r), c = counts[r - 1] || 0;
+    return `<button onclick="rvToggleStar('${target}',${r})" style="flex:1;height:46px;border-radius:12px;cursor:pointer;line-height:1.2;font-size:13px;${on ? "border:2px solid #1A202C;background:#1A202C;color:#fff;font-weight:700" : c ? "border:1.5px solid #E2E8F0;background:#fff;color:#4A5568" : "border:1.5px dashed #E2E8F0;background:#F7F8FA;color:#A0AEC0"}">${r}점<br><span style="font-size:11px">${c.toLocaleString()}</span></button>`;
+  };
+  const pre = (k, l) => `<button class="rv-btn" onclick="rvStarPreset('${target}','${k}')" style="height:32px;border-radius:999px;font-size:12px">${l}</button>`;
+  return `<div class="rv-card" style="padding:12px">
+    <div style="display:flex;align-items:center;margin-bottom:8px"><span style="flex:1;font-size:13px;font-weight:700">별점</span><span class="rv-note">여러 개 선택 가능 · 선택 없음 = 전체</span></div>
+    <div style="display:flex;gap:6px">${[1, 2, 3, 4, 5].map(btn).join("")}</div>
+    <div style="display:flex;gap:6px;margin-top:8px;align-items:center">${pre("low", "저평점 (1~2점)")}${pre("high", "고평점 (4~5점)")}<span style="flex:1"></span><button onclick="rvStarPreset('${target}','clear')" style="height:32px;padding:0 10px;border:0;background:none;font-size:12px;color:var(--sub);text-decoration:underline;cursor:pointer">초기화</button></div>
+  </div>`;
+}
+function rvToggleStar(target, r) { const st = RV[target]; if (st.has(r)) st.delete(r); else st.add(r); rvStarRepaint(target); }
+function rvStarPreset(target, k) {
+  const st = RV[target]; st.clear();
+  if (k === "low") { st.add(1); st.add(2); } else if (k === "high") { st.add(4); st.add(5); }
+  rvStarRepaint(target);
+}
+function rvStarRepaint(target) { if (target === "fStars") rvPaintReviews(); else rvPaint(); }
 function rvYears() { return [...new Set(RV.months.map(m => m.slice(0, 4)))].sort().reverse(); }
 function rvLatestDay() { return (RV.meta && RV.meta.maxDate) || [...RV.days].sort().pop() || ""; }
 function rvMatchPeriod(r, k) { return k === "all" || String(r.createdAt || "").startsWith(k); }
@@ -20644,7 +20683,7 @@ async function rvLoad(force) {
   if (!force && RV.statsAt && Date.now() - RV.statsAt < _RV_TTL) return;
   const teams = [...new Set(RV.scope.map(s => s.team).filter(Boolean))];
   const snaps = await Promise.all(teams.map(t => getDoc(doc(db, "baemin_stats", _statsDocId(t))).catch(() => null)));
-  const map = new Map(), months = new Set(), days = new Set();
+  const map = new Map(), months = new Set(), days = new Set(); let hasStar = false;
   snaps.forEach(sn => {
     if (!sn || !sn.exists()) return;
     const d = sn.data();
@@ -20654,11 +20693,12 @@ async function rvLoad(force) {
       map.set(code, o);
       Object.keys(o.m || {}).forEach(ym => months.add(ym));
       Object.keys(o.dy || {}).forEach(d => days.add(d));
+      if (!hasStar && Object.values(o.m || {}).some(e => e.length >= 7)) hasStar = true;
     });
   });
   RV.stats = map;
   RV.months = [...months].sort().reverse();
-  RV.days = days; RV.hasDy = days.size > 0;
+  RV.days = days; RV.hasDy = days.size > 0; RV.hasStar = hasStar;
   try { const ms = await getDoc(doc(db, "settings", "baeminMeta")); RV.meta = ms.exists() ? ms.data() : null; } catch (e) { RV.meta = null; }
   RV.statsAt = Date.now();
 }
@@ -20666,7 +20706,7 @@ async function rvLoad(force) {
 // ── 진입 ──
 function openReview() {
   if (!rvAllowed()) { alert("현재 관리자 설정에서 비활성화되어 있습니다."); return; }
-  RV.tab = "search"; RV.kw = ""; RV.sort = "name"; RV.ym = "all"; RV.team = "all"; RV.tsort = "asc"; RV.tym = "all"; RV.statsAt = 0; RV.scope = null;
+  RV.tab = "search"; RV.kw = ""; RV.sort = "name"; RV.ym = "all"; RV.team = "all"; RV.tsort = "asc"; RV.tym = "all"; RV.statsAt = 0; RV.scope = null; RV.sStars = new Set(); RV.tStars = new Set();
   go("review");
 }
 function rvHeader(title, backFn, extra) {
@@ -20708,6 +20748,7 @@ function rvSearchHtml() {
     <input type="text" id="rvKw" class="input-field" placeholder="매장명 또는 E CODE 검색" value="${escapeHtml(RV.kw)}" oninput="rvKwInput(this.value)" style="margin:0 0 6px" />
     <div class="rv-note" style="margin-bottom:10px">${rvScopeText()}</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${rvPeriodHtml("ym")}</div>
+    ${rvStarCardHtml("sStars", rvStarCounts(RV.scope || [], RV.ym), true)}
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <select class="rv-sel" style="flex:1" onchange="rvSetSort(this.value)">
         <option value="name" ${RV.sort === "name" ? "selected" : ""}>매장명순</option>
@@ -20729,20 +20770,20 @@ function rvPaintList() {
   let list = RV.scope || [];
   if (kw) list = list.filter(s => String(s.name || "").toLowerCase().includes(kw) || String(s.code || "").toLowerCase().includes(kw));
   if (list.length === 0) { el.innerHTML = `<p class="error-text">검색 결과가 없습니다.</p>`; return; }
-  const sorted = rvSortStores(list, RV.ym, RV.sort);
+  const sorted = rvSortStores(list, RV.ym, RV.sort, RV.sStars);
   const LIM = 100;
   const rows = sorted.slice(0, LIM).map(({ st, x }) => `
     <button class="rv-row" onclick="rvOpenStore('${escapeHtml(st.code)}')">
       <span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700">${escapeHtml(st.name)}</span>
         <span style="display:block;font-size:12px;color:var(--sub)">${escapeHtml(st.code)} · ${escapeHtml(st.team || "-")}</span></span>
       ${x.n > 0 ? `<span style="text-align:right"><span style="display:block;font-size:12px;color:#4A5568">리뷰 ${x.n}건</span><span style="display:block;font-size:14px;font-weight:800">★ ${rvFmtAvg(x)}</span></span>`
-                : `<span style="font-size:12px;color:#A0AEC0">리뷰 없음</span>`}
+                : `<span style="font-size:12px;color:#A0AEC0">${RV.sStars.size ? "해당 리뷰 없음" : "리뷰 없음"}</span>`}
     </button>`).join("");
-  el.innerHTML = `<div class="store-count" style="padding:0 2px 6px">${list.length}개 매장 · ${rvYmLabel(RV.ym)}${list.length > LIM ? ` (상위 ${LIM}개 표시 — 검색어로 좁혀주세요)` : ""}</div>
+  el.innerHTML = `<div class="store-count" style="padding:0 2px 6px">${list.length}개 매장 · ${rvYmLabel(RV.ym)}${RV.sStars.size ? " · 별점 " + rvStarLabel(RV.sStars) : ""}${list.length > LIM ? ` (상위 ${LIM}개 표시 — 검색어로 좁혀주세요)` : ""}</div>
     <div class="rv-card" style="padding:4px 12px">${rows}</div>`;
 }
 function rvOpenStore(code) {
-  RV.sel = code; RV.view = "summary"; RV.revs = null; RV.revsCode = null; RV.fStatus = "all"; RV.fYm = "all"; RV.fSort = "new";
+  RV.sel = code; RV.view = "summary"; RV.revs = null; RV.revsCode = null; RV.fStatus = "all"; RV.fYm = "all"; RV.fSort = "new"; RV.fStars = new Set();
   go("reviewStore");
 }
 
@@ -20758,7 +20799,7 @@ function rvTeamHtml() {
   if (RV.team !== "all" && !teams.includes(RV.team)) RV.team = "all";
   const list = rvTeamList();
   const ym = RV.tym, prev = ym === "all" ? null : rvPrevKey(ym), pw = rvPrevWord(ym);
-  const cur = rvAggStores(list, ym), pv = prev && rvHasData(prev) ? rvAggStores(list, prev) : null;
+  const cur = rvAggStores(list, ym, RV.tStars), pv = prev && rvHasData(prev) ? rvAggStores(list, prev, RV.tStars) : null;
   const noPrev = ym !== "all" && !pv ? `${pw} 데이터 없음` : "";
   const dTxt = (c, p, unit) => pv ? `${pw} ${p}${unit} → ${c > p ? "▲" : c < p ? "▼" : "-"}${c !== p ? Math.abs(c - p) : ""}` : noPrev;
   const perStore = cur.stores ? (cur.n / cur.stores) : 0;
@@ -20772,7 +20813,7 @@ function rvTeamHtml() {
   let cmp = "";
   if (RV.team === "all" && teams.length > 1) {
     const rows = teams.map(t => {
-      const a = rvAggStores(scope.filter(s => s.team === t), ym);
+      const a = rvAggStores(scope.filter(s => s.team === t), ym, RV.tStars);
       return `<tr><td><b>${escapeHtml(t)}</b></td><td>${a.stores}/${a.total}</td><td>${a.n}</td><td>${a.stores ? (a.n / a.stores).toFixed(1) : "-"}</td><td><b>${a.n ? (a.s / a.n).toFixed(2) : "-"}</b></td></tr>`;
     }).join("");
     cmp = `<div class="rv-card"><div style="font-size:13px;font-weight:700;margin-bottom:8px">팀별 비교 (${rvYmLabel(ym)})</div>
@@ -20780,7 +20821,7 @@ function rvTeamHtml() {
   }
   // 월별 추이
   const mrows = RV.months.map(m => {
-    const a = rvAggStores(list, m), p = rvAggStores(list, _ymAdd(m, -1));
+    const a = rvAggStores(list, m, RV.tStars), p = rvAggStores(list, _ymAdd(m, -1), RV.tStars);
     const hasPrev = RV.months.includes(_ymAdd(m, -1));
     const aSt = { n: a.n, s: a.s }, pSt = { n: p.n, s: p.s };
     return `<tr><td><b>${rvYmLabel(m)}</b></td><td>${a.stores}</td><td>${a.n}${hasPrev ? ` ${rvDeltaCnt(a.n, p.n)}` : ""}</td><td><b>${rvFmtAvg(aSt)}</b>${hasPrev ? ` ${rvDeltaAvg(aSt, pSt)}` : ""}</td></tr>`;
@@ -20790,8 +20831,9 @@ function rvTeamHtml() {
       <div class="rv-note" style="margin-top:6px">월은 리뷰 작성일 기준입니다.</div></div>` : "";
   return `
     <div style="display:flex;gap:8px;margin-bottom:8px">${teamSel}</div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px">${rvPeriodHtml("tym")}</div>
-    <div class="rv-note" style="margin-bottom:10px">${_authRole === "tl" ? "TL: 본인 팀" : "GL·ADMIN: 전체 팀 / 팀 선택"} · 기간: ${rvYmLabel(ym)}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${rvPeriodHtml("tym")}</div>
+    ${rvStarCardHtml("tStars", rvStarCounts(list, ym), true)}
+    <div class="rv-note" style="margin-bottom:10px">${_authRole === "tl" ? "TL: 본인 팀" : "GL·ADMIN: 전체 팀 / 팀 선택"} · 기간: ${rvYmLabel(ym)}${RV.tStars.size ? " · 별점 " + rvStarLabel(RV.tStars) : ""}</div>
     <div class="rv-kpis">
       <div class="rv-kpi"><div class="l">리뷰 매장수</div><div class="v">${cur.stores}<small> / ${cur.total}개</small></div><div class="d">${dTxt(cur.stores, pv ? pv.stores : 0, "개")}</div></div>
       <div class="rv-kpi"><div class="l">총 리뷰수</div><div class="v">${cur.n.toLocaleString()}<small> 건</small></div><div class="d">${dTxt(cur.n, pv ? pv.n : 0, "건")}</div></div>
@@ -20813,7 +20855,7 @@ function rvTeamHtml() {
 function rvPaintTeamStores() {
   const el = document.getElementById("rvTeamStores");
   if (!el) return;
-  const sorted = rvSortStores(rvTeamList(), RV.tym, RV.tsort);
+  const sorted = rvSortStores(rvTeamList(), RV.tym, RV.tsort, RV.tStars);
   el.innerHTML = `<div style="display:flex;font-size:11px;color:var(--sub);padding-bottom:5px;border-bottom:1px solid var(--border)"><span style="flex:1">매장</span><span style="width:52px;text-align:right">리뷰수</span><span style="width:48px;text-align:right">평균</span></div>` +
     sorted.map(({ st, x }) => `
     <button class="rv-row" onclick="rvOpenStore('${escapeHtml(st.code)}')">
@@ -20889,6 +20931,7 @@ function rvFilteredReviews() {
   let r = (RV.revs || []).slice();
   if (RV.fYm !== "all") r = r.filter(x => rvMatchPeriod(x, RV.fYm));
   if (RV.fStatus !== "all") r = r.filter(x => x.status === RV.fStatus);
+  if (RV.fStars.size) r = r.filter(x => RV.fStars.has(Number(x.rating)));
   if (RV.fSort === "low") r.sort((a, b) => (a.rating || 0) - (b.rating || 0) || String(b.createdAt).localeCompare(String(a.createdAt)));
   else r.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   return r;
@@ -20897,7 +20940,9 @@ function rvPaintReviews() {
   const b = document.getElementById("rvBody");
   if (!b) return;
   const base = (RV.revs || []).filter(x => rvMatchPeriod(x, RV.fYm));
-  const cnt = k => k === "all" ? base.length : base.filter(x => x.status === k).length;
+  const baseStar = base.filter(x => !RV.fStars.size || RV.fStars.has(Number(x.rating)));
+  const cnt = k => k === "all" ? baseStar.length : baseStar.filter(x => x.status === k).length;
+  const starCounts = [1, 2, 3, 4, 5].map(r => base.filter(x => Number(x.rating) === r && (RV.fStatus === "all" || x.status === RV.fStatus)).length);
   const chips = [["all", "전체"], ["DISPLAY", "노출"], ["TEMPORARY_BLOCK", "임시 차단"], ["OPERATE_BLOCK", "운영 차단"]]
     .map(([k, l]) => `<button class="rv-pill ${RV.fStatus === k ? "on" : ""}" onclick="rvSetFStatus('${k}')">${l} ${cnt(k)}</button>`).join("");
   const list = rvFilteredReviews();
@@ -20920,10 +20965,12 @@ function rvPaintReviews() {
       <div class="rv-kpi"><div class="l">평균 평점</div><div class="v">★ ${rvFmtAvg(agg)}</div></div>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${rvPeriodHtml("fYm")}</div>
+    ${rvStarCardHtml("fStars", starCounts, false)}
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <select class="rv-sel" style="flex:1" onchange="rvSetFSort(this.value)"><option value="new" ${RV.fSort === "new" ? "selected" : ""}>최신순</option><option value="low" ${RV.fSort === "low" ? "selected" : ""}>평점 낮은순</option></select>
     </div>
     <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px">${chips}</div>
+    <div class="rv-note" style="margin-bottom:8px">필터: ${rvYmLabel(RV.fYm)} · 별점 ${rvStarLabel(RV.fStars)} · 상태 ${RV.fStatus === "all" ? "전체" : escapeHtml(rvStatusLabel(RV.fStatus))}</div>
     ${cards || `<p class="error-text">해당 조건의 리뷰가 없습니다.</p>`}`;
 }
 function rvSetFStatus(v) { RV.fStatus = v; rvPaintReviews(); }
@@ -21011,9 +21058,10 @@ function rvBuildStats(reviewMap, storeByCode) {
     const rt = Number(r.rating) || 0;
     o.n++; o.s += rt;
     if (rt >= 1 && rt <= 5) o.d[rt - 1]++;
-    if (r.ym) { const m = o.m[r.ym] || (o.m[r.ym] = [0, 0]); m[0]++; m[1] += rt; }
+    const ri = rt >= 1 && rt <= 5 ? 1 + rt : 0; // [n, 별점합, 1~5점 건수]
+    if (r.ym) { const m = o.m[r.ym] || (o.m[r.ym] = [0, 0, 0, 0, 0, 0, 0]); m[0]++; m[1] += rt; if (ri) m[ri]++; }
     const dk = String(r.createdAt || "").slice(0, 10);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dk)) { if (!o.dy) o.dy = {}; const dd = o.dy[dk] || (o.dy[dk] = [0, 0]); dd[0]++; dd[1] += rt; }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dk)) { if (!o.dy) o.dy = {}; const dd = o.dy[dk] || (o.dy[dk] = [0, 0, 0, 0, 0, 0, 0]); dd[0]++; dd[1] += rt; if (ri) dd[ri]++; }
   });
   return teams;
 }
@@ -21237,7 +21285,7 @@ async function rvUploadPhotos(files) {
 }
 
 Object.assign(window, {
-  openReview, toggleBaeminEnabled, rvWipeAll, rvRebuildStats, rvPickType, rvPickVal, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
+  openReview, rvToggleStar, rvStarPreset, toggleBaeminEnabled, rvWipeAll, rvRebuildStats, rvPickType, rvPickVal, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
   go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, handleReportDataUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
   removeImage, submitForm, fetchRecords, viewRecord, viewRecordDash,
