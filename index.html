@@ -20746,7 +20746,7 @@ function rvPaint() {
 function rvSearchHtml() {
   return `
     <input type="text" id="rvKw" class="input-field" placeholder="매장명 또는 E CODE 검색" value="${escapeHtml(RV.kw)}" oninput="rvKwInput(this.value)" style="margin:0 0 6px" />
-    <div class="rv-note" style="margin-bottom:10px">${rvScopeText()}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><div class="rv-note" style="flex:1">${rvScopeText()}</div><button class="rv-btn" onclick="rvDownloadStoresXlsx()">매장별 평점 엑셀 다운로드</button></div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${rvPeriodHtml("ym")}</div>
     ${rvStarCardHtml("sStars", rvStarCounts(RV.scope || [], RV.ym), true)}
     <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -20781,6 +20781,33 @@ function rvPaintList() {
     </button>`).join("");
   el.innerHTML = `<div class="store-count" style="padding:0 2px 6px">${list.length}개 매장 · ${rvYmLabel(RV.ym)}${RV.sStars.size ? " · 별점 " + rvStarLabel(RV.sStars) : ""}${list.length > LIM ? ` (상위 ${LIM}개 표시 — 검색어로 좁혀주세요)` : ""}</div>
     <div class="rv-card" style="padding:4px 12px">${rows}</div>`;
+}
+// 매장별 리뷰 현황 엑셀 다운로드 — 조회 범위 내 전체 매장, 전체 기간 기준(기간·별점 필터와 무관)
+async function rvDownloadStoresXlsx() {
+  try {
+    await rvLoad(false);
+    if (!window.XLSX) {
+      await new Promise((res, rej) => {
+        const sc = document.createElement("script");
+        sc.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+        sc.onload = res; sc.onerror = rej;
+        document.head.appendChild(sc);
+      });
+    }
+    const list = (RV.scope || []).slice().sort((a, b) => String(a.team || "").localeCompare(String(b.team || ""), "ko") || String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+    if (!list.length) { alert("다운로드할 매장이 없습니다."); return; }
+    const rows = [["매장코드", "매장명", "팀", "담당AC", "리뷰수(전체기간)", "평균평점"]];
+    list.forEach(st => {
+      const x = rvStat(st.code, "all");
+      rows.push([st.code || "", st.name || "", st.team || "", st.sv || "", x.n || 0, x.n > 0 ? Math.round(x.s / x.n * 100) / 100 : ""]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 12 }, { wch: 24 }, { wch: 10 }, { wch: 10 }, { wch: 16 }, { wch: 10 }];
+    for (let r = 1; r < rows.length; r++) { const c = ws[XLSX.utils.encode_cell({ r, c: 5 })]; if (c && c.t === "n") c.z = "0.00"; }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "매장별리뷰현황");
+    XLSX.writeFile(wb, `배민리뷰_매장별현황_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  } catch (e) { alert("엑셀 다운로드 실패: " + (e.message || e)); }
 }
 function rvOpenStore(code) {
   RV.sel = code; RV.view = "summary"; RV.revs = null; RV.revsCode = null; RV.fStatus = "all"; RV.fYm = "all"; RV.fSort = "new"; RV.fStars = new Set();
@@ -21285,7 +21312,7 @@ async function rvUploadPhotos(files) {
 }
 
 Object.assign(window, {
-  openReview, rvToggleStar, rvStarPreset, toggleBaeminEnabled, rvWipeAll, rvRebuildStats, rvPickType, rvPickVal, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
+  openReview, rvDownloadStoresXlsx, rvToggleStar, rvStarPreset, toggleBaeminEnabled, rvWipeAll, rvRebuildStats, rvPickType, rvPickVal, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
   go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, handleReportDataUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
   removeImage, submitForm, fetchRecords, viewRecord, viewRecordDash,
