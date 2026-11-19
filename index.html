@@ -2752,7 +2752,7 @@ function startForm() {
   } else if (S.category === "jjkdp") {
     S.jjkdpAnswers = jjkdpBlankAnswers();
   } else if (S.category === "roast") {
-    S.roastAnswers = { q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memo:"" };
+    S.roastAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
   } else if (S.category === "spacool") {
     S.spacoolAnswers = { q0:null, q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ0:"", memoQ1:"", memoQ2:"" };
   } else {
@@ -5067,7 +5067,7 @@ function sessionRestore() {
     S.jjkdpAnswers = data.jjkdpAnswers ||
       (data.category === "jjkdp" ? jjkdpBlankAnswers() : null);
     S.roastAnswers = data.roastAnswers ||
-      (data.category === "roast" ? { q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memo:"" } : null);
+      (data.category === "roast" ? { q1:null, q2:null, q3:null, photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" } : null);
     S.loadedDocId= data.loadedDocId;
     S.prevNItems = data.prevNItems || [];
     S.storeObj   = data.storeObj || null;
@@ -13062,6 +13062,7 @@ const ROAST_FORM = {
   questions: [
     { key:"q1", label:"매장 전면 홍보물은 정위치 되어 있는가?", hint:"(노후포스터 제거 필, 전면사진 첨부)", type:"yn", photoLabel:"Q1 사진 — 매장 전면 홍보물" },
     { key:"q2", label:"POS 키오스크 홍보물은 정위치에 부착되어 있는가?", type:"yn", photoLabel:"Q2 사진 — POS 키오스크 홍보물" },
+    { key:"q3", label:"영양성분/원산지 표기 최신화가 완료되어 있는가?", hint:"(일자 보이도록 사진 업로드)", type:"yn", photoLabel:"Q3 사진 — 영양성분/원산지 표기 (일자 확인)" },
   ],
   maxPhotos: 3,
   memoMaxLen: 100,
@@ -13085,13 +13086,13 @@ function buildMatchedStoresRoast(activeStores, name) {
 }
 
 // 로스트치킨 체크리스트 건의 상태 계산: "none"|"needs"|"pending"|"done"
-// Q1·Q2 모두 Y면 정상. 하나라도 N이면 역할 무관 재점검.
+// Q1·Q2·Q3 모두 Y면 정상. 하나라도 N이면 역할 무관 재점검 (Q3 미응답 건도 필수값 누락으로 재점검).
 function roastStatus(rec) {
   if (!rec) return "none";
   if (rec.tlRejected) return "needs";
   const a = rec.roastAnswers;
   if (!a || a.q1 == null) return "none";
-  if (a.q1 === "N" || a.q2 === "N") return "needs";
+  if (a.q1 === "N" || a.q2 === "N" || a.q3 !== "Y") return "needs";
   if (rec.role === "sv") return rec.tlApproved === true ? "done" : "pending";
   return "done";
 }
@@ -13200,8 +13201,8 @@ function startRoastInspection() {
   }
   S.category = "roast";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.roastAnswers = { q1:null, q2:null,
-    photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memo:"" };
+  S.roastAnswers = { q1:null, q2:null, q3:null,
+    photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
   go("storeSel");
 }
 
@@ -13398,16 +13399,16 @@ async function submitFormRoast() {
 
   try {
     const trimMemo = v => (v || "").slice(0, ROAST_FORM.memoMaxLen);
-    const allNormal = a.q1 === "Y" && a.q2 === "Y";
+    const allNormal = a.q1 === "Y" && a.q2 === "Y" && a.q3 === "Y";
     const payload = {
       storeCode: S.storeCode, storeName: S.storeName, storeTeam: S.storeTeam,
       writerName: S.writerName, role: S.role,
       inspType: "최초", // 최초/보완 구분 없음 (작업지시서 기준)
       visitDate: S.visitDate,
       roastAnswers: {
-        q1: a.q1, q2: a.q2,
+        q1: a.q1, q2: a.q2, q3: a.q3,
         photos: a.photos,
-        memoQ1: trimMemo(a.memoQ1), memoQ2: trimMemo(a.memoQ2),
+        memoQ1: trimMemo(a.memoQ1), memoQ2: trimMemo(a.memoQ2), memoQ3: trimMemo(a.memoQ3),
         memo: trimMemo(a.memo),
       },
       needsFollowup: !allNormal,
@@ -19116,7 +19117,7 @@ async function fetchRecordsRoast() {
 function startInspectionForStoreRoast(code, name, team) {
   S.category = "roast";
   S.role = _authRole; S.inspType = "최초"; S.answers = {};
-  S.roastAnswers = { q1:null, q2:null, photos:{q1:[],q2:[]}, memoQ1:"", memoQ2:"", memo:"" };
+  S.roastAnswers = { q1:null, q2:null, q3:null, photos:{q1:[],q2:[],q3:[]}, memoQ1:"", memoQ2:"", memoQ3:"", memo:"" };
   selectStore(code, name, team);
 }
 
@@ -19535,7 +19536,7 @@ async function downloadExcelRoast() {
     if (!ex || t > exT) latestByStore.set(key, r);
   });
 
-  const rows = [["매장코드","매장명","팀","상태","Q1","Q2","작성자","역할","점검일시","메모"]];
+  const rows = [["매장코드","매장명","팀","상태","Q1","Q2","Q3","작성자","역할","점검일시","메모"]];
   const statusLabel = { done:"완료", pending:"승인대기", needs:"재점검필요", none:"미점검" };
   scopeStores.forEach(s => {
     const rec = latestByStore.get(s.code);
@@ -19545,7 +19546,7 @@ async function downloadExcelRoast() {
     rows.push([
       s.code, s.name, s.team||"",
       statusLabel[roastStatus(rec)],
-      a.q1||"", a.q2||"",
+      a.q1||"", a.q2||"", a.q3||"",
       rec?.writerName || "",
       roleLabel[rec?.role] || rec?.role || "",
       dt ? dt.toLocaleString("ko-KR") : "",
