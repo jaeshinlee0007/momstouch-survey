@@ -4802,21 +4802,48 @@ async function renderPhotoSetting(root) {
       ${section("📋", "매장 데이터 관리", storeDataHtml, true)}
       ${section("📊", "매장 컨설팅 리포트 데이터", reportDataHtml, false)}
       ${section("💬", "배달의민족 리뷰 관리", baeminCategoryHtml, false)}
-      ${section("🍔", "신규플랫폼 현장점검", defaultCategoryHtml, false)}
-      ${section("🆕", "갓빠삭치킨 출시 교육점검", npCategoryHtml, false)}
-      ${section("🧊", "스파쿨 프로모션 현장점검", spacoolCategoryHtml, false)}
-      ${section("🍗", "갓빠삭치킨 홍보물 부착 현장점검", gbchickenCategoryHtml, false)}
-      ${section("🌶️", "내슈빌 핫치킨버거 홍보물 부착 현장점검", nashvilleCategoryHtml, false)}
-      ${section("⚔️", "귀멸의칼날 필수 체크리스트", gkCategoryHtml, false)}
-      ${section("⚡", "귀멸의칼날 사전 체크리스트", gkpreCategoryHtml, false)}
-      ${section("🥩", "비프 리뉴얼 체크리스트", beefRenewalCategoryHtml, false)}
-      ${section("🎑", "추석굿즈/싱글피자 체크리스트", chuseokCategoryHtml, false)}
-      ${section("🍔", "그릴드불고기버거/갓빠삭(뼈) 체크리스트", grilledBulgogiCategoryHtml, false)}
-      ${section("🍔", "RE-HIT 2종(햄치즈휠렛/베이컨치폴레) 체크리스트", rehithamCategoryHtml, false)}
-      ${section("🍔", "후덕죽 2차 체크리스트", hdj2CategoryHtml, false)}
-      ${section("👁️", "주술회전 체크리스트", jjkCategoryHtml, false)}
-      ${section("🧿", "주술회전 DP 참여점포 조사", jjkdpCategoryHtml, false)}
-      ${section("🔥", "로스트치킨 체크리스트", roastCategoryHtml, false)}
+      ${(() => {
+        // 현장점검 아코디언: 활성(ON) 점검을 위로, 비활성(OFF)을 아래로 정렬. 접어도 설정 입력칸은 DOM에 그대로 남아 저장에 영향 없음.
+        const pill = on => on
+          ? `<span style="margin-left:auto;font-size:11px;font-weight:800;background:#E6FFFA;color:#285E61;border-radius:999px;padding:2px 9px">ON</span>`
+          : `<span style="margin-left:auto;font-size:11px;font-weight:700;background:#EDF2F7;color:#4A5568;border-radius:999px;padding:2px 9px">OFF</span>`;
+        const inner = (icon, title, html, on) => `
+          <details style="border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden;background:#fff">
+            <summary style="padding:14px 16px;font-weight:600;font-size:14px;color:#2D3748;cursor:pointer;background:#F7FAFC;display:flex;align-items:center;gap:8px">
+              <span>${icon}</span><span>${title}</span>${pill(on)}
+            </summary>
+            <div style="padding:16px">${html}</div>
+          </details>`;
+        const items = [
+          ["🍔", "신규플랫폼 현장점검", defaultCategoryHtml, true],
+          ["🆕", "갓빠삭치킨 출시 교육점검", npCategoryHtml, !!_npEnabled],
+          ["🧊", "스파쿨 프로모션 현장점검", spacoolCategoryHtml, !!_spacoolEnabled],
+          ["🍗", "갓빠삭치킨 홍보물 부착 현장점검", gbchickenCategoryHtml, !!_gbchickenEnabled],
+          ["🌶️", "내슈빌 핫치킨버거 홍보물 부착 현장점검", nashvilleCategoryHtml, !!_nashvilleEnabled],
+          ["⚔️", "귀멸의칼날 필수 체크리스트", gkCategoryHtml, !!_gkEnabled],
+          ["⚡", "귀멸의칼날 사전 체크리스트", gkpreCategoryHtml, !!_gkpreEnabled],
+          ["🥩", "비프 리뉴얼 체크리스트", beefRenewalCategoryHtml, !!_beefRenewalEnabled],
+          ["🎑", "추석굿즈/싱글피자 체크리스트", chuseokCategoryHtml, !!_chuseokEnabled],
+          ["🍔", "그릴드불고기버거/갓빠삭(뼈) 체크리스트", grilledBulgogiCategoryHtml, !!_grilledBulgogiEnabled],
+          ["🍔", "RE-HIT 2종(햄치즈휠렛/베이컨치폴레) 체크리스트", rehithamCategoryHtml, !!_rehithamEnabled],
+          ["🍔", "후덕죽 2차 체크리스트", hdj2CategoryHtml, !!_hdj2Enabled],
+          ["👁️", "주술회전 체크리스트", jjkCategoryHtml, !!_jjkEnabled],
+          ["🧿", "주술회전 DP 참여점포 조사", jjkdpCategoryHtml, !!_jjkdpEnabled],
+          ["🔥", "로스트치킨 체크리스트", roastCategoryHtml, !!_roastEnabled],
+        ];
+        const onList = items.filter(x => x[3]), offList = items.filter(x => !x[3]);
+        return `
+        <details style="border:1.5px solid #1A202C;border-radius:12px;margin-bottom:12px;overflow:hidden;background:#fff">
+          <summary style="padding:16px;font-weight:800;font-size:15px;color:#1A202C;cursor:pointer;display:flex;align-items:center;gap:8px;min-height:24px">
+            <span>현장점검</span><span style="margin-left:auto;font-size:12px;font-weight:600;color:#5A6678">활성 ${onList.length} / 전체 ${items.length}</span>
+          </summary>
+          <div style="padding:12px;background:#F7F8FA;border-top:1px solid var(--border)">
+            <div style="font-size:11px;font-weight:800;color:#285E61;margin:0 0 8px">활성 중 (${onList.length})</div>
+            ${onList.map(x => inner(...x)).join("")}
+            ${offList.length ? `<div style="font-size:11px;font-weight:800;color:#5A6678;margin:10px 0 8px">비활성 (${offList.length})</div>${offList.map(x => inner(...x)).join("")}` : ""}
+          </div>
+        </details>`;
+      })()}
 
       <button class="btn-primary" onclick="applyAdminSettings()" style="margin-top:8px">저장하기</button>
       <button class="btn-ghost" onclick="goBack()" style="margin-top:8px">취소</button>
