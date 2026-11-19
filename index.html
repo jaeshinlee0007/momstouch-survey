@@ -21502,6 +21502,10 @@ const RV_REC_DAYS = 7; // 일별 RAW: 신규분 + 최근 7일 재수집분(사�
 // 기본(내장) 분류 사전 — 관리자가 사전 엑셀을 올려 적용하기 전까지 사용
 const RV_DICT_DEFAULT = {"cats":[{"name":"배달지연","on":true,"desc":"배달이 늦거나 오래 걸림","auto":false},{"name":"제품품질","on":true,"desc":"맛·온도·식감·조리 상태 (식음, 눅눅, 짬, 퍽퍽 등)","auto":false},{"name":"배달누락","on":true,"desc":"빠지거나 안 온 품목(소스·음료 등)","auto":false},{"name":"오배송·요청 미반영","on":true,"desc":"다른 메뉴가 오거나 요청사항 미반영","auto":false},{"name":"이물·위생","on":true,"desc":"머리카락·이물·벌레·상함 등","auto":false},{"name":"양·구성","on":true,"desc":"양·크기·소스량·구성 부족","auto":false},{"name":"포장·파손","on":true,"desc":"포장 상태, 샘, 터짐, 쏟아짐","auto":false},{"name":"응대·서비스","on":true,"desc":"사장님·직원 응대, 환불, 사과, 전화","auto":false},{"name":"가격","on":true,"desc":"가격·배달비·가성비","auto":false},{"name":"칭찬·만족","on":true,"desc":"맛있다, 재주문, 감사, 빠르다 등 긍정","auto":false},{"name":"기타","on":true,"desc":"위 어디에도 해당 없음","auto":true},{"name":"내용 없음","on":true,"desc":"리뷰 내용이 비어 있음(별점만)","auto":true}],"rules":{"배달지연":{"inc":["늦","지연","오래걸","오래 걸","한시간","1시간","시간넘","시간이나","시간만에","시간 걸","밀려","배달이 밀","도착이 안","도착을 안","예상시간","기다리","기다림","걸렸","걸려서","배달시간","배달이 아"],"exc":["늦지 않","늦지않","안 늦","안늦","늦게까지","늦은 시간","늦은시간","늦은 밤","야식"]},"제품품질":{"inc":["식었","식어","식은","다 식","차갑","차가","차겁","미지근","눅눅","불었","불어","떡져","떡진","냉동","해동","맛없","맛이 없","맛이 별로","맛이 이상","맛이 변","맛이 다르","맛이 떨어","맛이별로","노맛","짜요","짜다","너무 짜","짰","싱겁","싱거","퍽퍽","질겨","질기","딱딱","탔","탄맛","탄 맛","타서","쓴맛","비린","느끼","기름","설익","덜 익","냄새","쩐내","말라","바짝","뻣뻣","퍼석","부스러","신선","오래된","튀김옷","맹물","오버쿡","쏘쏘","누린내","덜 튀","씹기","질겅"],"exc":["냄새 안","냄새가 안","냄새도 안","안 눅눅","눅눅하지 않","눅눅하지않","안 식","식지 않","식지않","안 차갑","안 짜","짜지 않","짜지않","안 느끼","느끼하지 않","느끼하지않","기름지지 않","기름지지않","안 딱딱","딱딱하지 않","퍽퍽하지 않","안 퍽퍽","맛없는 줄","맛없는줄","맛없을 줄","맛없을줄"]},"배달누락":{"inc":["안 왔","안왔","안 옴","안옴","안 와","안 들어","안 넣","안넣","안 보냈","안 줬","안줬","안 주","안줌","빠져","빠뜨","빠졌","누락","빼먹","한개만","한 개만","하나만","못 받","못받","어디 갔","덜 왔","하나도 안","미포함","케찹+없","케첩+없","소스+없","콜라+없","사이다+없","음료+없","수저+없","젓가락+없","포크+없","빨대+없","물티슈+없","케찹+안","소스+안","콜라+안","오지않","오지 않","안 가져"],"exc":["없이 맛있","없이 먹","빠질 수 없","빠질수 없","빠질수없","빠지지 않","빠지지않"]},"오배송·요청 미반영":{"inc":["오배송","잘못 왔","잘못왔","잘못 보","잘못 배","잘못 들","다른 메뉴","다른 제품","다른 소스","메뉴가 다","틀렸","틀리게","바뀌어","바꿔","빼달","빼 달","빼주","넣어 달","넣어달","요청사항","요청 사항","시켰는데+왔","시켰는데+다른","시켰는데+틀","주문했는데+왔","주문했는데+다른","주문했는데+틀"],"exc":["요청사항 감사","요청사항 잘","요청사항도 잘","요청사항 반영","요청사항을 잘","요청 잘","요청 감사","다른 곳","다른곳","다른 집","다른집","다른 버거집","다른 데","다른데"]},"이물·위생":{"inc":["머리카락","머리털","이물","벌레","곰팡이","비닐조각","비닐 조각","플라스틱","위생","더러","더럽","뼈가","뼛조각","철수세미","바퀴","파리","상했","상한","쉰맛","쉰 맛","쉰내","부패","유통기한","털이","털 이"],"exc":["위생적","위생 좋","위생이 좋","위생 걱정 없","이물감 없","이물 없","이물질 없","이물질이 없","이물 안","이물질 안","이물이 없","벌레 없","머리카락 없"]},"양·구성":{"inc":["양이 적","양이 너무 적","양이 작","양이 없","양 적","양도 적","양이 너무","적어요","적네요","적게","부실","작아요","작네","너무 작","조금만","소스가 적","소스가 너무 적","소스가 없","소스가 부족","내용물","고기가 적","고기가 없","야채가 적","야채가 없","성의","빈약","허접","한줌","한 줌","얇","양이 많","양이 푸짐"],"exc":["적당","적당히","얇게","너무 두껍지","양이 많","양이 푸짐","양도 많","양도 푸짐"]},"포장·파손":{"inc":["포장","샜","새서","새어","흘러","흘렀","터졌","터져","터짐","쏟아","쏟","뚜껑","용기","국물이","엉망으로","뭉개","눌려","찌그러","박스"],"exc":["포장 잘","포장이 잘","포장도 잘","포장 깔끔","포장이 깔끔","포장 꼼꼼","포장이 꼼꼼","포장 좋","포장이 좋","포장 튼튼","포장 완벽","포장도 깔끔","포장도 꼼꼼","포장 정성","포장이 너무 좋"]},"응대·서비스":{"inc":["불친절","응대","태도","사과","환불","취소","연락","말투","전화","통화","사장","직원","알바","무시","답변","대응","죄송","클레임","보상","매장 방문"],"exc":["서비스 감사","서비스 잘","서비스 감사","서비스도 감사","서비스 주셔서","서비스로 주셔서","서비스 넣어","서비스 많이","서비스까지","사장님 감사","사장님 최고","사장님 친절","직원 친절","직원분 친절","직원분들 친절","친절","답변 빠","취소 없이","전화 안 와도"]},"가격":{"inc":["가격","비싸","비싼","돈 아깝","돈이 아깝","아까워","아깝","가성비","배달비","할인","쿠폰"],"exc":["가격 대비 만족","가격 대비 맛있","가성비 좋","가성비 최고","가성비 굿","가성비도 좋","가성비 대박","가격 착하","가격도 착","가격 저렴","저렴","배달비 무료","배달비 없","할인 감사","쿠폰 감사"]},"칭찬·만족":{"inc":["맛있","맛잇","존맛","맛나","맛남","마싯","마시써","맛집","최고","좋아요","좋았","좋아해","만족","재주문","또 시켜","또 주문","단골","추천","감사","굿","잘 먹","완벽","바삭","촉촉","푸짐","넉넉","친절","빨라","빠르","빠른","신속","깔끔","따뜻","따끈","뜨끈","훌륭","인생","감동","행복"],"exc":["맛있지 않","맛있지않","안 맛있","안맛있","맛있었는데 오","맛있을 줄","맛있을줄","맛있는 줄 알","맛있는줄 알","맛있어 보였","맛있어보였","맛있는데 양","맛있는데 배달","맛있는데 늦","맛있지만","맛있긴 한데","맛있긴한데","맛있긴 하지만","맛있긴하지만","최고였는데","좋았는데","좋았지만","감사하지만","감사한데","별로","최악"]}},"syn":[["싸이버거",["싸이","싸이플렉스","싸이 버거"]],["불싸이버거",["불싸이","불 싸이","불싸"]],["떡강정",["케이준떡강정","간장마늘떡강정","강정"]],["통다리",["후라이드통다리","통다리살"]],["아크릴스탠드",["아크릴","스탠드","굿즈","사은품"]],["핫치즈치킨",["핫치즈","핫치즈밤치킨"]],["감자튀김",["감튀","프렌치프라이","프라이","후렌치후라이"]],["콜라",["코카콜라","음료","음료수"]],["케찹",["케첩","캐찹","소스"]],["치킨무",["무","피클"]],["화이트갈릭버거",["화갈","화이트갈릭","화이트갈릭싸이버거"]],["딥치즈버거",["딥치즈","딥치즈싸이버거"]],["휠렛버거",["휠렛","필렛","핫휠렛"]]]};
 
+function rvPhotoChip(n) {
+  n = Number(n) || 0;
+  return n > 0 ? `<span class="rv-photo"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1A202C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg>사진 ${n}</span>` : "";
+}
 function rvEnsureCss() {
   if (RV.cssOn) return;
   RV.cssOn = true;
@@ -21548,6 +21552,7 @@ function rvEnsureCss() {
 .rv-acc.open .ch{transform:rotate(180deg)}
 .rv-acc-b{display:none;padding:0 14px 14px;border-top:1px solid #EDF2F7}
 .rv-acc.open .rv-acc-b{display:block}
+.rv-photo{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;background:#fff;color:#1A202C;border:1.5px solid #2D3748;border-radius:999px;padding:1px 9px}
 .rv-tag{display:inline-block;font-size:11px;font-weight:700;background:#EDF2F7;color:#2D3748;border-radius:999px;padding:2px 8px}
 .rv-hl{background:#FEEBC8;color:inherit;border-radius:3px;padding:0 1px}
 `;
@@ -21862,7 +21867,7 @@ async function rvLoad(force) {
 // ── 진입 ──
 function openReview() {
   if (!rvAllowed()) { alert("현재 관리자 설정에서 비활성화되어 있습니다."); return; }
-  RV.tab = "search"; RV.kw = ""; RV.sort = "name"; RV.ym = "all"; RV.team = "all"; RV.tsort = "asc"; RV.tym = "all"; RV.statsAt = 0; RV.scope = null; RV.sStars = new Set(); RV.tStars = new Set(); RV.sCats = new Set(); RV.tCats = new Set(); RV.qStars = new Set(); RV.qCats = new Set(); RV.q = ""; RV.qym = ""; RV.qItems = null; RV.qKey = ""; RV.qShow = 100; RV.acc = {};
+  RV.tab = "rsearch"; RV.kw = ""; RV.sort = "name"; RV.ym = "all"; RV.team = "all"; RV.tsort = "asc"; RV.tym = "all"; RV.statsAt = 0; RV.scope = null; RV.sStars = new Set(); RV.tStars = new Set(); RV.sCats = new Set(); RV.tCats = new Set(); RV.qStars = new Set(); RV.qCats = new Set(); RV.q = ""; RV.qym = ""; RV.qItems = null; RV.qKey = ""; RV.qShow = 100; RV.acc = {};
   go("review");
 }
 function rvHeader(title, backFn, extra) {
@@ -21876,13 +21881,13 @@ function rvHeader(title, backFn, extra) {
 function renderReview(root) {
   if (!rvAllowed()) { go("topHub"); return; }
   rvEnsureCss();
-  if (!rvIsTlUp() && RV.tab === "team") RV.tab = "search";
+  if (!rvIsTlUp() && RV.tab === "team") RV.tab = "rsearch";
   const adminBtn = _authRole === "admin" ? `<button class="rv-btn" onclick="go('reviewAdmin')">데이터 관리</button>` : "";
   root.innerHTML = rvHeader("배달의민족 리뷰 관리", "go('topHub')", adminBtn) + `
     <div class="rv-tabs">
+      <button class="rv-tab ${RV.tab === "rsearch" ? "on" : ""}" onclick="rvSetTab('rsearch')">리뷰별 검색</button>
       <button class="rv-tab ${RV.tab === "search" ? "on" : ""}" onclick="rvSetTab('search')">매장별 검색</button>
       ${rvIsTlUp() ? `<button class="rv-tab ${RV.tab === "team" ? "on" : ""}" onclick="rvSetTab('team')">팀별 현황</button>` : ""}
-      <button class="rv-tab ${RV.tab === "rsearch" ? "on" : ""}" onclick="rvSetTab('rsearch')">리뷰 검색</button>
     </div>
     <div class="card-section" id="rvBody"><p class="loading-text">불러오는 중...</p></div>`;
   rvLoad(false).then(() => { if (S.screen === "review") rvPaint(); })
@@ -22032,7 +22037,7 @@ async function rvQLoad() {
       const items = [];
       sn.forEach(d => {
         let arr = []; try { arr = JSON.parse(d.data().itemsJson || "[]"); } catch (e) {}
-        arr.forEach(a => items.push({ id: a[0], code: a[1], rt: a[2], at: a[3], menu: a[4], text: a[5], ck: a[6] || "" }));
+        arr.forEach(a => items.push({ id: a[0], code: a[1], rt: a[2], at: a[3], menu: a[4], text: a[5], ck: a[6] || "", ph: Number(a[7]) || 0 }));
       });
       RV.idx.set(t + "|" + ym, items);
     }));
@@ -22080,7 +22085,7 @@ async function rvPaintQuery() {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:14px">★ ${escapeHtml(it.rt)}</b><span style="flex:1;font-size:13px;font-weight:700;min-width:0">${escapeHtml(nameOf.get(it.code) || it.code)}</span><span style="font-size:12px;color:var(--sub)">${escapeHtml(rvFmtDt(it.at))}</span></div>
       ${it.menu ? `<div style="font-size:12.5px;color:#4A5568;margin-bottom:5px">${rvHl(it.menu, tk.map(x => x.gl))}</div>` : ""}
       <div class="rv-clamp" style="font-size:14px;line-height:1.5;${it.text ? "" : "color:#718096"}">${it.text ? rvHl(it.text, tk.map(x => x.gl)) : "리뷰 내용 없음 (별점만 등록)"}</div>
-      ${tags ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${tags}</div>` : ""}
+      ${(tags || it.ph) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${tags}${rvPhotoChip(it.ph)}</div>` : ""}
     </button>`;
   }).join("");
   const filt = `필터: ${rvYmLabel(RV.qym)}${toks.length ? " · 검색어 '" + escapeHtml(toks.join(" ")) + "'" : ""} · 별점 ${rvStarLabel(RV.qStars)} · 카테고리 ${escapeHtml(rvCatLabel(RV.qCats))}`;
@@ -22279,7 +22284,7 @@ function rvPaintReviews() {
         <div class="rv-clamp" style="flex:1;font-size:14px;line-height:1.5;${r.text ? "" : "color:#718096"}">${r.text ? escapeHtml(r.text) : "리뷰 내용 없음 (별점만 등록)"}</div>
         ${r.photoUrl ? `<span style="position:relative;flex-shrink:0"><img src="${escapeHtml(r.thumbUrl || r.photoUrl)}" loading="lazy" style="width:60px;height:60px;border-radius:10px;object-fit:cover;display:block" alt="">${(r.photoUrls || []).length > 1 ? `<span style="position:absolute;right:3px;bottom:3px;background:rgba(26,32,44,.85);color:#fff;font-size:10px;font-weight:700;border-radius:8px;padding:1px 6px">+${r.photoUrls.length - 1}</span>` : ""}</span>` : ""}
       </div>
-      ${(r.cats || []).filter(c => c !== "내용 없음").length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${r.cats.filter(c => c !== "내용 없음").map(c => `<span class="rv-tag">${escapeHtml(c)}</span>`).join("")}</div>` : ""}
+      ${((r.cats || []).filter(c => c !== "내용 없음").length || r.photoUrl || (r.photoUrls || []).length) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${(r.cats || []).filter(c => c !== "내용 없음").map(c => `<span class="rv-tag">${escapeHtml(c)}</span>`).join("")}${rvPhotoChip((r.photoUrls || []).length || (r.photoUrl ? 1 : 0))}</div>` : ""}
       ${r.ownerComment ? `<div style="font-size:12px;color:var(--sub);margin-top:6px">사장님 댓글 있음</div>` : ""}
     </button>`).join("");
   b.innerHTML = rvStoreHead() + `
@@ -22406,7 +22411,7 @@ function rvBuildMonthShards(reviews, storeByCode, names) {
       bump(o.dy[dk] || (o.dy[dk] = [0, 0, 0, 0, 0, 0, 0]), rt, ri);
       if (ck !== "") { const cm = o.cd[dk] || (o.cd[dk] = {}); bump(cm[ck] || (cm[ck] = [0, 0, 0, 0, 0, 0, 0]), rt, ri); }
     }
-    search.get(team).push([r.id, r.storeCode, rt, String(r.createdAt || "").slice(0, 16), r.menu || "", String(r.text || "").slice(0, 300), ck]);
+    search.get(team).push([r.id, r.storeCode, rt, String(r.createdAt || "").slice(0, 16), r.menu || "", String(r.text || "").slice(0, 300), ck, (r.photoUrls || []).length || (r.photoUrl ? 1 : 0)]);
   });
   return { stat, search };
 }
@@ -22858,6 +22863,22 @@ function rvPhotoId(f) {
   const stem = f.name.replace(/\.[^.]+$/, "").trim();
   return /^\d+$/.test(stem) ? stem : "";
 }
+async function rvRefreshMonths(yms) {
+  const metaSn = await getDoc(doc(db, "settings", "baeminMeta"));
+  const meta = metaSn.exists() ? metaSn.data() : null;
+  if (!meta || meta.shardV !== 2) return;
+  const stores = await getActiveStoreData();
+  const storeByCode = new Map(stores.map(s => [s.code, s]));
+  const cur = await rvDictCurrent(), names = cur.dict.cats.map(c => c.name);
+  const now = new Date();
+  for (const ym of yms) {
+    const m = await rvReadMonth(ym);
+    const revs = [...m.entries()].map(([id, d]) => ({ id, ...d }));
+    const kp = { stats: new Set(), search: new Set() };
+    await rvWriteMonth(ym, revs, storeByCode, names, now, kp);
+    await rvPruneMonth(ym, kp);
+  }
+}
 async function rvUploadPhotos(files) {
   const msg = document.getElementById("rvPhotoMsg"), bar = document.getElementById("rvPhotoBar"), barIn = document.getElementById("rvPhotoBarIn");
   if (!files || !files.length || !msg) return;
@@ -22875,7 +22896,7 @@ async function rvUploadPhotos(files) {
   const ids = [...groups.keys()];
   if (!ids.length) { msg.innerHTML = `<span style="color:#C53030">리뷰ID를 알 수 없는 파일뿐입니다. (폴더명 또는 파일명이 숫자 리뷰ID여야 합니다)</span>`; return; }
   bar.style.display = "block"; barIn.style.width = "0%";
-  let done = 0, okRev = 0, okPic = 0; const noId = [];
+  let done = 0, okRev = 0, okPic = 0; const noId = []; const photoYms = new Set();
   const queue = ids.slice();
   const worker = async () => {
     while (queue.length) {
@@ -22903,7 +22924,7 @@ async function rvUploadPhotos(files) {
             }
           }
           await updateDoc(ref, { photoUrls: urls, photoUrl: urls[0], thumbUrl, photoAt: new Date() });
-          okRev++; okPic += urls.length;
+          okRev++; okPic += urls.length; if (sn.data().ym) photoYms.add(sn.data().ym);
         }
       } catch (e) { bad.push(`${id} (${e.message || e})`); }
       done++;
@@ -22912,9 +22933,14 @@ async function rvUploadPhotos(files) {
     }
   };
   await Promise.all(Array.from({ length: RV_PHOTO_CONC }, worker));
+  let refreshNote = "";
+  if (photoYms.size) {
+    try { msg.textContent = "검색 인덱스에 사진 표시 반영 중..."; await rvRefreshMonths([...photoYms].sort()); RV.qKey = ""; RV.qItems = null; RV.idx = new Map(); RV.revs = null; RV.revsCode = null; }
+    catch (e) { refreshNote = `<br><span style="color:#C53030">검색 목록의 사진 표시 갱신 실패 — "집계·분류 다시 계산"을 실행해 주세요 (${escapeHtml(e.message || e)})</span>`; }
+  }
   msg.innerHTML = `<b>완료</b> — 리뷰 ${okRev}건 · 사진 ${okPic}장 등록 · 리뷰ID 없음 ${noId.length}건 · 형식/오류 ${bad.length}건${ignored ? ` · 이미지 아님 ${ignored}개 제외` : ""}` +
     (noId.length ? `<br><span style="color:#C53030">리뷰ID 없음: ${noId.slice(0, 30).map(escapeHtml).join(", ")}${noId.length > 30 ? " …" : ""}</span>` : "") +
-    (bad.length ? `<br><span style="color:#C53030">오류: ${bad.slice(0, 30).map(escapeHtml).join(", ")}${bad.length > 30 ? " …" : ""}</span>` : "");
+    (bad.length ? `<br><span style="color:#C53030">오류: ${bad.slice(0, 30).map(escapeHtml).join(", ")}${bad.length > 30 ? " …" : ""}</span>` : "") + refreshNote;
 }
 
 Object.assign(window, {
