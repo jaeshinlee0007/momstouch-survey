@@ -801,6 +801,7 @@ function render() {
 // ── HUB (신규플랫폼/신제품 선택 진입화면) ──────────
 // ── 최상위 HUB (SCV / 매장 컨설팅 리포트 선택) ──────────
 function renderTopHub(root) {
+  setTimeout(() => { hubLoadBadges().catch(() => {}); }, 0);
   root.innerHTML = `
     <div class="hero-hub" style="margin-top:20px">
       <span class="logo-chip">${LOGO_SVG}</span>
@@ -812,6 +813,7 @@ function renderTopHub(root) {
         <span class="hub-card-icon" style="background:#FFF5F5;color:#C53030"><span style="font-size:16px">📋</span></span>
         <span>
           <span class="hub-card-title">현장점검</span>
+          <span id="hubBdgTop" style="display:block"></span>
         </span>
       </button>
       <button class="hub-card" onclick="go('homeReport')">
@@ -2061,7 +2063,82 @@ async function downloadExcelReportDetail() {
 }
 
 
+// ── 허브 건수 배지: 활성 점검(신규플랫폼 제외)별로 내가 처리할 건수 표시 ──
+//   AC=해소되지 않은 반려 / 팀장=승인대기 / 그룹장=그룹장 확인대기(스파쿨만 그룹장 단계 있음)
+//   점검별 "매장 최신 기록" 기준이며, 각 점검 기록 조회 화면과 같은 캐시(records*)를 공유한다.
+const HUB_BADGE_CATS = [
+  { key:"np", col:"surveys_np", cache:"recordsNP", st:() => npStatus, en:() => _npEnabled },
+  { key:"spacool", col:"surveys_spacool", cache:"recordsSpacool", st:() => spacoolStatus, en:() => _spacoolEnabled },
+  { key:"gbchicken", col:"surveys_gbchicken", cache:"recordsGbchicken", st:() => gbchickenStatus, en:() => _gbchickenEnabled },
+  { key:"nashville", col:"surveys_nashville", cache:"recordsNashville", st:() => nashvilleStatus, en:() => _nashvilleEnabled },
+  { key:"gk", col:"surveys_gk", cache:"recordsGk", st:() => gkStatus, en:() => _gkEnabled },
+  { key:"gkpre", col:"surveys_gkpre", cache:"recordsGkpre", st:() => gkpreStatus, en:() => _gkpreEnabled },
+  { key:"beefRenewal", col:"surveys_beefRenewal", cache:"recordsBeefRenewal", st:() => beefRenewalStatus, en:() => _beefRenewalEnabled },
+  { key:"chuseok", col:"surveys_chuseok", cache:"recordsChuseok", st:() => chuseokStatus, en:() => _chuseokEnabled },
+  { key:"grilledBulgogi", col:"surveys_grilledBulgogi", cache:"recordsGrilledBulgogi", st:() => grilledBulgogiStatus, en:() => _grilledBulgogiEnabled },
+  { key:"rehitham", col:"surveys_rehitham", cache:"recordsRehitham", st:() => rehithamStatus, en:() => _rehithamEnabled },
+  { key:"hdj2", col:"surveys_hdj2", cache:"recordsHdj2", st:() => hdj2Status, en:() => _hdj2Enabled },
+  { key:"jjk", col:"surveys_jjk", cache:"recordsJjk", st:() => jjkStatus, en:() => _jjkEnabled },
+  { key:"jjkdp", col:"surveys_jjkdp", cache:"recordsJjkdp", st:() => jjkdpStatus, en:() => _jjkdpEnabled },
+  { key:"roast", col:"surveys_roast", cache:"recordsRoast", st:() => roastStatus, en:() => _roastEnabled },
+];
+function hubBadgeLabel() { return _authRole === "sv" ? "반려" : _authRole === "tl" ? "승인대기" : _authRole === "gl" ? "확인대기" : ""; }
+function hubBadgeCount(cat, recs, stores) {
+  const role = _authRole;
+  if (!["sv", "tl", "gl"].includes(role)) return 0;
+  const stFn = cat.st();
+  const codeMap = window._oldToCurrentCodeMap || new Map();
+  const latest = new Map();
+  recs.forEach(r => {
+    const key = codeMap.get(r.storeCode) || r.storeCode;
+    const ex = latest.get(key);
+    if (!ex || (r.createdAt?.seconds || 0) > (ex.createdAt?.seconds || 0)) latest.set(key, r);
+  });
+  let mine = null;
+  if (role === "sv") mine = new Set(stores.filter(s => s.sv === _authName).map(s => s.code));
+  else if (role === "tl") mine = new Set(stores.filter(s => s.tl === _authName || s.sv === _authName).map(s => s.code));
+  let n = 0;
+  latest.forEach(r => {
+    if (mine && !mine.has(r.storeCode)) return;
+    const st = stFn(r);
+    if (role === "sv") { if (r.tlRejected === true && st === "needs") n++; }
+    else if (role === "tl") { if (st === "pending" || st === "pending_tl") n++; }
+    else if (st === "pending_gl") n++;
+  });
+  return n;
+}
+async function hubLoadBadges() {
+  const label = hubBadgeLabel();
+  if (!label) return;
+  const cats = HUB_BADGE_CATS.filter(c => c.en());
+  if (!cats.length) return;
+  const stores = window._activeStores?.length ? window._activeStores : await getActiveStoreData();
+  await _refreshTransferAndClosedMaps();
+  const counts = {};
+  await Promise.all(cats.map(async c => {
+    try {
+      let recs = cacheGet(c.cache);
+      if (!recs) {
+        const snap = await getDocs(query(collection(db, c.col), orderBy("createdAt", "desc")));
+        recs = []; snap.forEach(d => recs.push({ id: d.id, ...d.data() }));
+        cacheSet(c.cache, recs);
+      }
+      counts[c.key] = hubBadgeCount(c, recs, stores);
+    } catch (e) { counts[c.key] = 0; }
+  }));
+  if (S.screen !== "hub" && S.screen !== "topHub") return;
+  const style = "display:inline-block;margin-top:4px;background:#E53E3E;color:#fff;border-radius:10px;padding:1px 9px;font-size:12px;font-weight:700";
+  let total = 0;
+  cats.forEach(c => {
+    const n = counts[c.key] || 0; total += n;
+    const el = document.getElementById("hubBdg_" + c.key);
+    if (el) el.innerHTML = n > 0 ? `<span style="${style}">${label} ${n}건</span>` : "";
+  });
+  const top = document.getElementById("hubBdgTop");
+  if (top) top.innerHTML = total > 0 ? `<span style="${style}">${label} ${total}건</span>` : "";
+}
 function renderHub(root) {
+  setTimeout(() => { hubLoadBadges().catch(() => {}); }, 0);
   // 신규플랫폼은 토글 자체가 없는 근간 기능이라 항상 카드로 노출(아코디언 대상 아님).
   // 나머지는 ON이면 카드, OFF면 접힌 아코디언 안에 노출(완전히 숨기지 않음 — 전원에게 보임).
   const optionalCategories = [
@@ -2087,6 +2164,7 @@ function renderHub(root) {
         <span>
           <span class="hub-card-title">${c.title}</span>
           <span class="hub-card-sub" style="display:block">${isOn ? "문항 확인하고 점검 시작" : "준비중"}</span>
+          ${isOn ? `<span id="hubBdg_${c.key}" style="display:block"></span>` : ""}
         </span>
       </button>`;
 
