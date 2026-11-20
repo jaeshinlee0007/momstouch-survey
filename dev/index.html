@@ -23062,7 +23062,7 @@ async function rvUploadPhotos(files) {
 //  settings/preorderItems  : {items:[{code,name,unit,cat,note,blocked}],updatedAt}
 //  preorders/{roundId}__{storeCode} : {roundId,storeCode,storeName,team,sv,lines:{code:{code,name,unit,qty,t}},...}
 // ══════════════════════════════════════════════════════
-const PO = { tab: "input", round: null, items: null, docs: [], stores: [], loaded: false,
+const PO = { memo: "", sug: [], tab: "input", round: null, items: null, docs: [], stores: [], loaded: false,
   store: "", kw: "", pick: null, qty: 1, cand: [], up: null, ifilter: "all", ikw: "", cssOn: false };
 function poIsAdmin() { return _authRole === "admin"; }
 function poOpen() { return !!(PO.round && PO.round.status === "open"); }
@@ -23165,7 +23165,7 @@ function poPaint() {
 // ── 입력 탭 ──
 function poPaintInput(b) {
   const scope = poScopeStores();
-  if (!PO.store || !scope.some(s => s.code === PO.store)) PO.store = scope.length ? scope[0].code : "";
+  if (PO.store && !scope.some(s => s.code === PO.store)) PO.store = "";
   if (!PO.items || !PO.items.length) {
     b.innerHTML = poBanner() + `<div class="po-card" style="font-size:13px;color:#5A6678">등록된 품목이 없습니다.${poIsAdmin() ? " '접수 관리' 탭에서 품목 엑셀을 업로드하세요." : " 본사 담당자에게 문의하세요."}</div>`;
     return;
@@ -23173,21 +23173,111 @@ function poPaintInput(b) {
   const scopeTxt = _authRole === "sv" ? `AC ${escapeHtml(_authName)} · 담당 매장 ${scope.length}개` : _authRole === "tl" ? `팀장 ${escapeHtml(_authName)} · 팀 매장 ${scope.length}개` : `전체 매장 ${scope.length}개`;
   const locked = !poOpen();
   b.innerHTML = poBanner() + `
-    <div class="po-lbl">매장</div>
-    <select id="poStore" class="po-in" style="border-color:#1A202C;font-weight:700" onchange="poStoreChange(this.value)">
-      ${scope.map(s => `<option value="${escapeHtml(s.code)}" ${s.code === PO.store ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}
-    </select>
+    <div class="po-lbl">매장 검색</div>
+    <div id="poStoreBox"></div>
+    <div style="position:relative"><div id="poSug" style="display:none;position:absolute;left:0;right:0;top:4px;z-index:20;background:white;border:1.5px solid #1A202C;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.12);max-height:288px;overflow-y:auto"></div></div>
     <div class="rv-note" style="margin:6px 0 10px">${scopeTxt}</div>
-    ${locked ? "" : `
-    <div class="po-lbl">품목</div>
+    <div id="poWork">${locked ? "" : `
+    <div class="po-lbl">메모로 한번에 입력</div>
+    <textarea id="poMemo" class="po-in" rows="5" placeholder="맘스순살강정 2&#10;싸이패티 10&#10;(한 줄에 품목명과 수량)" style="height:auto;padding:12px 14px;line-height:1.5;resize:vertical"></textarea>
+    <button class="po-btn" style="margin-top:8px" onclick="poMemoSave()">메모 저장</button>
+    <div id="poMemoRes" style="margin-top:8px"></div>
+    <div class="po-lbl" style="margin-top:16px">품목 검색으로 입력</div>
     <input type="text" id="poKw" class="po-in" placeholder="품목명 검색" value="${escapeHtml(PO.kw)}" oninput="poKwInput(this.value)" autocomplete="off" />
     <div id="poCand" style="margin-top:8px"></div>
-    <div id="poPick" style="margin-top:12px"></div>`}
+    <div id="poPick" style="margin-top:12px"></div>`}</div>
     <div id="poCur" style="margin-top:14px"></div>`;
-  if (!locked) { poPaintCand(); poPaintPick(); }
-  poPaintCur();
+  poPaintStoreBox();
+  const memo = document.getElementById("poMemo"); if (memo) memo.value = PO.memo || "";
+  poPaintWork();
 }
-function poStoreChange(c) { PO.store = c; PO.pick = null; poPaintPick(); poPaintCur(); }
+function poPaintStoreBox() {
+  const el = document.getElementById("poStoreBox"); if (!el) return;
+  const st = PO.stores.find(s => s.code === PO.store);
+  el.innerHTML = st
+    ? `<div style="display:flex;align-items:center;gap:8px;height:48px;border:1.5px solid #1A202C;border-radius:12px;padding:0 8px 0 14px;background:white"><span style="flex:1;font-size:15px;font-weight:800">${escapeHtml(st.name)}</span><span style="font-size:11px;color:#5A6678">${escapeHtml(st.team || "")}</span><button class="po-x" aria-label="매장 변경" onclick="poStoreClear()">✕</button></div>`
+    : `<input type="text" id="poSKw" class="po-in" placeholder="매장명 검색 (예: 목동, 강남)" oninput="poStoreSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false" />`;
+}
+function poPaintWork() {
+  const has = !!PO.store;
+  const w = document.getElementById("poWork"); if (w) w.style.display = has ? "" : "none";
+  if (poOpen()) { poPaintCand(); poPaintPick(); }
+  poPaintCur();
+  const c = document.getElementById("poCur"); if (c) c.style.display = has ? "" : "none";
+}
+function poStoreSearch(v) {
+  const el = document.getElementById("poSug"); if (!el) return;
+  const q = String(v).trim().toLowerCase().replace(/\s+/g, "");
+  if (!q) { el.style.display = "none"; return; }
+  const r = poScopeStores().filter(s => String(s.name || "").toLowerCase().replace(/\s+/g, "").includes(q) || String(s.code || "").toLowerCase().includes(q)).slice(0, 8);
+  PO.sug = r;
+  el.innerHTML = r.length ? r.map((s, i) => `<button class="po-it" onclick="poStoreChange(${i})"><span style="flex:1">${escapeHtml(s.name)}</span><span style="font-size:11px;color:#5A6678;font-weight:500">${escapeHtml(s.team || "")}</span></button>`).join("")
+    : `<div class="po-it blk" style="min-height:44px">검색 결과가 없습니다</div>`;
+  el.style.display = "block";
+}
+function poStoreChange(i) {
+  const s = (PO.sug || [])[i]; if (!s) return;
+  PO.store = s.code; PO.pick = null; PO.kw = ""; PO.memo = "";
+  const el = document.getElementById("poSug"); if (el) el.style.display = "none";
+  poPaintStoreBox(); poPaintInput(document.getElementById("poBody"));
+}
+function poStoreClear() {
+  PO.store = ""; PO.pick = null; PO.memo = "";
+  poPaintInput(document.getElementById("poBody"));
+  const k = document.getElementById("poSKw"); if (k) k.focus();
+}
+function poNorm(x) { return String(x || "").toLowerCase().replace(/\s+/g, ""); }
+function poParseMemo(text) {
+  const ok = new Map(), bad = [];
+  String(text || "").split(/\r?\n/).forEach(raw => {
+    const line = raw.trim(); if (!line) return;
+    const m = line.match(/^(.+?)\s*[:=x×*]?\s*(\d{1,4})\s*(?:개|박스|봉|box|bag|ea)?$/i);
+    if (!m) { bad.push([raw, "수량을 찾을 수 없음"]); return; }
+    const key = poNorm(m[1]), qty = parseInt(m[2], 10);
+    if (!(qty >= 1)) { bad.push([raw, "수량이 1 이상이어야 함"]); return; }
+    let hit = PO.items.filter(i => poNorm(i.name) === key);
+    if (!hit.length) hit = PO.items.filter(i => poNorm(i.name).includes(key));
+    if (!hit.length) { bad.push([raw, "품목을 찾을 수 없음"]); return; }
+    if (hit.length > 1) { bad.push([raw, "품목이 여러 개: " + hit.slice(0, 3).map(i => i.name).join(", ") + (hit.length > 3 ? " …" : "")]); return; }
+    const it = hit[0];
+    if (it.blocked) { bad.push([raw, "선출고 불가 품목"]); return; }
+    const k = String(it.code), o = ok.get(k) || { it, qty: 0, raws: [] };
+    o.qty += qty; o.raws.push(raw); ok.set(k, o);
+  });
+  return { ok: Array.from(ok.values()), bad };
+}
+async function poMemoSave() {
+  if (!PO.store) { alert("매장을 먼저 선택하세요."); return; }
+  const st = PO.stores.find(s => s.code === PO.store); if (!st) return;
+  const ta = document.getElementById("poMemo"), res = document.getElementById("poMemoRes");
+  PO.memo = ta ? ta.value : "";
+  const r = poParseMemo(PO.memo);
+  if (!r.ok.length) { if (res) res.innerHTML = r.bad.length ? poMemoBad(r.bad, 0) : `<div class="rv-note">입력된 내용이 없습니다.</div>`; return; }
+  try {
+    if (!(await poFreshRound())) { alert("접수가 마감되었습니다."); render(); return; }
+    const id = `${PO.round.id}__${st.code}`;
+    const snap = await getDoc(doc(db, "preorders", id));
+    const cur = snap.exists() ? snap.data() : null;
+    const lines = Object.assign({}, cur ? cur.lines : {});
+    const now = Date.now();
+    r.ok.forEach((o, n) => {
+      const k = String(o.it.code), prev = lines[k];
+      lines[k] = { code: k, name: o.it.name, unit: o.it.unit || "", qty: Math.min(9999, (prev ? prev.qty : 0) + o.qty), t: prev ? prev.t : now + n };
+    });
+    const data = { roundId: PO.round.id, storeCode: st.code, storeName: st.name, team: st.team || "", sv: st.sv || "", lines,
+      updatedBy: _currentUser.uid, updatedByName: _authName, updatedAt: now };
+    await setDoc(doc(db, "preorders", id), data);
+    const i = PO.docs.findIndex(d => d.storeCode === st.code);
+    if (i >= 0) PO.docs[i] = data; else PO.docs.push(data);
+    PO.memo = r.bad.map(b => b[0]).join("\n");
+    if (ta) ta.value = PO.memo;
+    if (res) res.innerHTML = `<div style="background:#E6FFFA;border-radius:12px;padding:10px 14px;font-size:12px;color:#285E61;line-height:1.5">✓ ${r.ok.length}개 품목 저장됨${r.ok.map(o => `<br>· ${escapeHtml(o.it.name)} ${o.qty}`).join("")}</div>` + (r.bad.length ? poMemoBad(r.bad, 8) : "");
+    poPaintCur();
+  } catch (e) { alert("저장 실패: " + (e.message || e)); }
+}
+function poMemoBad(bad, mt) {
+  return `<div style="margin-top:${mt}px;background:#FFF5F5;border-radius:12px;padding:10px 14px;font-size:12px;color:#C53030;line-height:1.6"><b>저장되지 않은 줄 ${bad.length}개</b> (메모 칸에 남겨둠)${bad.map(b => `<br>· ${escapeHtml(b[0].trim())} — ${escapeHtml(b[1])}`).join("")}</div>`;
+}
 function poKwInput(v) { PO.kw = v; poPaintCand(); }
 function poPaintCand() {
   const el = document.getElementById("poCand"); if (!el) return;
@@ -23476,7 +23566,7 @@ async function poiApply() {
 }
 
 Object.assign(window, {
-  openPreorder, poSetTab, poStoreChange, poKwInput, poPickItem, poQtyStep, poQtyInput, poAdd, poDelLine, poDelStore, poEditStore, poStart, poClose, poReopen, poDownload, poiKw, poiFilter, poiToggle, poiFile, poiCancel, poiApply,
+  openPreorder, poSetTab, poStoreChange, poStoreSearch, poStoreClear, poMemoSave, poKwInput, poPickItem, poQtyStep, poQtyInput, poAdd, poDelLine, poDelStore, poEditStore, poStart, poClose, poReopen, poDownload, poiKw, poiFilter, poiToggle, poiFile, poiCancel, poiApply,
   openReview, rvAccToggle, rvToggleCat, rvCatClear, rvQInput, rvQMore, rvQOpen, rvDictDownload, rvDictUpload, rvDictApply, rvDictCancel, rvDictRestore, rvDownloadStoresXlsx,  rvToggleStar, rvStarPreset, toggleBaeminEnabled, rvWipeAll, rvRebuildStats, rvPickType, rvPickVal, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
   go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, handleReportDataUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
