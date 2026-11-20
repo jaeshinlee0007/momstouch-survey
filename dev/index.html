@@ -75,7 +75,7 @@ onAuthStateChanged(auth, async user => {
       _photoSettingsLoaded = false;
       _npEnabledLoaded = false;
       _spacoolEnabledLoaded = false;
-      await Promise.all([loadPhotoSettings(), loadDateLimitSetting(), loadBaeminEnabled(), loadNpEnabled(), loadSpacoolEnabled(), loadGbchickenEnabled(), loadNashvilleEnabled(), loadGkEnabled(), loadGkpreEnabled(), loadBeefRenewalEnabled(), loadChuseokEnabled(), loadGrilledBulgogiEnabled(), loadRehithamEnabled(), loadHdj2Enabled(), loadJjkEnabled(), loadJjkdpEnabled(), loadRoastEnabled(), loadSubmitLocks()]);
+      await Promise.all([loadPhotoSettings(), loadDateLimitSetting(), loadBaeminEnabled(), loadPreorderEnabled(), loadNpEnabled(), loadSpacoolEnabled(), loadGbchickenEnabled(), loadNashvilleEnabled(), loadGkEnabled(), loadGkpreEnabled(), loadBeefRenewalEnabled(), loadChuseokEnabled(), loadGrilledBulgogiEnabled(), loadRehithamEnabled(), loadHdj2Enabled(), loadJjkEnabled(), loadJjkdpEnabled(), loadRoastEnabled(), loadSubmitLocks()]);
       // sessionStorage에 점검 중 데이터가 있으면 home으로 이동하지 않음
       // (이어서 점검하기 팝업이 뜰 것이므로)
       const _hasPendingSession = (() => {
@@ -818,11 +818,11 @@ function renderTopHub(root) {
           <span id="hubBdgTop" style="display:block"></span>
         </span>
       </button>
-      <button class="hub-card" onclick="openPreorder()">
+      <button class="hub-card${poAllowed() ? "" : " disabled"}" onclick="openPreorder()">
         <span class="hub-card-icon" style="background:#EBF8FF;color:#2B6CB0"><span style="font-size:16px">📦</span></span>
         <span>
           <span class="hub-card-title">선출고 접수</span>
-          <span id="poBdgTop" style="display:block"></span>
+          <span id="poBdgTop" style="display:block">${!_preorderEnabled ? `<span class="hub-card-sub" style="display:block">${_authRole === "admin" ? "OFF · 관리자만 진입 가능" : "준비중"}</span>` : ""}</span>
         </span>
       </button>
       <button class="hub-card" onclick="go('homeReport')">
@@ -4378,6 +4378,8 @@ async function renderPhotoSetting(root) {
   _dateLimitUIValue = _dateLimitSetting;
   _baeminEnabledLoaded = false;
   await loadBaeminEnabled();
+  _preorderEnabledLoaded = false;
+  await loadPreorderEnabled();
   _npEnabledLoaded = false;
   await loadNpEnabled();
   _npPhotoRequiredLoaded = false;
@@ -4768,6 +4770,21 @@ async function renderPhotoSetting(root) {
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 메인 화면의 배달의민족 리뷰 관리 카드가 비활성 처리됩니다(관리자는 계속 진입 가능). 리뷰·집계·사진 데이터는 그대로 보존됩니다.</div>
   `;
 
+  const preorderCategoryHtml = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">선출고 접수 사용</span>
+      <div id="toggle_wrap_preorderEnabled"
+        onclick="togglePreorderEnabled()"
+        style="width:44px;height:24px;border-radius:12px;background:${_preorderEnabled?"#2B6CB0":"#CBD5E0"};
+               position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+        <div id="toggle_thumb_preorderEnabled"
+          style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
+                 top:3px;left:${_preorderEnabled?"23px":"3px"};transition:left .2s"></div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 메인 화면의 선출고 접수 카드가 비활성 처리됩니다(관리자는 계속 진입 가능). 접수 내역·품목 데이터는 그대로 보존됩니다. 저장하기를 눌러야 반영됩니다.</div>
+  `;
+
   const jjkdpCategoryHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
       <span style="font-size:14px">주술회전 DP 참여점포 조사 사용</span>
@@ -4807,9 +4824,9 @@ async function renderPhotoSetting(root) {
     <div class="card-section">
       <div style="font-size:11px;color:#A0AEC0;margin-bottom:14px">마지막 저장: ${lastSavedText}</div>
 
-      ${section("📋", "매장 데이터 관리", storeDataHtml, true)}
-      ${section("📊", "매장 컨설팅 리포트 데이터", reportDataHtml, false)}
+      ${section("🗂️", "RAW 관리", storeDataHtml + `<div style="height:12px"></div>` + reportDataHtml, false)}
       ${section("💬", "배달의민족 리뷰 관리", baeminCategoryHtml, false)}
+      ${section("📦", "선출고 접수", preorderCategoryHtml, false)}
       ${(() => {
         // 현장점검 아코디언: 활성(ON) 점검을 위로, 비활성(OFF)을 아래로 정렬. 접어도 설정 입력칸은 DOM에 그대로 남아 저장에 영향 없음.
         const pill = on => on
@@ -4996,6 +5013,7 @@ async function applyAdminSettings() {
     await setDoc(doc(db, "settings", "photoRequired"), _photoSettings);
     await setDoc(doc(db, "settings", "dateLimit"), { value: _dateLimitUIValue });
     await setDoc(doc(db, "settings", "baeminEnabled"), { value: _baeminEnabled });
+    await setDoc(doc(db, "settings", "preorderEnabled"), { value: _preorderEnabled });
     await setDoc(doc(db, "settings", "npEnabled"), { value: _npEnabled });
     await setDoc(doc(db, "settings", "npPhotoRequired"), { value: _npPhotoRequired });
     await setDoc(doc(db, "settings", "spacoolEnabled"), { value: _spacoolEnabled });
@@ -23062,10 +23080,25 @@ async function rvUploadPhotos(files) {
 //  settings/preorderItems  : {items:[{code,name,unit,cat,note,blocked}],updatedAt}
 //  preorders/{roundId}__{storeCode} : {roundId,storeCode,storeName,team,sv,lines:{code:{code,name,unit,qty,t}},...}
 // ══════════════════════════════════════════════════════
-const PO = { editCode: "", memo: "", sug: [], tab: "input", round: null, items: null, docs: [], stores: [], loaded: false,
+const PO = { mineTab: "all", mineTeam: "", mineKw: "", editCode: "", memo: "", sug: [], tab: "input", round: null, items: null, docs: [], stores: [], loaded: false,
   store: "", kw: "", pick: null, qty: 1, cand: [], up: null, ifilter: "all", ikw: "", cssOn: false };
 function poCkfOn() { return !!(PO.round && PO.round.ckfClosedAt); }
 function poCkfCodes() { return new Set((PO.items || []).filter(i => i.ckf).map(i => String(i.code))); }
+let _preorderEnabled = false;   // 문서가 없으면 OFF (신규 기능: 관리자가 ON 해야 일반 사용자에게 열림)
+let _preorderEnabledLoaded = false;
+async function loadPreorderEnabled() {
+  if (_preorderEnabledLoaded) return;
+  try { const snap = await getDoc(doc(db, "settings", "preorderEnabled")); _preorderEnabled = snap.exists() ? snap.data().value === true : false; }
+  catch (e) { _preorderEnabled = false; }
+  _preorderEnabledLoaded = true;
+}
+function poAllowed() { return _preorderEnabled || _authRole === "admin"; }
+function togglePreorderEnabled() {
+  _preorderEnabled = !_preorderEnabled;
+  const w = document.getElementById("toggle_wrap_preorderEnabled"), t = document.getElementById("toggle_thumb_preorderEnabled");
+  if (w) w.style.background = _preorderEnabled ? "#2B6CB0" : "#CBD5E0";
+  if (t) t.style.left = _preorderEnabled ? "23px" : "3px";
+}
 function poIsAdmin() { return _authRole === "admin"; }
 function poOpen() { return !!(PO.round && PO.round.status === "open"); }
 function poToday() { const d = new Date(); return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`; }
@@ -23136,6 +23169,7 @@ function poLines(d) { return d && d.lines ? Object.values(d.lines).sort((a, b) =
 // 허브 카드 배지
 async function poLoadBadge() {
   try {
+    if (!_preorderEnabled) return;
     const rs = await getDoc(doc(db, "settings", "preorderRound"));
     const el = document.getElementById("poBdgTop");
     if (!el) return;
@@ -23145,10 +23179,10 @@ async function poLoadBadge() {
     el.innerHTML = `<span style="font-size:11px;font-weight:700;background:${b.bg};color:${b.fg};border-radius:999px;padding:2px 9px;display:inline-block;margin-top:2px">${b.t}</span>`;
   } catch (e) {}
 }
-function openPreorder() { PO.tab = "input"; PO.pick = null; PO.kw = ""; go("preorder"); }
+function openPreorder() { if (!poAllowed()) return; PO.tab = "input"; PO.pick = null; PO.kw = ""; go("preorder"); }
 
 function renderPreorder(root) {
-  if (!["sv", "tl", "gl", "admin"].includes(_authRole)) { go("topHub"); return; }
+  if (!["sv", "tl", "gl", "admin"].includes(_authRole) || !poAllowed()) { go("topHub"); return; }
   poEnsureCss();
   if (!poIsAdmin() && PO.tab === "admin") PO.tab = "input";
   const tabs = [["input", "입력"], ["mine", "접수 내역"]].concat(poIsAdmin() ? [["admin", "접수 관리"]] : []);
@@ -23469,22 +23503,62 @@ async function poDelStore(storeCode) {
 }
 function poEditStore(storeCode) { PO.store = storeCode; PO.pick = null; PO.kw = ""; PO.tab = "input"; render(); }
 
-// ── 접수 내역 탭 ──
+// ── 접수 내역 탭 (전체 / 접수 완료 / 임시저장) ──
+// 접수 완료 = 발주접수를 한 번이라도 누른 매장(이후 수정해도 유지) · 임시저장 = 한 번도 접수하지 않은 매장
+function poMineDocs() {
+  const codes = new Set(poScopeStores().map(s => s.code));
+  return PO.docs.filter(d => codes.has(d.storeCode) && poState(d) !== "none")
+    .sort((a, c) => String(a.storeName).localeCompare(String(c.storeName), "ko"));
+}
+function poIsDone(d) { return !!(d.sub && Object.keys(d.sub).length) || poState(d) === "changed"; }
 function poPaintMine(b) {
-  const scopeCodes = new Set(poScopeStores().map(s => s.code));
-  const list = PO.docs.filter(d => scopeCodes.has(d.storeCode)).sort((a, c) => String(a.storeName).localeCompare(String(c.storeName), "ko"));
-  const items = list.reduce((n, d) => n + poSubLines(d).length, 0);
+  const all = poMineDocs();
+  const teams = Array.from(new Set(all.map(d => d.team || "(팀 없음)"))).sort((a, c) => a.localeCompare(c, "ko", { numeric: true }));
+  if (PO.mineTeam && !teams.includes(PO.mineTeam)) PO.mineTeam = "";
+  const showTeam = (_authRole === "gl" || _authRole === "admin") && teams.length > 1;
+  b.innerHTML = poBanner() + `<div id="poMineTabs"></div><div id="poMineKpi" style="margin-top:12px"></div>
+    ${showTeam ? `<select class="rv-sel" aria-label="보기 범위" style="width:100%;height:44px;margin-top:12px" onchange="poMineTeam(this.value)"><option value="">${_authRole === "admin" ? "관리자" : "그룹장"} 보기: 전체 팀</option>${teams.map(t => `<option value="${escapeHtml(t)}" ${t === PO.mineTeam ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}</select>` : ""}
+    <input type="text" class="po-in" id="poMineKw" placeholder="매장명 검색" value="${escapeHtml(PO.mineKw || "")}" oninput="poMineKwInput(this.value)" autocomplete="off" style="height:44px;margin-top:12px;font-size:14px" />
+    <div id="poMineList" style="margin-top:12px"></div>`;
+  poPaintMineParts();
+}
+function poMineTeam(v) { PO.mineTeam = v; poPaintMineParts(); }
+function poMineKwInput(v) { PO.mineKw = v; poPaintMineParts(); }
+function poMineSet(t) { PO.mineTab = t; poPaintMineParts(); }
+function poPaintMineParts() {
+  const tabsEl = document.getElementById("poMineTabs"); if (!tabsEl) return;
+  const tm = PO.mineTeam || "";
+  const base = poMineDocs().filter(d => !tm || (d.team || "(팀 없음)") === tm);
+  const done = base.filter(poIsDone), draft = base.filter(d => !poIsDone(d));
+  const tab = PO.mineTab || "all";
+  const btn = (k, label, n, hl) => `<button onclick="poMineSet('${k}')" style="flex:1;height:44px;border:0;border-radius:9px;cursor:pointer;font-family:inherit;font-size:14px;${tab === k ? "background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:800;color:#1A202C" : "background:none;font-weight:600;color:#5A6678"}">${label} <span style="display:inline-block;min-width:24px;font-size:12px;border-radius:999px;padding:1px 7px;margin-left:2px;${hl ? "background:#FFFAF0;color:#7B341E;border:1px solid #F6AD55;padding:0 7px" : tab === k ? "background:#1A202C;color:#fff" : "background:#E2E8F0;color:#2D3748"}">${n}</span></button>`;
+  tabsEl.innerHTML = `<div style="display:flex;background:#EDF2F7;border-radius:12px;padding:4px;gap:4px">${btn("all", "전체", base.length)}${btn("done", "접수 완료", done.length)}${btn("draft", "임시저장", draft.length, true)}</div>`;
+  const sum = ds => ds.reduce((n, d) => n + poSubLines(d).length, 0), sumDraft = ds => ds.reduce((n, d) => n + poLines(d).length, 0);
+  const kp = (l, v, u) => `<div class="rv-kpi" style="flex:1"><div class="l">${l}</div><div class="v">${v}<small> ${u}</small></div></div>`;
+  const kpiEl = document.getElementById("poMineKpi");
+  if (kpiEl) kpiEl.innerHTML = tab === "all"
+    ? `<div class="po-card" style="padding:10px 14px;display:flex;align-items:center;gap:6px;font-size:13px;flex-wrap:wrap"><b>입력 매장 ${base.length}</b><span style="color:#718096">=</span><span style="color:#285E61;font-weight:700">접수 ${done.length}</span><span style="color:#718096">+</span><span style="color:#7B341E;font-weight:700">임시저장 ${draft.length}</span></div>`
+    : tab === "done" ? `<div style="display:flex;gap:8px">${kp("접수 매장", done.length, "개")}${kp("접수 품목 건수", sum(done), "건")}</div>`
+    : `<div class="ban-o" style="background:#FFFAF0;border:1.5px solid #F6AD55;border-radius:12px;padding:10px 14px;font-size:12px;color:#7B341E;line-height:1.5;margin-bottom:8px"><b>아직 발주에 반영되지 않았습니다.</b><br>매장별로 [발주접수]를 눌러야 RAW에 포함됩니다.</div><div style="display:flex;gap:8px">${kp("미접수 매장", draft.length, "개")}${kp("미접수 품목 건수", sumDraft(draft), "건")}</div>`;
+  const kw = poNorm(PO.mineKw || "");
+  let list = tab === "done" ? done : tab === "draft" ? draft : base;
+  if (kw) list = list.filter(d => poNorm(d.storeName).includes(kw));
+  const el = document.getElementById("poMineList"); if (!el) return;
   const locked = !poOpen();
-  b.innerHTML = poBanner() + `
-    <div style="display:flex;gap:8px;margin-bottom:12px">
-      <div class="rv-kpi" style="flex:1"><div class="l">접수 매장</div><div class="v">${list.filter(d => d.sub && Object.keys(d.sub).length).length}<small> 개</small></div></div>
-      <div class="rv-kpi" style="flex:1"><div class="l">접수 품목 건수</div><div class="v">${items}<small> 건</small></div></div></div>
-    ${list.length ? list.map(d => `<div class="po-card" style="padding:0;overflow:hidden;margin-bottom:12px">
-      <div style="display:flex;align-items:center;padding:12px 14px;background:#F7FAFC;border-bottom:1px solid #EDF2F7"><span style="flex:1;font-size:14px;font-weight:800">${escapeHtml(d.storeName)}</span><span style="font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;margin-right:6px;${({ done: "background:#E6FFFA;color:#285E61", draft: "background:#FFFAF0;color:#7B341E", changed: "background:#FFFAF0;color:#7B341E", none: "background:#EDF2F7;color:#4A5568" })[poState(d)]}">${({ done: "접수 완료", draft: "임시저장·미접수", changed: "변경됨·재접수 필요", none: "-" })[poState(d)]}</span><span style="font-size:11px;color:#5A6678">${escapeHtml(d.updatedByName || "")} · ${poHm(d.updatedAt)}</span></div>
-      ${poLines(d).map(l => `<div class="po-row"><span style="flex:1">${escapeHtml(l.name)}</span><b>${l.qty}</b><span style="font-size:11px;color:#5A6678;margin-left:4px;min-width:28px">${escapeHtml(l.unit || "")}</span></div>`).join("")}
-      ${locked ? "" : `<div style="display:flex;gap:8px;padding:8px 14px 12px"><button class="po-btn o" style="height:44px;font-size:13px" onclick="poEditStore('${escapeHtml(d.storeCode)}')">수정</button><button class="po-btn o" style="height:44px;font-size:13px;color:#C53030;border-color:#FEB2B2" onclick="poDelStore('${escapeHtml(d.storeCode)}')">매장 입력 삭제</button></div>`}
-    </div>`).join("") : `<div class="rv-note">입력된 내역이 없습니다.</div>`}
-    ${locked && PO.round ? `<div style="background:#EDF2F7;border-radius:12px;padding:12px 14px;font-size:12px;color:#4A5568">접수 마감 — 잠김</div>` : ""}`;
+  const rowH = (l) => `<div class="po-row"><span style="flex:1">${escapeHtml(l.name)}</span><span style="font-size:10px;color:#718096;margin-right:8px">${escapeHtml(String(l.code))}</span><b>${l.qty}</b><span style="font-size:11px;color:#5A6678;margin-left:4px;min-width:28px">${escapeHtml(l.unit || "")}</span></div>`;
+  el.innerHTML = list.length ? list.map(d => {
+    const isDone = poIsDone(d), stt = poState(d), chg = stt === "changed";
+    const c = escapeHtml(d.storeCode);
+    const badge = !isDone ? `<span class="rv-chip" style="background:#FFFAF0;color:#7B341E;border:1px solid #F6AD55">${locked ? "임시저장 · 미반영" : "임시저장"}</span>`
+      : chg ? `<span class="rv-chip" style="background:#FFFAF0;color:#7B341E;border:1px solid #F6AD55">변경됨 · 재접수 필요</span>`
+      : `<span class="rv-chip" style="background:#E6FFFA;color:#285E61">접수 완료</span><span style="font-size:11px;color:#5A6678">${poHm(d.subAt)}</span>`;
+    const lines = isDone ? poSubLines(d) : poLines(d);
+    const sub = !isDone ? `<div style="padding:6px 14px 0;font-size:11px;color:#5A6678">${escapeHtml(d.team || "")} · ${escapeHtml(d.updatedByName || "")} · ${poHm(d.updatedAt)} 마지막 입력</div>`
+      : chg && !locked ? `<div style="padding:8px 14px 0;font-size:11px;color:#7B341E;line-height:1.5">발주에는 아래 <b>접수된 내용(${poHm(d.subAt)})</b>이 반영됩니다. 이후 입력이 수정되어 재접수가 필요합니다.</div>` : "";
+    const btns = locked ? "" : `<div style="display:flex;gap:8px;padding:8px 14px 12px"><button class="po-btn o" style="height:44px;font-size:13px" onclick="poEditStore('${c}')">${isDone ? "수정" : "수정 · 발주접수하러 가기"}</button><button class="po-btn o" style="height:44px;font-size:13px;color:#C53030;border-color:#FEB2B2;${isDone ? "" : "flex:0 0 112px;width:auto"}" onclick="poDelStore('${c}')">${isDone ? "매장 입력 삭제" : "입력 삭제"}</button></div>`;
+    return `<div class="po-card" style="padding:0;overflow:hidden;margin-bottom:12px;${chg ? "border-color:#F6AD55" : ""}"><div style="display:flex;align-items:center;gap:6px;padding:12px 14px;background:${chg ? "#FFFAF0" : "#F7FAFC"};border-bottom:1px solid #EDF2F7"><span style="flex:1;font-size:14px;font-weight:800">${escapeHtml(d.storeName)}</span>${badge}</div>${sub}${lines.map(rowH).join("")}${btns}</div>`;
+  }).join("") : `<div class="rv-note">${kw ? "검색 결과가 없습니다." : tab === "draft" ? "임시저장 중인 매장이 없습니다." : "내역이 없습니다."}</div>`;
+  if (list.length && locked) el.innerHTML += `<div style="background:#EDF2F7;border-radius:12px;padding:12px 14px;font-size:12px;color:#4A5568">접수 마감 — 잠김</div>`;
 }
 
 // ── 접수 관리 탭 (ADMIN) ──
@@ -23684,7 +23758,7 @@ async function poiApply() {
 }
 
 Object.assign(window, {
-  openPreorder, poSubmit, poEditLine, poEditCancel, poEditSave, poCkfClose, poCkfReopen, poSetTab, poStoreChange, poStoreSearch, poStoreClear, poMemoSave, poKwInput, poPickItem, poQtyStep, poQtyInput, poAdd, poDelLine, poDelStore, poEditStore, poStart, poClose, poReopen, poDownload, poiKw, poiFilter, poiToggle, poiFile, poiCancel, poiApply,
+  openPreorder, poMineTeam, poMineKwInput, poMineSet, togglePreorderEnabled, poSubmit, poEditLine, poEditCancel, poEditSave, poCkfClose, poCkfReopen, poSetTab, poStoreChange, poStoreSearch, poStoreClear, poMemoSave, poKwInput, poPickItem, poQtyStep, poQtyInput, poAdd, poDelLine, poDelStore, poEditStore, poStart, poClose, poReopen, poDownload, poiKw, poiFilter, poiToggle, poiFile, poiCancel, poiApply,
   openReview, rvAccToggle, rvToggleCat, rvCatClear, rvQInput, rvQMore, rvQOpen, rvDictDownload, rvDictUpload, rvDictApply, rvDictCancel, rvDictRestore, rvDownloadStoresXlsx,  rvToggleStar, rvStarPreset, toggleBaeminEnabled, rvWipeAll, rvRebuildStats, rvPickType, rvPickVal, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
   go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, handleReportDataUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
