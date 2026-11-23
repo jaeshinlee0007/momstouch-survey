@@ -802,6 +802,15 @@ function render() {
 
 // ── HUB (신규플랫폼/신제품 선택 진입화면) ──────────
 // ── 최상위 HUB (SCV / 매장 컨설팅 리포트 선택) ──────────
+let _hubGrpOpen = false;
+function hubToggleGrp() {
+  _hubGrpOpen = !_hubGrpOpen;
+  const body = document.getElementById("hubGrpBody"), bdg = document.getElementById("hubBdgGrp"), chev = document.getElementById("hubGrpChev"), head = document.getElementById("hubGrpHead");
+  if (body) body.style.display = _hubGrpOpen ? "flex" : "none";
+  if (bdg) bdg.style.display = _hubGrpOpen ? "none" : "block";
+  if (chev) chev.style.transform = "rotate(" + (_hubGrpOpen ? 180 : 0) + "deg)";
+  if (head) head.setAttribute("aria-expanded", String(_hubGrpOpen));
+}
 function renderTopHub(root) {
   setTimeout(() => { hubLoadBadges().catch(() => {}); poLoadBadge(); }, 0);
   root.innerHTML = `
@@ -811,31 +820,43 @@ function renderTopHub(root) {
       <div style="font-size:12px;color:var(--sub);letter-spacing:0.5px;margin-top:4px">Store Condition Verification</div>
     </div>
     <div class="card-section">
-      <button class="hub-card" onclick="go('hub')">
-        <span class="hub-card-icon" style="background:#FFF5F5;color:#C53030"><span style="font-size:16px">📋</span></span>
-        <span>
-          <span class="hub-card-title">현장점검</span>
-          <span id="hubBdgTop" style="display:block"></span>
-        </span>
-      </button>
-      <button class="hub-card${poAllowed() ? "" : " disabled"}" onclick="openPreorder()">
+      <div class="hub-grp">
+        <button class="hub-grp-head" onclick="hubToggleGrp()" aria-expanded="${_hubGrpOpen}" id="hubGrpHead">
+          <span class="hub-card-icon" style="background:#FFF5F5;color:#C53030"><span style="font-size:16px">📋</span></span>
+          <span style="flex:1;min-width:0">
+            <span class="hub-card-title">점검 및 매장 컨설팅</span>
+            <span id="hubBdgGrp" style="display:${_hubGrpOpen ? "none" : "block"}"></span>
+          </span>
+          <span id="hubGrpChev" style="font-size:14px;color:#2D3748;transition:transform .2s;transform:rotate(${_hubGrpOpen ? 180 : 0}deg)">▾</span>
+        </button>
+        <div id="hubGrpBody" class="hub-grp-body" style="display:${_hubGrpOpen ? "flex" : "none"}">
+          <button class="hub-card hub-sub" onclick="go('hub')">
+            <span class="hub-card-icon" style="width:36px;height:36px"><span style="font-size:14px">📋</span></span>
+            <span>
+              <span class="hub-card-title" style="font-size:15px">현장점검</span>
+              <span id="hubBdgTop" style="display:block"></span>
+            </span>
+          </button>
+          <button class="hub-card hub-sub" onclick="go('homeReport')">
+            <span class="hub-card-icon" style="width:36px;height:36px"><span style="font-size:14px">📊</span></span>
+            <span>
+              <span class="hub-card-title" style="font-size:15px">매장 컨설팅 리포트<span style="font-size:10px;background:#1A202C;color:white;padding:1px 6px;border-radius:8px;margin-left:6px">NEW</span></span>
+            </span>
+          </button>
+          <button class="hub-card hub-sub${rvAllowed() ? "" : " disabled"}" onclick="openReview()">
+            <span class="hub-card-icon" style="width:36px;height:36px"><span style="font-size:14px">💬</span></span>
+            <span>
+              <span class="hub-card-title" style="font-size:15px">배달의민족 리뷰 관리<span style="font-size:10px;background:#1A202C;color:white;padding:1px 6px;border-radius:8px;margin-left:6px">NEW</span></span>
+              ${!_baeminEnabled ? `<span class="hub-card-sub" style="display:block">${_authRole === "admin" ? "OFF · 관리자만 진입 가능" : "준비중"}</span>` : ""}
+            </span>
+          </button>
+        </div>
+      </div>
+      <button id="poCardTop" class="hub-card${poAllowed() ? "" : " disabled"}" onclick="openPreorder()">
         <span class="hub-card-icon" style="background:#EBF8FF;color:#2B6CB0"><span style="font-size:16px">📦</span></span>
         <span>
           <span class="hub-card-title">선출고 접수</span>
           <span id="poBdgTop" style="display:block">${!_preorderEnabled ? `<span class="hub-card-sub" style="display:block">${_authRole === "admin" ? "OFF · 관리자만 진입 가능" : "준비중"}</span>` : ""}</span>
-        </span>
-      </button>
-      <button class="hub-card" onclick="go('homeReport')">
-        <span class="hub-card-icon" style="background:#F3F0FF;color:#6B46C1"><span style="font-size:16px">📊</span></span>
-        <span>
-          <span class="hub-card-title">매장 컨설팅 리포트<span style="font-size:10px;background:#1A202C;color:white;padding:1px 6px;border-radius:8px;margin-left:6px">NEW</span></span>
-        </span>
-      </button>
-      <button class="hub-card${rvAllowed() ? "" : " disabled"}" onclick="openReview()">
-        <span class="hub-card-icon" style="background:#FFF5F5;color:#C53030"><span style="font-size:16px">💬</span></span>
-        <span>
-          <span class="hub-card-title">배달의민족 리뷰 관리<span style="font-size:10px;background:#1A202C;color:white;padding:1px 6px;border-radius:8px;margin-left:6px">NEW</span></span>
-          ${!_baeminEnabled ? `<span class="hub-card-sub" style="display:block">${_authRole === "admin" ? "OFF · 관리자만 진입 가능" : "준비중"}</span>` : ""}
         </span>
       </button>
       <button class="hub-card" onclick="openMobileDash()">
@@ -2145,6 +2166,8 @@ async function hubLoadBadges() {
   });
   const top = document.getElementById("hubBdgTop");
   if (top) top.innerHTML = total > 0 ? `<span style="${style}">${label} ${total}건</span>` : "";
+  const grp = document.getElementById("hubBdgGrp");
+  if (grp) grp.innerHTML = total > 0 ? `<span style="${style}">${label} ${total}건</span>` : "";
 }
 function renderHub(root) {
   setTimeout(() => { hubLoadBadges().catch(() => {}); }, 0);
@@ -23082,6 +23105,21 @@ async function rvUploadPhotos(files) {
 // ══════════════════════════════════════════════════════
 const PO = { mineTab: "all", mineTeam: "", mineKw: "", editCode: "", memo: "", sug: [], tab: "input", round: null, items: null, docs: [], stores: [], loaded: false,
   store: "", kw: "", pick: null, qty: 1, cand: [], up: null, ifilter: "all", ikw: "", cssOn: false };
+// ── 접수 대상 팀 (round.teams: 배열이면 해당 팀만, 없으면 전체) ──
+function poTeamsOn(r) { r = r || PO.round; return !!(r && Array.isArray(r.teams) && r.teams.length); }
+function poAllTeams() { return Array.from(new Set((PO.stores || []).map(s => String(s.team || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ko", { numeric: true })); }
+function poTeamBlocked(r) {
+  r = r || PO.round;
+  if (!r || r.status !== "open" || !poTeamsOn(r)) return false;
+  if (_authRole !== "sv" && _authRole !== "tl") return false;
+  const sc = rvScopeStores(PO.stores || []);
+  if (!sc.length) return false;
+  return !sc.some(s => r.teams.includes(String(s.team || "").trim()));
+}
+function poTeamNote() {
+  if (!poOpen() || !poTeamsOn() || !poIsAdmin() && _authRole !== "gl") return "";
+  return `<div style="background:#FFFAF0;border:1.5px solid #F6AD55;border-radius:12px;padding:8px 12px;font-size:12px;color:#7B341E;line-height:1.5;margin-bottom:12px"><b>접수 대상 팀</b> · ${PO.round.teams.map(escapeHtml).join(" · ")}<br>그 외 팀의 AC·팀장은 입력할 수 없습니다. (GL·ADMIN은 전체 입력 가능)</div>`;
+}
 function poCkfOn() { return !!(PO.round && PO.round.ckfClosedAt); }
 function poCkfCodes() { return new Set((PO.items || []).filter(i => i.ckf).map(i => String(i.code))); }
 let _preorderEnabled = false;   // 문서가 없으면 OFF (신규 기능: 관리자가 ON 해야 일반 사용자에게 열림)
@@ -23178,9 +23216,18 @@ async function poLoadBadge() {
     PO.round = r;
     const b = !r ? { t: "접수 전", bg: "#EDF2F7", fg: "#4A5568" } : r.status === "open" ? { t: "접수 중", bg: "#E6FFFA", fg: "#285E61" } : { t: "접수 마감", bg: "#EDF2F7", fg: "#4A5568" };
     el.innerHTML = `<span style="font-size:11px;font-weight:700;background:${b.bg};color:${b.fg};border-radius:999px;padding:2px 9px;display:inline-block;margin-top:2px">${b.t}</span>`;
+    const card = document.getElementById("poCardTop");
+    if (card) card.classList.remove("disabled");
+    if (r && r.status === "open" && poTeamsOn(r) && (_authRole === "sv" || _authRole === "tl")) {
+      const all = await getActiveStoreData(); PO.stores = all || PO.stores;
+      if (poTeamBlocked(r) && card) {
+        card.classList.add("disabled");
+        el.innerHTML = `<span class="hub-card-sub" style="display:block">이번 회차는 ${r.teams.map(escapeHtml).join("·")}만 접수합니다</span>`;
+      }
+    }
   } catch (e) {}
 }
-function openPreorder() { if (!poAllowed()) return; PO.tab = "input"; PO.pick = null; PO.kw = ""; go("preorder"); }
+function openPreorder() { if (!poAllowed() || poTeamBlocked()) return; PO.tab = "input"; PO.pick = null; PO.kw = ""; go("preorder"); }
 
 function renderPreorder(root) {
   if (!["sv", "tl", "gl", "admin"].includes(_authRole) || !poAllowed()) { go("topHub"); return; }
@@ -23190,11 +23237,12 @@ function renderPreorder(root) {
   root.innerHTML = rvHeader("선출고 접수", "go('topHub')", poIsAdmin() ? `<span class="rv-chip blk">ADMIN</span>` : "") +
     `<div class="rv-tabs">${tabs.map(t => `<button class="rv-tab ${PO.tab === t[0] ? "on" : ""}" ${tabs.length > 3 ? `style="font-size:13px;white-space:nowrap;padding-left:2px;padding-right:2px${t[0] === "hist" ? ";flex:1.5" : ""}"` : ""} onclick="poSetTab('${t[0]}')">${t[1]}</button>`).join("")}</div>
     <div class="card-section" id="poBody"><p class="loading-text">불러오는 중...</p></div>`;
-  poLoad().then(() => { if (S.screen === "preorder") poPaint(); })
+  poLoad().then(() => { if (S.screen !== "preorder") return; if (poTeamBlocked()) { alert("이번 회차는 " + PO.round.teams.join("·") + "만 접수합니다."); go("topHub"); return; } poPaint(); })
     .catch(e => { const b = document.getElementById("poBody"); if (b) b.innerHTML = `<p class="error-text">불러오기 실패: ${escapeHtml(e.message || e)}</p>`; });
 }
 function poSetTab(t) { PO.tab = t; render(); }
-function poBanner() {
+function poBanner() { return poBanner0() + poTeamNote(); }
+function poBanner0() {
   const r = PO.round, b = poStatusBadge();
   if (!r) return `<div style="background:#EDF2F7;border-radius:12px;padding:10px 14px;font-size:12px;color:#4A5568;line-height:1.5;margin-bottom:12px"><b>접수 전</b> · 아직 열린 선출고 접수가 없습니다.</div>`;
   return r.status === "open"
@@ -23665,6 +23713,35 @@ function poStats() {
   });
   return { stores, lines, kinds: kinds.size, byTeam, byItem };
 }
+function poTeamSel() { return PO.teamDirty ? PO.teamSel : (poTeamsOn() ? PO.round.teams.slice() : null); }
+function poTeamCard() {
+  const all = poAllTeams(), sel = poTeamSel(), on = new Set(sel || all), isAll = !sel;
+  const chip = (t, act, label) => `<button onclick="${act}" aria-pressed="${t}" style="min-height:44px;border-radius:999px;padding:0 16px;font-size:14px;cursor:pointer;font-family:inherit;border:1.5px solid ${t ? "#1A202C" : "#CBD5E0"};background:${t ? "#1A202C" : "#fff"};color:${t ? "#fff" : "#2D3748"};font-weight:${t ? 800 : 600}">${escapeHtml(label)}</button>`;
+  const sum = isAll ? "전체 팀 접수" : Array.from(on).join(" · ") + " 접수";
+  return `<div class="po-card" style="margin-top:16px"><div style="display:flex;align-items:center;gap:8px"><span style="flex:1;font-size:15px;font-weight:800">접수 대상 팀</span><span style="font-size:12px;font-weight:700;color:#5A6678">${escapeHtml(sum)}</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">${chip(isAll, "poTeamAll()", "전체")}${all.map((t, i) => chip(!isAll && on.has(t), "poTeamPick(" + i + ")", t)).join("")}</div>
+    <div class="rv-note" style="margin:10px 0 0;line-height:1.6">선택한 팀의 AC·팀장만 입력할 수 있습니다. GL·ADMIN은 모든 팀을 입력할 수 있어요. 접수 중에도 바꿀 수 있고, 이미 접수된 내용은 그대로 유지됩니다.</div>
+    ${PO.round ? `<button class="po-btn" style="margin-top:12px;height:48px" onclick="poTeamSave()">대상 팀 저장</button>` : `<div class="rv-note" style="margin-top:8px">선택한 팀으로 새 접수가 시작됩니다.</div>`}</div>`;
+}
+function poTeamAll() { PO.teamDirty = true; PO.teamSel = null; poPaint(); }
+function poTeamPick(i) {
+  const all = poAllTeams(), t = all[i]; if (!t) return;
+  const cur = new Set(poTeamSel() || all);
+  if (cur.has(t)) cur.delete(t); else cur.add(t);
+  if (!cur.size) return;
+  PO.teamDirty = true; PO.teamSel = cur.size === all.length ? null : all.filter(x => cur.has(x));
+  poPaint();
+}
+async function poTeamSave() {
+  if (!PO.round) return;
+  const sel = poTeamSel(), teams = sel && sel.length ? sel : null;
+  try {
+    await updateDoc(doc(db, "settings", "preorderRound"), { teams });
+    PO.round.teams = teams; PO.teamDirty = false; PO.teamSel = null;
+    await poRoundSync({ teams });
+    poPaint(); alert(teams ? "대상 팀을 저장했습니다: " + teams.join(" · ") : "전체 팀 접수로 저장했습니다.");
+  } catch (e) { alert("저장 실패: " + (e.message || e)); }
+}
 function poPaintAdmin(b) {
   const r = PO.round, st = poStats(), open = poOpen(), ckfOn = poCkfOn();
   const ckSet = poCkfCodes(); let ckfRows = 0; PO.docs.forEach(d => poSubLines(d).forEach(l => { if (ckSet.has(String(l.code))) ckfRows++; }));
@@ -23694,7 +23771,7 @@ function poPaintAdmin(b) {
     <div class="po-lbl" style="margin-top:12px">품목별 합계 (상위 10)</div>
     <div class="po-list">${top.length ? top.map(o => `<div class="po-row"><span style="flex:1;font-weight:700">${escapeHtml(o.name)}</span><b>${o.q.toLocaleString()}</b><span style="font-size:11px;color:#5A6678;margin-left:4px;min-width:28px">${escapeHtml(o.unit || "")}</span></div>`).join("") : `<div class="po-row" style="color:#A0AEC0">접수 내역 없음</div>`}</div>
     <div class="po-lbl" style="margin-top:16px">품목 관리</div>
-    <button class="po-btn o" onclick="go('preorderItems')">선출고 품목 관리 · ${PO.items ? PO.items.length : 0}개 (불가 ${PO.items ? PO.items.filter(i => i.blocked).length : 0})</button>`;
+    <button class="po-btn o" onclick="go('preorderItems')">선출고 품목 관리 · ${PO.items ? PO.items.length : 0}개 (불가 ${PO.items ? PO.items.filter(i => i.blocked).length : 0})</button>` + poTeamCard();
 }
 // ── 회차 기록 (preorderRounds/{roundId}) — 접수 이력(누적)·통계용. 실패해도 접수 업무는 계속 진행.
 function poDateKey(d) { return String(d || "").replace(/\./g, ""); }
@@ -23727,12 +23804,13 @@ async function poStart() {
   if (!PO.items || !PO.items.length) { alert("먼저 품목 엑셀을 업로드하세요. (선출고 품목 관리)"); return; }
   if (!confirm("새 접수를 시작할까요? 모든 AC·팀장이 입력할 수 있게 됩니다.")) return;
   try {
-    const r = { id: "r" + Date.now(), status: "open", reqDate: poToday(), startedAt: Date.now(), closedAt: null, closedBy: "" };
+    const r = { id: "r" + Date.now(), status: "open", reqDate: poToday(), startedAt: Date.now(), closedAt: null, closedBy: "", teams: (PO.teamDirty && PO.teamSel && PO.teamSel.length) ? PO.teamSel.slice() : null };
     await setDoc(doc(db, "settings", "preorderRound"), r);
     PO.round = r; PO.docs = [];
     let seq = 1;
     try { const qs = await getDocs(query(collection(db, "preorderRounds"), where("dateKey", "==", poDateKey(r.reqDate)))); seq = qs.size + 1; } catch (e) {}
-    await poRoundSync({ seq });
+    PO.teamDirty = false; PO.teamSel = null;
+    await poRoundSync({ seq, teams: r.teams });
     poPaint();
   } catch (e) { alert("시작 실패: " + (e.message || e)); }
 }
@@ -23884,6 +23962,8 @@ async function poiApply() {
 }
 
 Object.assign(window, {
+  poTeamAll, poTeamPick, poTeamSave,
+  hubToggleGrp,
   openPreorder, poHistMonth, poHistPick, poHistDownload, poMineTeam, poMineKwInput, poMineSet, togglePreorderEnabled, poSubmit, poEditLine, poEditCancel, poEditSave, poCkfClose, poCkfReopen, poSetTab, poStoreChange, poStoreSearch, poStoreClear, poMemoSave, poKwInput, poPickItem, poQtyStep, poQtyInput, poAdd, poDelLine, poDelStore, poEditStore, poStart, poClose, poReopen, poDownload, poiKw, poiFilter, poiToggle, poiFile, poiCancel, poiApply,
   openReview, rvAccToggle, rvToggleCat, rvCatClear, rvQInput, rvQMore, rvQOpen, rvDictDownload, rvDictUpload, rvDictApply, rvDictCancel, rvDictRestore, rvDownloadStoresXlsx,  rvToggleStar, rvStarPreset, toggleBaeminEnabled, rvWipeAll, rvRebuildStats, rvPickType, rvPickVal, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
   go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, handleReportDataUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
@@ -23992,6 +24072,10 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .btn-admin-np{color:var(--mono-sub);border-color:var(--border)}
 .hub-card{width:100%;background:white;border:1.5px solid var(--border);border-radius:var(--radius);padding:18px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left}
 .hub-card:active{border-color:var(--red)}
+.hub-grp{width:100%;background:white;border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.hub-grp-head{width:100%;background:white;border:0;padding:18px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left;font-family:inherit}
+.hub-grp-body{flex-direction:column;gap:8px;padding:8px 10px 10px;border-top:1px solid var(--border);background:#FAFBFC}
+.hub-sub{padding:10px 12px;border-radius:12px;border-width:1px}
 .hub-card.np:active{border-color:var(--amber)}
 .hub-card.spacool:active{border-color:#3B6D11}
 .hub-card.disabled{opacity:.5;cursor:not-allowed}
