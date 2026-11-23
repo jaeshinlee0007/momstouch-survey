@@ -23103,6 +23103,7 @@ function poIsAdmin() { return _authRole === "admin"; }
 function poOpen() { return !!(PO.round && PO.round.status === "open"); }
 function poToday() { const d = new Date(); return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`; }
 function poYmd() { return poToday().replace(/\./g, ""); }
+function poHmd(ms) { if (!ms) return "-"; const d = new Date(ms); return `${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")} ${poHm(ms)}`; }
 function poHm(ms) { if (!ms) return "-"; const d = new Date(ms); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
 function poStatusBadge() {
   const r = PO.round;
@@ -23185,9 +23186,9 @@ function renderPreorder(root) {
   if (!["sv", "tl", "gl", "admin"].includes(_authRole) || !poAllowed()) { go("topHub"); return; }
   poEnsureCss();
   if (!poIsAdmin() && PO.tab === "admin") PO.tab = "input";
-  const tabs = [["input", "입력"], ["mine", "접수 내역"]].concat(poIsAdmin() ? [["admin", "접수 관리"]] : []);
+  const tabs = [["input", "입력"], ["mine", "접수 내역"]].concat(poIsAdmin() ? [["admin", "접수 관리"], ["hist", "접수 이력(누적)"]] : []);
   root.innerHTML = rvHeader("선출고 접수", "go('topHub')", poIsAdmin() ? `<span class="rv-chip blk">ADMIN</span>` : "") +
-    `<div class="rv-tabs">${tabs.map(t => `<button class="rv-tab ${PO.tab === t[0] ? "on" : ""}" onclick="poSetTab('${t[0]}')">${t[1]}</button>`).join("")}</div>
+    `<div class="rv-tabs">${tabs.map(t => `<button class="rv-tab ${PO.tab === t[0] ? "on" : ""}" ${tabs.length > 3 ? `style="font-size:13px;white-space:nowrap;padding-left:2px;padding-right:2px${t[0] === "hist" ? ";flex:1.5" : ""}"` : ""} onclick="poSetTab('${t[0]}')">${t[1]}</button>`).join("")}</div>
     <div class="card-section" id="poBody"><p class="loading-text">불러오는 중...</p></div>`;
   poLoad().then(() => { if (S.screen === "preorder") poPaint(); })
     .catch(e => { const b = document.getElementById("poBody"); if (b) b.innerHTML = `<p class="error-text">불러오기 실패: ${escapeHtml(e.message || e)}</p>`; });
@@ -23204,6 +23205,7 @@ function poPaint() {
   const b = document.getElementById("poBody"); if (!b) return;
   if (PO.tab === "input") poPaintInput(b);
   else if (PO.tab === "mine") poPaintMine(b);
+  else if (PO.tab === "hist") poPaintHist(b);
   else poPaintAdmin(b);
 }
 
@@ -23423,7 +23425,7 @@ function poPaintSubmit() {
   if (!PO.store || !poOpen()) { el.innerHTML = ""; return; }
   const d = poDocOf(PO.store), stt = poState(d), n = d ? Object.keys(d.lines || {}).length : 0;
   const info = { none: ["입력한 품목이 없습니다", "#718096", "#EDF2F7"], draft: [`임시저장 ${n}건 — 아직 발주에 반영되지 않았습니다`, "#7B341E", "#FFFAF0"],
-    changed: ["접수 후 변경됨 — 다시 누르기 전까지 이전 접수 내용이 반영됩니다", "#7B341E", "#FFFAF0"], done: [`발주접수 완료 (${poHm(d && d.subAt)}) · ${n}건`, "#285E61", "#E6FFFA"] }[stt];
+    changed: ["접수 후 변경됨 — 다시 누르기 전까지 이전 접수 내용이 반영됩니다", "#7B341E", "#FFFAF0"], done: [`발주접수 완료 · ${d && d.subBy ? escapeHtml(d.subBy) + " " : ""}${poHmd(d && d.subAt)} · ${n}건`, "#285E61", "#E6FFFA"] }[stt];
   const canBtn = stt === "draft" || stt === "changed" || (stt === "none" && d && d.sub);
   el.innerHTML = `<div style="background:${info[2]};border-radius:12px;padding:10px 14px;font-size:12px;color:${info[1]};font-weight:700;margin-bottom:8px">${info[0]}</div>` +
     (stt === "done" ? "" : `<button class="po-btn" style="height:52px;background:#E53E3E;margin-bottom:6px" ${canBtn ? "" : "disabled"} onclick="poSubmit()">${stt === "changed" ? "변경 내용 발주접수" : "발주접수"}</button>`) + `<div style="height:8px"></div>`;
@@ -23551,14 +23553,106 @@ function poPaintMineParts() {
     const c = escapeHtml(d.storeCode);
     const badge = !isDone ? `<span class="rv-chip" style="background:#FFFAF0;color:#7B341E;border:1px solid #F6AD55">${locked ? "임시저장 · 미반영" : "임시저장"}</span>`
       : chg ? `<span class="rv-chip" style="background:#FFFAF0;color:#7B341E;border:1px solid #F6AD55">변경됨 · 재접수 필요</span>`
-      : `<span class="rv-chip" style="background:#E6FFFA;color:#285E61">접수 완료</span><span style="font-size:11px;color:#5A6678">${poHm(d.subAt)}</span>`;
+      : `<span class="rv-chip" style="background:#E6FFFA;color:#285E61">접수 완료</span>`;
     const lines = isDone ? poSubLines(d) : poLines(d);
-    const sub = !isDone ? `<div style="padding:6px 14px 0;font-size:11px;color:#5A6678">${escapeHtml(d.team || "")} · ${escapeHtml(d.updatedByName || "")} · ${poHm(d.updatedAt)} 마지막 입력</div>`
-      : chg && !locked ? `<div style="padding:8px 14px 0;font-size:11px;color:#7B341E;line-height:1.5">발주에는 아래 <b>접수된 내용(${poHm(d.subAt)})</b>이 반영됩니다. 이후 입력이 수정되어 재접수가 필요합니다.</div>` : "";
+    const meta = t => `<div style="padding:6px 14px 0;font-size:11px;color:#5A6678">${t}</div>`;
+    const who = d.subBy ? ` ${escapeHtml(d.subBy)}` : "";
+    const sub = !isDone ? meta(`${escapeHtml(d.team || "")} · 입력 ${escapeHtml(d.updatedByName || "")} · ${poHmd(d.updatedAt)}`)
+      : meta(`${escapeHtml(d.team || "")} · 접수${who} · ${poHmd(d.subAt)}`) + (chg ? meta(`마지막 수정 ${escapeHtml(d.updatedByName || "")} · ${poHmd(d.updatedAt)}`) + (!locked ? `<div style="padding:6px 14px 0;font-size:11px;color:#7B341E;line-height:1.5">발주에는 아래 <b>접수된 내용</b>이 반영됩니다. 이후 입력이 수정되어 재접수가 필요합니다.</div>` : "") : "");
     const btns = locked ? "" : `<div style="display:flex;gap:8px;padding:8px 14px 12px"><button class="po-btn o" style="height:44px;font-size:13px" onclick="poEditStore('${c}')">${isDone ? "수정" : "수정 · 발주접수하러 가기"}</button><button class="po-btn o" style="height:44px;font-size:13px;color:#C53030;border-color:#FEB2B2;${isDone ? "" : "flex:0 0 112px;width:auto"}" onclick="poDelStore('${c}')">${isDone ? "매장 입력 삭제" : "입력 삭제"}</button></div>`;
     return `<div class="po-card" style="padding:0;overflow:hidden;margin-bottom:12px;${chg ? "border-color:#F6AD55" : ""}"><div style="display:flex;align-items:center;gap:6px;padding:12px 14px;background:${chg ? "#FFFAF0" : "#F7FAFC"};border-bottom:1px solid #EDF2F7"><span style="flex:1;font-size:14px;font-weight:800">${escapeHtml(d.storeName)}</span>${badge}</div>${sub}${lines.map(rowH).join("")}${btns}</div>`;
   }).join("") : `<div class="rv-note">${kw ? "검색 결과가 없습니다." : tab === "draft" ? "임시저장 중인 매장이 없습니다." : "내역이 없습니다."}</div>`;
   if (list.length && locked) el.innerHTML += `<div style="background:#EDF2F7;border-radius:12px;padding:12px 14px;font-size:12px;color:#4A5568">접수 마감 — 잠김</div>`;
+}
+
+// ── 접수 이력(누적) 탭 (ADMIN) — 월 달력 + 회차 카드 + 엑셀 다운로드(접수 완료분만) ──
+function poHistInit() { if (!PO.h) { const d = new Date(); PO.h = { ym: `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`, rounds: [], sel: "", err: "" }; } }
+function poPaintHist(b) {
+  poHistInit();
+  b.innerHTML = `<div id="poHistBox"><p class="loading-text">불러오는 중...</p></div>`;
+  poHistLoad();
+}
+async function poHistLoad() {
+  const ym = PO.h.ym;
+  try {
+    const qs = await getDocs(query(collection(db, "preorderRounds"), where("dateKey", ">=", ym + "01"), where("dateKey", "<=", ym + "31")));
+    const arr = []; qs.forEach(d => arr.push(d.data()));
+    arr.sort((a, c) => (a.startedAt || 0) - (c.startedAt || 0));
+    if (ym !== PO.h.ym) return;
+    PO.h.rounds = arr; PO.h.err = "";
+  } catch (e) { if (ym !== PO.h.ym) return; PO.h.rounds = []; PO.h.err = e.message || String(e); }
+  if (PO.tab === "hist") poHistPaint();
+}
+function poHistMonth(d) {
+  poHistInit();
+  let y = parseInt(PO.h.ym.slice(0, 4), 10), m = parseInt(PO.h.ym.slice(4), 10) + d;
+  if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
+  PO.h.ym = `${y}${String(m).padStart(2, "0")}`; PO.h.sel = "";
+  const bx = document.getElementById("poHistBox"); if (bx) bx.innerHTML = `<p class="loading-text">불러오는 중...</p>`;
+  poHistLoad();
+}
+function poHistPick(k) { PO.h.sel = k; poHistPaint(); }
+function poHistPaint() {
+  const bx = document.getElementById("poHistBox"); if (!bx) return;
+  const h = PO.h, y = parseInt(h.ym.slice(0, 4), 10), m = parseInt(h.ym.slice(4), 10);
+  const by = {}; h.rounds.forEach(r => { (by[r.dateKey] = by[r.dateKey] || []).push(r); });
+  if (!h.sel || h.sel.slice(0, 6) !== h.ym) { const ks = Object.keys(by).sort(); h.sel = ks.length ? ks[ks.length - 1] : ""; }
+  const t = new Date(), todayKey = `${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, "0")}${String(t.getDate()).padStart(2, "0")}`;
+  const first = new Date(y, m - 1, 1).getDay(), days = new Date(y, m, 0).getDate();
+  let cells = "";
+  for (let i = 0; i < first; i++) cells += `<span></span>`;
+  for (let d = 1; d <= days; d++) {
+    const k = `${h.ym}${String(d).padStart(2, "0")}`, rs = by[k] || [], isSel = k === h.sel, isToday = k === todayKey;
+    const stores = rs.reduce((n, r) => n + ((r.stats && r.stats.stores) || 0), 0), openR = rs.some(r => r.status === "open");
+    const sub = rs.length ? (openR ? "진행 중" : String(stores)) : isToday ? "·" : "";
+    const subColor = openR ? "#D69E0E" : rs.length ? "#1A202C" : "#CBD5E0";
+    cells += `<button onclick="poHistPick('${k}')" style="display:flex;flex-direction:column;align-items:center;height:54px;border:0;background:none;padding:2px 0;cursor:pointer;font-family:inherit"><span style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;font-size:14px;box-sizing:border-box;${isSel ? "background:#1A202C;color:#fff;font-weight:800" : isToday ? "border:1.5px solid #1A202C;font-weight:800;color:#1A202C" : rs.length ? "font-weight:700;color:#1A202C" : "color:#A0AEC0"}">${d}</span><span style="font-size:10px;margin-top:1px;font-weight:${rs.length ? 700 : 400};color:${subColor}">${sub}</span></button>`;
+  }
+  const arrow = (d, path) => `<button aria-label="${d < 0 ? "이전 달" : "다음 달"}" onclick="poHistMonth(${d})" style="width:44px;height:44px;border-radius:50%;border:0;background:#EDF2F7;cursor:pointer;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2D3748" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}"/></svg></button>`;
+  const selR = h.sel ? (by[h.sel] || []) : [];
+  const wd = h.sel ? "일월화수목금토"[new Date(parseInt(h.sel.slice(0, 4), 10), parseInt(h.sel.slice(4, 6), 10) - 1, parseInt(h.sel.slice(6), 10)).getDay()] : "";
+  const hm = v => v ? poHm(v) : "없음";
+  const kp = (l, v) => `<div style="flex:1;border:1.5px solid #E2E8F0;border-radius:12px;padding:8px 10px"><div style="font-size:11px;color:#5A6678">${l}</div><div style="font-size:18px;font-weight:800">${v}</div></div>`;
+  const card = (r, i) => {
+    const multi = selR.length > 1, st = r.stats, closed = r.status === "closed";
+    const suffix = multi ? "_" + (i + 1) : "";
+    return `<div class="po-card" style="border:2px solid #1A202C;display:flex;flex-direction:column;gap:10px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px;font-weight:800">${multi ? (i + 1) + "회차" : escapeHtml(r.reqDate || "") + " 선출고"}</span><span style="font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;${closed ? "background:#EDF2F7;color:#4A5568" : "background:#E6FFFA;color:#285E61"}">${closed ? "접수 마감" : "접수 중"}</span></div>
+      <div style="font-size:12px;color:#5A6678;line-height:1.7">시작 ${hm(r.startedAt)} · 계육 마감 ${hm(r.ckfClosedAt)} · 전체 마감 ${hm(r.closedAt)}</div>
+      <div style="display:flex;gap:8px">${kp("접수 매장", st ? st.stores : "-")}${kp("품목 건수", st ? st.lines : "-")}${kp("품목 종류", st ? st.kinds : "-")}</div>
+      ${closed && st ? `<button class="po-btn b" style="height:52px" onclick="poHistDownload('${escapeHtml(r.id)}','all','${suffix}')">선출고_${escapeHtml(r.dateKey)}${suffix}.xlsx 다운로드</button>
+        ${st.ckfLines ? `<button class="po-btn o" style="height:44px;font-size:13px" onclick="poHistDownload('${escapeHtml(r.id)}','ckf','${suffix}')">계육만 받기 (${st.ckfLines}행)</button>` : ""}`
+        : `<div class="rv-note">${closed ? "요약이 없는 이전 기록입니다. (다운로드 불가)" : "접수 중인 회차입니다. 마감 후 다운로드할 수 있습니다."}</div>`}
+    </div>`;
+  };
+  bx.innerHTML = (h.err ? `<div style="background:#FFF5F5;border-radius:12px;padding:10px 14px;font-size:12px;color:#C53030;margin-bottom:12px">이력을 불러오지 못했습니다: ${escapeHtml(h.err)}<br>firestore.rules가 게시되었는지 확인하세요.</div>` : "") + `
+    <div class="po-card" style="padding:12px 10px 8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px 8px">${arrow(-1, "M15 18l-6-6 6-6")}<span style="font-size:16px;font-weight:800">${y}년 ${m}월</span>${arrow(1, "M9 18l6-6-6-6")}</div>
+      <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));text-align:center;font-size:11px;font-weight:700;color:#5A6678;padding-bottom:4px"><span style="color:#C53030">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span style="color:#2B6CB0">토</span></div>
+      <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));row-gap:2px">${cells}</div>
+      <div style="display:flex;gap:14px;justify-content:center;font-size:11px;color:#5A6678;padding:8px 0 4px"><span><b style="color:#1A202C">숫자</b> 접수 매장 수</span><span><b style="color:#D69E0E">진행 중</b> 접수 중인 회차</span></div>
+    </div>
+    ${h.sel ? `<div style="display:flex;align-items:center;gap:8px;margin:16px 0 10px"><span style="font-size:15px;font-weight:800">${h.sel.slice(0, 4)}.${h.sel.slice(4, 6)}.${h.sel.slice(6)} (${wd})</span><span style="font-size:12px;color:#5A6678">${selR.length}개 회차</span></div>` : ""}
+    ${selR.length ? selR.map(card).join("") : `<div class="rv-note" style="margin-top:12px">${h.sel ? "이 날짜의 접수 기록이 없습니다." : "이 달의 접수 기록이 없습니다."}</div>`}
+    <div class="rv-note" style="margin-top:6px;line-height:1.5">접수 완료분(발주접수를 누른 내용)만 포함됩니다. A 매장명 · B 품목 · C 수량<br>이력은 이 기능 적용 이후 시작한 회차부터 기록됩니다.</div>`;
+}
+async function poHistDownload(id, mode, suffix) {
+  const r = (PO.h.rounds || []).find(x => x.id === id); if (!r) return;
+  try {
+    await loadXLSX();
+    const qs = await getDocs(query(collection(db, "preorders"), where("roundId", "==", id)));
+    const docs = []; qs.forEach(d => docs.push(d.data()));
+    const order = new Map(PO.stores.map((s, i) => [s.code, i]));
+    docs.sort((a, c) => (order.get(a.storeCode) ?? 1e9) - (order.get(c.storeCode) ?? 1e9));
+    const ck = mode === "ckf" ? new Set((r.ckfCodes || []).map(String)) : null;
+    const rows = [];
+    docs.forEach(d => poSubLines(d).forEach(l => { if (!ck || ck.has(String(l.code))) rows.push([d.storeName, l.name, l.qty]); }));
+    if (!rows.length) { alert("다운로드할 접수 내역이 없습니다."); return; }
+    const ws = XLSX.utils.aoa_to_sheet([["매장명", "품목", "수량"]].concat(rows));
+    ws["!cols"] = [{ wch: 18 }, { wch: 22 }, { wch: 8 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "선출고");
+    XLSX.writeFile(wb, `${mode === "ckf" ? "계육" : ""}선출고_${r.dateKey}${suffix || ""}.xlsx`);
+  } catch (e) { alert("다운로드 실패: " + (e.message || e)); }
 }
 
 // ── 접수 관리 탭 (ADMIN) ──
@@ -23602,6 +23696,32 @@ function poPaintAdmin(b) {
     <div class="po-lbl" style="margin-top:16px">품목 관리</div>
     <button class="po-btn o" onclick="go('preorderItems')">선출고 품목 관리 · ${PO.items ? PO.items.length : 0}개 (불가 ${PO.items ? PO.items.filter(i => i.blocked).length : 0})</button>`;
 }
+// ── 회차 기록 (preorderRounds/{roundId}) — 접수 이력(누적)·통계용. 실패해도 접수 업무는 계속 진행.
+function poDateKey(d) { return String(d || "").replace(/\./g, ""); }
+async function poRoundSync(extra) {
+  const r = PO.round; if (!r || !r.id) return;
+  try {
+    const o = Object.assign({ id: r.id, reqDate: r.reqDate || "", dateKey: poDateKey(r.reqDate), startedAt: r.startedAt || 0, status: r.status || "open",
+      ckfClosedAt: r.ckfClosedAt || null, closedAt: r.closedAt || null, closedBy: r.closedBy || "" }, extra || {});
+    await setDoc(doc(db, "preorderRounds", r.id), o, { merge: true });
+  } catch (e) { console.warn("회차 기록 저장 실패 (firestore.rules 게시 확인)", e); }
+}
+function poBuildStats() {
+  const ck = poCkfCodes(), byTeam = {}, byStore = {}, byItem = {}, kinds = new Set();
+  let stores = 0, lines = 0, qty = 0, ckfLines = 0;
+  PO.docs.forEach(d => {
+    const ls = poSubLines(d); if (!ls.length) return;
+    stores++;
+    const t = d.team || "(팀 없음)", bt = byTeam[t] = byTeam[t] || { s: 0, n: 0, q: 0 }; bt.s++;
+    const bs = byStore[d.storeCode] = { name: d.storeName || "", team: t, n: 0, q: 0 };
+    ls.forEach(l => {
+      lines++; qty += l.qty; kinds.add(String(l.code)); bt.n++; bt.q += l.qty; bs.n++; bs.q += l.qty;
+      if (ck.has(String(l.code))) ckfLines++;
+      const bi = byItem[l.code] = byItem[l.code] || { name: l.name, unit: l.unit || "", n: 0, q: 0 }; bi.n++; bi.q += l.qty;
+    });
+  });
+  return { stores, lines, qty, kinds: kinds.size, ckfLines, byTeam, byStore, byItem };
+}
 async function poStart() {
   if (poOpen()) return;
   if (!PO.items || !PO.items.length) { alert("먼저 품목 엑셀을 업로드하세요. (선출고 품목 관리)"); return; }
@@ -23609,18 +23729,22 @@ async function poStart() {
   try {
     const r = { id: "r" + Date.now(), status: "open", reqDate: poToday(), startedAt: Date.now(), closedAt: null, closedBy: "" };
     await setDoc(doc(db, "settings", "preorderRound"), r);
-    PO.round = r; PO.docs = []; poPaint();
+    PO.round = r; PO.docs = [];
+    let seq = 1;
+    try { const qs = await getDocs(query(collection(db, "preorderRounds"), where("dateKey", "==", poDateKey(r.reqDate)))); seq = qs.size + 1; } catch (e) {}
+    await poRoundSync({ seq });
+    poPaint();
   } catch (e) { alert("시작 실패: " + (e.message || e)); }
 }
 async function poCkfClose() {
   if (!PO.items.some(i => i.ckf)) { alert("계육(CKF) 품목이 없습니다. 품목 엑셀을 다시 업로드해 주세요. (구분1 열의 CKF 표시 사용)"); return; }
   if (!confirm("계육을 마감할까요? 이후 계육(CKF) 품목은 추가·삭제할 수 없고, 다른 품목은 계속 입력할 수 있습니다.")) return;
-  try { await updateDoc(doc(db, "settings", "preorderRound"), { ckfClosedAt: Date.now(), ckfClosedBy: _authName }); await poLoad(); poPaint(); }
+  try { await updateDoc(doc(db, "settings", "preorderRound"), { ckfClosedAt: Date.now(), ckfClosedBy: _authName }); await poLoad(); await poRoundSync(); poPaint(); }
   catch (e) { alert("계육 마감 실패: " + (e.message || e)); }
 }
 async function poCkfReopen() {
   if (!confirm("계육 마감을 취소하고 계육 입력을 다시 열까요?")) return;
-  try { await updateDoc(doc(db, "settings", "preorderRound"), { ckfClosedAt: null, ckfClosedBy: "" }); await poLoad(); poPaint(); }
+  try { await updateDoc(doc(db, "settings", "preorderRound"), { ckfClosedAt: null, ckfClosedBy: "" }); await poLoad(); await poRoundSync(); poPaint(); }
   catch (e) { alert("처리 실패: " + (e.message || e)); }
 }
 async function poClose() {
@@ -23628,14 +23752,16 @@ async function poClose() {
   if (!confirm((pend ? `발주접수를 누르지 않은 매장이 ${pend}개 있습니다(RAW에 포함되지 않음).\n` : "") + "접수를 마감할까요? 마감하면 AC·팀장의 입력·수정이 잠깁니다.")) return;
   try {
     await updateDoc(doc(db, "settings", "preorderRound"), { status: "closed", closedAt: Date.now(), closedBy: _authName });
-    await poLoad(); poPaint();
+    await poLoad();
+    await poRoundSync({ stats: poBuildStats(), ckfCodes: Array.from(poCkfCodes()) });
+    poPaint();
   } catch (e) { alert("마감 실패: " + (e.message || e)); }
 }
 async function poReopen() {
   if (!confirm("마감을 취소하고 다시 접수를 열까요?")) return;
   try {
     await updateDoc(doc(db, "settings", "preorderRound"), { status: "open", closedAt: null, closedBy: "" });
-    await poLoad(); poPaint();
+    await poLoad(); await poRoundSync(); poPaint();
   } catch (e) { alert("처리 실패: " + (e.message || e)); }
 }
 async function poDownload(mode) {
@@ -23758,7 +23884,7 @@ async function poiApply() {
 }
 
 Object.assign(window, {
-  openPreorder, poMineTeam, poMineKwInput, poMineSet, togglePreorderEnabled, poSubmit, poEditLine, poEditCancel, poEditSave, poCkfClose, poCkfReopen, poSetTab, poStoreChange, poStoreSearch, poStoreClear, poMemoSave, poKwInput, poPickItem, poQtyStep, poQtyInput, poAdd, poDelLine, poDelStore, poEditStore, poStart, poClose, poReopen, poDownload, poiKw, poiFilter, poiToggle, poiFile, poiCancel, poiApply,
+  openPreorder, poHistMonth, poHistPick, poHistDownload, poMineTeam, poMineKwInput, poMineSet, togglePreorderEnabled, poSubmit, poEditLine, poEditCancel, poEditSave, poCkfClose, poCkfReopen, poSetTab, poStoreChange, poStoreSearch, poStoreClear, poMemoSave, poKwInput, poPickItem, poQtyStep, poQtyInput, poAdd, poDelLine, poDelStore, poEditStore, poStart, poClose, poReopen, poDownload, poiKw, poiFilter, poiToggle, poiFile, poiCancel, poiApply,
   openReview, rvAccToggle, rvToggleCat, rvCatClear, rvQInput, rvQMore, rvQOpen, rvDictDownload, rvDictUpload, rvDictApply, rvDictCancel, rvDictRestore, rvDownloadStoresXlsx,  rvToggleStar, rvStarPreset, toggleBaeminEnabled, rvWipeAll, rvRebuildStats, rvPickType, rvPickVal, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
   go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, handleReportDataUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
