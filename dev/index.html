@@ -23106,18 +23106,23 @@ async function rvUploadPhotos(files) {
 const PO = { mineTab: "all", mineTeam: "", mineKw: "", editCode: "", memo: "", sug: [], tab: "input", round: null, items: null, docs: [], stores: [], loaded: false,
   store: "", kw: "", pick: null, qty: 1, cand: [], up: null, ifilter: "all", ikw: "", cssOn: false };
 // ── 접수 대상 팀 (round.teams: 배열이면 해당 팀만, 없으면 전체) ──
+function poAdminOnly(r) { r = r || PO.round; return !!(r && r.adminOnly); }
 function poTeamsOn(r) { r = r || PO.round; return !!(r && Array.isArray(r.teams) && r.teams.length); }
 function poAllTeams() { return Array.from(new Set((PO.stores || []).map(s => String(s.team || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ko", { numeric: true })); }
 function poTeamBlocked(r) {
   r = r || PO.round;
-  if (!r || r.status !== "open" || !poTeamsOn(r)) return false;
+  if (!r || r.status !== "open") return false;
+  if (poAdminOnly(r)) return _authRole !== "admin";
+  if (!poTeamsOn(r)) return false;
   if (_authRole !== "sv" && _authRole !== "tl") return false;
   const sc = rvScopeStores(PO.stores || []);
   if (!sc.length) return false;
   return !sc.some(s => r.teams.includes(String(s.team || "").trim()));
 }
 function poTeamNote() {
-  if (!poOpen() || !poTeamsOn() || !poIsAdmin() && _authRole !== "gl") return "";
+  if (!poOpen() || !poIsAdmin() && _authRole !== "gl") return "";
+  if (poAdminOnly()) return `<div style="background:#FFFAF0;border:1.5px solid #F6AD55;border-radius:12px;padding:8px 12px;font-size:12px;color:#7B341E;line-height:1.5;margin-bottom:12px"><b>관리자만 접수</b> · 이번 회차는 관리자만 입력할 수 있습니다.</div>`;
+  if (!poTeamsOn()) return "";
   return `<div style="background:#FFFAF0;border:1.5px solid #F6AD55;border-radius:12px;padding:8px 12px;font-size:12px;color:#7B341E;line-height:1.5;margin-bottom:12px"><b>접수 대상 팀</b> · ${PO.round.teams.map(escapeHtml).join(" · ")}<br>그 외 팀의 AC·팀장은 입력할 수 없습니다. (GL·ADMIN은 전체 입력 가능)</div>`;
 }
 function poCkfOn() { return !!(PO.round && PO.round.ckfClosedAt); }
@@ -23218,11 +23223,11 @@ async function poLoadBadge() {
     el.innerHTML = `<span style="font-size:11px;font-weight:700;background:${b.bg};color:${b.fg};border-radius:999px;padding:2px 9px;display:inline-block;margin-top:2px">${b.t}</span>`;
     const card = document.getElementById("poCardTop");
     if (card) card.classList.remove("disabled");
-    if (r && r.status === "open" && poTeamsOn(r) && (_authRole === "sv" || _authRole === "tl")) {
-      const all = await getActiveStoreData(); PO.stores = all || PO.stores;
+    if (r && r.status === "open" && _authRole !== "admin" && (poAdminOnly(r) || (poTeamsOn(r) && (_authRole === "sv" || _authRole === "tl")))) {
+      if (!poAdminOnly(r)) { const all = await getActiveStoreData(); PO.stores = all || PO.stores; }
       if (poTeamBlocked(r) && card) {
         card.classList.add("disabled");
-        el.innerHTML = `<span class="hub-card-sub" style="display:block">이번 회차는 ${r.teams.map(escapeHtml).join("·")}만 접수합니다</span>`;
+        el.innerHTML = `<span class="hub-card-sub" style="display:block">${poAdminOnly(r) ? "이번 회차는 관리자만 접수합니다" : "이번 회차는 " + r.teams.map(escapeHtml).join("·") + "만 접수합니다"}</span>`;
       }
     }
   } catch (e) {}
@@ -23237,7 +23242,7 @@ function renderPreorder(root) {
   root.innerHTML = rvHeader("선출고 접수", "go('topHub')", poIsAdmin() ? `<span class="rv-chip blk">ADMIN</span>` : "") +
     `<div class="rv-tabs">${tabs.map(t => `<button class="rv-tab ${PO.tab === t[0] ? "on" : ""}" ${tabs.length > 3 ? `style="font-size:13px;white-space:nowrap;padding-left:2px;padding-right:2px${t[0] === "hist" ? ";flex:1.5" : ""}"` : ""} onclick="poSetTab('${t[0]}')">${t[1]}</button>`).join("")}</div>
     <div class="card-section" id="poBody"><p class="loading-text">불러오는 중...</p></div>`;
-  poLoad().then(() => { if (S.screen !== "preorder") return; if (poTeamBlocked()) { alert("이번 회차는 " + PO.round.teams.join("·") + "만 접수합니다."); go("topHub"); return; } poPaint(); })
+  poLoad().then(() => { if (S.screen !== "preorder") return; if (poTeamBlocked()) { alert(poAdminOnly() ? "이번 회차는 관리자만 접수합니다." : "이번 회차는 " + PO.round.teams.join("·") + "만 접수합니다."); go("topHub"); return; } poPaint(); })
     .catch(e => { const b = document.getElementById("poBody"); if (b) b.innerHTML = `<p class="error-text">불러오기 실패: ${escapeHtml(e.message || e)}</p>`; });
 }
 function poSetTab(t) { PO.tab = t; render(); }
@@ -23714,32 +23719,34 @@ function poStats() {
   return { stores, lines, kinds: kinds.size, byTeam, byItem };
 }
 function poTeamSel() { return PO.teamDirty ? PO.teamSel : (poTeamsOn() ? PO.round.teams.slice() : null); }
+function poAdminSel() { return PO.teamDirty ? !!PO.adminOnlySel : poAdminOnly(); }
 function poTeamCard() {
-  const all = poAllTeams(), sel = poTeamSel(), on = new Set(sel || all), isAll = !sel;
+  const all = poAllTeams(), sel = poTeamSel(), adm = poAdminSel(), on = new Set(sel || all), isAll = !adm && !sel;
   const chip = (t, act, label) => `<button onclick="${act}" aria-pressed="${t}" style="min-height:44px;border-radius:999px;padding:0 16px;font-size:14px;cursor:pointer;font-family:inherit;border:1.5px solid ${t ? "#1A202C" : "#CBD5E0"};background:${t ? "#1A202C" : "#fff"};color:${t ? "#fff" : "#2D3748"};font-weight:${t ? 800 : 600}">${escapeHtml(label)}</button>`;
-  const sum = isAll ? "전체 팀 접수" : Array.from(on).join(" · ") + " 접수";
+  const sum = adm ? "관리자만 접수" : isAll ? "전체 팀 접수" : Array.from(on).join(" · ") + " 접수";
   return `<div class="po-card" style="margin-top:16px"><div style="display:flex;align-items:center;gap:8px"><span style="flex:1;font-size:15px;font-weight:800">접수 대상 팀</span><span style="font-size:12px;font-weight:700;color:#5A6678">${escapeHtml(sum)}</span></div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">${chip(isAll, "poTeamAll()", "전체")}${all.map((t, i) => chip(!isAll && on.has(t), "poTeamPick(" + i + ")", t)).join("")}</div>
-    <div class="rv-note" style="margin:10px 0 0;line-height:1.6">선택한 팀의 AC·팀장만 입력할 수 있습니다. GL·ADMIN은 모든 팀을 입력할 수 있어요. 접수 중에도 바꿀 수 있고, 이미 접수된 내용은 그대로 유지됩니다.</div>
-    ${PO.round ? `<button class="po-btn" style="margin-top:12px;height:48px" onclick="poTeamSave()">대상 팀 저장</button>` : `<div class="rv-note" style="margin-top:8px">선택한 팀으로 새 접수가 시작됩니다.</div>`}</div>`;
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">${chip(isAll, "poTeamAll()", "전체")}${chip(adm, "poTeamAdminOnly()", "관리자만")}${all.map((t, i) => chip(!adm && !isAll && on.has(t), "poTeamPick(" + i + ")", t)).join("")}</div>
+    <div class="rv-note" style="margin:10px 0 0;line-height:1.6">${adm ? "관리자만 입력할 수 있고, AC·팀장·그룹장은 선출고 접수에 들어올 수 없습니다." : "선택한 팀의 AC·팀장만 입력할 수 있습니다. GL·ADMIN은 모든 팀을 입력할 수 있어요."} 접수 중에도 바꿀 수 있고, 이미 접수된 내용은 그대로 유지됩니다.</div>
+    ${PO.round ? `<button class="po-btn" style="margin-top:12px;height:48px" onclick="poTeamSave()">대상 팀 저장</button>` : `<div class="rv-note" style="margin-top:8px">선택한 대상으로 새 접수가 시작됩니다.</div>`}</div>`;
 }
-function poTeamAll() { PO.teamDirty = true; PO.teamSel = null; poPaint(); }
+function poTeamAll() { PO.teamDirty = true; PO.teamSel = null; PO.adminOnlySel = false; poPaint(); }
+function poTeamAdminOnly() { PO.teamDirty = true; PO.teamSel = null; PO.adminOnlySel = true; poPaint(); }
 function poTeamPick(i) {
   const all = poAllTeams(), t = all[i]; if (!t) return;
-  const cur = new Set(poTeamSel() || all);
+  const cur = new Set(poAdminSel() ? [] : (poTeamSel() || all));
   if (cur.has(t)) cur.delete(t); else cur.add(t);
   if (!cur.size) return;
-  PO.teamDirty = true; PO.teamSel = cur.size === all.length ? null : all.filter(x => cur.has(x));
+  PO.teamDirty = true; PO.adminOnlySel = false; PO.teamSel = cur.size === all.length ? null : all.filter(x => cur.has(x));
   poPaint();
 }
 async function poTeamSave() {
   if (!PO.round) return;
-  const sel = poTeamSel(), teams = sel && sel.length ? sel : null;
+  const adm = poAdminSel(), sel = poTeamSel(), teams = !adm && sel && sel.length ? sel : null;
   try {
-    await updateDoc(doc(db, "settings", "preorderRound"), { teams });
-    PO.round.teams = teams; PO.teamDirty = false; PO.teamSel = null;
-    await poRoundSync({ teams });
-    poPaint(); alert(teams ? "대상 팀을 저장했습니다: " + teams.join(" · ") : "전체 팀 접수로 저장했습니다.");
+    await updateDoc(doc(db, "settings", "preorderRound"), { teams, adminOnly: adm });
+    PO.round.teams = teams; PO.round.adminOnly = adm; PO.teamDirty = false; PO.teamSel = null; PO.adminOnlySel = false;
+    await poRoundSync({ teams, adminOnly: adm });
+    poPaint(); alert(adm ? "관리자만 접수하도록 저장했습니다." : teams ? "대상 팀을 저장했습니다: " + teams.join(" · ") : "전체 팀 접수로 저장했습니다.");
   } catch (e) { alert("저장 실패: " + (e.message || e)); }
 }
 function poPaintAdmin(b) {
@@ -23804,13 +23811,13 @@ async function poStart() {
   if (!PO.items || !PO.items.length) { alert("먼저 품목 엑셀을 업로드하세요. (선출고 품목 관리)"); return; }
   if (!confirm("새 접수를 시작할까요? 모든 AC·팀장이 입력할 수 있게 됩니다.")) return;
   try {
-    const r = { id: "r" + Date.now(), status: "open", reqDate: poToday(), startedAt: Date.now(), closedAt: null, closedBy: "", teams: (PO.teamDirty && PO.teamSel && PO.teamSel.length) ? PO.teamSel.slice() : null };
+    const r = { id: "r" + Date.now(), status: "open", reqDate: poToday(), startedAt: Date.now(), closedAt: null, closedBy: "", teams: (PO.teamDirty && !PO.adminOnlySel && PO.teamSel && PO.teamSel.length) ? PO.teamSel.slice() : null, adminOnly: !!(PO.teamDirty && PO.adminOnlySel) };
     await setDoc(doc(db, "settings", "preorderRound"), r);
     PO.round = r; PO.docs = [];
     let seq = 1;
     try { const qs = await getDocs(query(collection(db, "preorderRounds"), where("dateKey", "==", poDateKey(r.reqDate)))); seq = qs.size + 1; } catch (e) {}
-    PO.teamDirty = false; PO.teamSel = null;
-    await poRoundSync({ seq, teams: r.teams });
+    PO.teamDirty = false; PO.teamSel = null; PO.adminOnlySel = false;
+    await poRoundSync({ seq, teams: r.teams, adminOnly: r.adminOnly });
     poPaint();
   } catch (e) { alert("시작 실패: " + (e.message || e)); }
 }
@@ -23962,7 +23969,7 @@ async function poiApply() {
 }
 
 Object.assign(window, {
-  poTeamAll, poTeamPick, poTeamSave,
+  poTeamAll, poTeamPick, poTeamSave, poTeamAdminOnly,
   hubToggleGrp,
   openPreorder, poHistMonth, poHistPick, poHistDownload, poMineTeam, poMineKwInput, poMineSet, togglePreorderEnabled, poSubmit, poEditLine, poEditCancel, poEditSave, poCkfClose, poCkfReopen, poSetTab, poStoreChange, poStoreSearch, poStoreClear, poMemoSave, poKwInput, poPickItem, poQtyStep, poQtyInput, poAdd, poDelLine, poDelStore, poEditStore, poStart, poClose, poReopen, poDownload, poiKw, poiFilter, poiToggle, poiFile, poiCancel, poiApply,
   openReview, rvAccToggle, rvToggleCat, rvCatClear, rvQInput, rvQMore, rvQOpen, rvDictDownload, rvDictUpload, rvDictApply, rvDictCancel, rvDictRestore, rvDownloadStoresXlsx,  rvToggleStar, rvStarPreset, toggleBaeminEnabled, rvWipeAll, rvRebuildStats, rvPickType, rvPickVal, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
