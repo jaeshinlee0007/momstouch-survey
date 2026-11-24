@@ -23066,7 +23066,7 @@ async function rvUploadPhotos(files) {
           const META = { contentType: "image/jpeg", cacheControl: "public,max-age=31536000" };
           const withV = u => u + (u.includes("?") ? "&" : "?") + "v=" + ts;
           for (let i = 0; i < arr.length; i++) {
-            const blob = await rvCompressJpg(arr[i], 1280, 0.8);
+            const blob = await rvCompressJpg(arr[i], 960, 0.7);
             const sref = storageRef(storage, `review_photos/${id}/${i + 1}.jpg`);
             await uploadBytes(sref, blob, META);
             urls.push(withV(await getDownloadURL(sref)));
