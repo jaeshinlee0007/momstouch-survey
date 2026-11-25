@@ -75,7 +75,7 @@ onAuthStateChanged(auth, async user => {
       _photoSettingsLoaded = false;
       _npEnabledLoaded = false;
       _spacoolEnabledLoaded = false;
-      await Promise.all([loadPhotoSettings(), loadDateLimitSetting(), loadBaeminEnabled(), loadNpEnabled(), loadSpacoolEnabled(), loadGbchickenEnabled(), loadNashvilleEnabled(), loadGkEnabled(), loadGkpreEnabled(), loadBeefRenewalEnabled(), loadChuseokEnabled(), loadGrilledBulgogiEnabled(), loadRehithamEnabled(), loadHdj2Enabled(), loadJjkEnabled(), loadJjkdpEnabled(), loadRoastEnabled(), loadSubmitLocks()]);
+      await Promise.all([loadPhotoSettings(), loadDateLimitSetting(), loadBaeminEnabled(), loadPreorderEnabled(), loadNpEnabled(), loadSpacoolEnabled(), loadGbchickenEnabled(), loadNashvilleEnabled(), loadGkEnabled(), loadGkpreEnabled(), loadBeefRenewalEnabled(), loadChuseokEnabled(), loadGrilledBulgogiEnabled(), loadRehithamEnabled(), loadHdj2Enabled(), loadJjkEnabled(), loadJjkdpEnabled(), loadRoastEnabled(), loadSubmitLocks()]);
       // sessionStorage에 점검 중 데이터가 있으면 home으로 이동하지 않음
       // (이어서 점검하기 팝업이 뜰 것이므로)
       const _hasPendingSession = (() => {
@@ -682,12 +682,14 @@ function render() {
   root.innerHTML = ""; window.scrollTo(0,0);
   const scr = S.screen;
   // 미로그인 상태에서 보호 화면 접근 시 로그인으로 리디렉션
-  const protectedScreens = ["topHub","hub","home","homeNP","homeSpacool","homeGbchicken","homeNashville","homeGk","homeGkpre","homeBeefRenewal","homeChuseok","homeGrilledBulgogi","homeReport","reportStoreSel","reportTeam","reportDetail","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP","approvalNP","dashboardSpacool","recordsSpacool","recordDetailSpacool","storeHistorySpacool","approvalSpacool","dashboardGbchicken","recordsGbchicken","recordDetailGbchicken","storeHistoryGbchicken","approvalGbchicken","dashboardNashville","recordsNashville","recordDetailNashville","storeHistoryNashville","approvalNashville","dashboardGk","recordsGk","recordDetailGk","storeHistoryGk","approvalGk","dashboardGkpre","recordsGkpre","recordDetailGkpre","storeHistoryGkpre","approvalGkpre","dashboardBeefRenewal","recordsBeefRenewal","recordDetailBeefRenewal","storeHistoryBeefRenewal","approvalBeefRenewal","dashboardChuseok","recordsChuseok","recordDetailChuseok","storeHistoryChuseok","approvalChuseok","dashboardGrilledBulgogi","recordsGrilledBulgogi","recordDetailGrilledBulgogi","storeHistoryGrilledBulgogi","approvalGrilledBulgogi","homeRehitham","dashboardRehitham","recordsRehitham","recordDetailRehitham","storeHistoryRehitham","approvalRehitham","mobileDash","homeHdj2","dashboardHdj2","recordsHdj2","recordDetailHdj2","storeHistoryHdj2","approvalHdj2","homeJjk","dashboardJjk","recordsJjk","recordDetailJjk","storeHistoryJjk","approvalJjk","homeRoast","dashboardRoast","recordsRoast","recordDetailRoast","storeHistoryRoast","approvalRoast","review","reviewStore","reviewDetail","reviewAdmin","homeJjkdp","dashboardJjkdp","recordsJjkdp","recordDetailJjkdp","storeHistoryJjkdp","approvalJjkdp"];
+  const protectedScreens = ["topHub","preorder","preorderItems","hub","home","homeNP","homeSpacool","homeGbchicken","homeNashville","homeGk","homeGkpre","homeBeefRenewal","homeChuseok","homeGrilledBulgogi","homeReport","reportStoreSel","reportTeam","reportDetail","inspType","role","storeSel","info","form","compare","records","dashboard","changePw","photoSetting","followupNeeded","dashboardNP","npComingSoon","recordsNP","recordDetailNP","storeHistoryNP","approvalNP","dashboardSpacool","recordsSpacool","recordDetailSpacool","storeHistorySpacool","approvalSpacool","dashboardGbchicken","recordsGbchicken","recordDetailGbchicken","storeHistoryGbchicken","approvalGbchicken","dashboardNashville","recordsNashville","recordDetailNashville","storeHistoryNashville","approvalNashville","dashboardGk","recordsGk","recordDetailGk","storeHistoryGk","approvalGk","dashboardGkpre","recordsGkpre","recordDetailGkpre","storeHistoryGkpre","approvalGkpre","dashboardBeefRenewal","recordsBeefRenewal","recordDetailBeefRenewal","storeHistoryBeefRenewal","approvalBeefRenewal","dashboardChuseok","recordsChuseok","recordDetailChuseok","storeHistoryChuseok","approvalChuseok","dashboardGrilledBulgogi","recordsGrilledBulgogi","recordDetailGrilledBulgogi","storeHistoryGrilledBulgogi","approvalGrilledBulgogi","homeRehitham","dashboardRehitham","recordsRehitham","recordDetailRehitham","storeHistoryRehitham","approvalRehitham","mobileDash","homeHdj2","dashboardHdj2","recordsHdj2","recordDetailHdj2","storeHistoryHdj2","approvalHdj2","homeJjk","dashboardJjk","recordsJjk","recordDetailJjk","storeHistoryJjk","approvalJjk","homeRoast","dashboardRoast","recordsRoast","recordDetailRoast","storeHistoryRoast","approvalRoast","review","reviewStore","reviewDetail","reviewAdmin","homeJjkdp","dashboardJjkdp","recordsJjkdp","recordDetailJjkdp","storeHistoryJjkdp","approvalJjkdp"];
   if (!_currentUser && protectedScreens.includes(scr)) {
     renderLogin(root);
     return;
   }
   if      (scr==="topHub")     renderTopHub(root);
+  else if (scr==="preorder")   renderPreorder(root);
+  else if (scr==="preorderItems") renderPreorderItems(root);
   else if (scr==="homeReport") renderHomeReport(root);
   else if (scr==="reportTeam") renderReportTeam(root); // async
   else if (scr==="mobileDash") renderMobileDash(root); // async
@@ -800,8 +802,17 @@ function render() {
 
 // ── HUB (신규플랫폼/신제품 선택 진입화면) ──────────
 // ── 최상위 HUB (SCV / 매장 컨설팅 리포트 선택) ──────────
+let _hubGrpOpen = false;
+function hubToggleGrp() {
+  _hubGrpOpen = !_hubGrpOpen;
+  const body = document.getElementById("hubGrpBody"), bdg = document.getElementById("hubBdgGrp"), chev = document.getElementById("hubGrpChev"), head = document.getElementById("hubGrpHead");
+  if (body) body.style.display = _hubGrpOpen ? "flex" : "none";
+  if (bdg) bdg.style.display = _hubGrpOpen ? "none" : "block";
+  if (chev) chev.style.transform = "rotate(" + (_hubGrpOpen ? 180 : 0) + "deg)";
+  if (head) head.setAttribute("aria-expanded", String(_hubGrpOpen));
+}
 function renderTopHub(root) {
-  setTimeout(() => { hubLoadBadges().catch(() => {}); }, 0);
+  setTimeout(() => { hubLoadBadges().catch(() => {}); poLoadBadge(); }, 0);
   root.innerHTML = `
     <div class="hero-hub">
       <span class="logo-chip">${LOGO_SVG}</span>
@@ -809,24 +820,43 @@ function renderTopHub(root) {
       <div style="font-size:12px;color:var(--sub);letter-spacing:0.5px;margin-top:4px">Store Condition Verification</div>
     </div>
     <div class="card-section">
-      <button class="hub-card" onclick="go('hub')">
-        <span class="hub-card-icon" style="background:#FFF5F5;color:#C53030"><span style="font-size:16px">📋</span></span>
+      <div class="hub-grp">
+        <button class="hub-grp-head" onclick="hubToggleGrp()" aria-expanded="${_hubGrpOpen}" id="hubGrpHead">
+          <span class="hub-card-icon" style="background:#FFF5F5;color:#C53030"><span style="font-size:16px">📋</span></span>
+          <span style="flex:1;min-width:0">
+            <span class="hub-card-title">점검 및 매장 컨설팅</span>
+            <span id="hubBdgGrp" style="display:${_hubGrpOpen ? "none" : "block"}"></span>
+          </span>
+          <span id="hubGrpChev" style="font-size:14px;color:#2D3748;transition:transform .2s;transform:rotate(${_hubGrpOpen ? 180 : 0}deg)">▾</span>
+        </button>
+        <div id="hubGrpBody" class="hub-grp-body" style="display:${_hubGrpOpen ? "flex" : "none"}">
+          <button class="hub-card hub-sub" onclick="go('hub')">
+            <span class="hub-card-icon" style="width:36px;height:36px"><span style="font-size:14px">📋</span></span>
+            <span>
+              <span class="hub-card-title" style="font-size:15px">현장점검</span>
+              <span id="hubBdgTop" style="display:block"></span>
+            </span>
+          </button>
+          <button class="hub-card hub-sub" onclick="go('homeReport')">
+            <span class="hub-card-icon" style="width:36px;height:36px"><span style="font-size:14px">📊</span></span>
+            <span>
+              <span class="hub-card-title" style="font-size:15px">매장 컨설팅 리포트<span style="font-size:10px;background:#1A202C;color:white;padding:1px 6px;border-radius:8px;margin-left:6px">NEW</span></span>
+            </span>
+          </button>
+          <button class="hub-card hub-sub${rvAllowed() ? "" : " disabled"}" onclick="openReview()">
+            <span class="hub-card-icon" style="width:36px;height:36px"><span style="font-size:14px">💬</span></span>
+            <span>
+              <span class="hub-card-title" style="font-size:15px">배달의민족 리뷰 관리<span style="font-size:10px;background:#1A202C;color:white;padding:1px 6px;border-radius:8px;margin-left:6px">NEW</span></span>
+              ${!_baeminEnabled ? `<span class="hub-card-sub" style="display:block">${_authRole === "admin" ? "OFF · 관리자만 진입 가능" : "준비중"}</span>` : ""}
+            </span>
+          </button>
+        </div>
+      </div>
+      <button id="poCardTop" class="hub-card${poAllowed() ? "" : " disabled"}" onclick="openPreorder()">
+        <span class="hub-card-icon" style="background:#EBF8FF;color:#2B6CB0"><span style="font-size:16px">📦</span></span>
         <span>
-          <span class="hub-card-title">현장점검</span>
-          <span id="hubBdgTop" style="display:block"></span>
-        </span>
-      </button>
-      <button class="hub-card" onclick="go('homeReport')">
-        <span class="hub-card-icon" style="background:#F3F0FF;color:#6B46C1"><span style="font-size:16px">📊</span></span>
-        <span>
-          <span class="hub-card-title">매장 컨설팅 리포트<span style="font-size:10px;background:#1A202C;color:white;padding:1px 6px;border-radius:8px;margin-left:6px">NEW</span></span>
-        </span>
-      </button>
-      <button class="hub-card${rvAllowed() ? "" : " disabled"}" onclick="openReview()">
-        <span class="hub-card-icon" style="background:#FFF5F5;color:#C53030"><span style="font-size:16px">💬</span></span>
-        <span>
-          <span class="hub-card-title">배달의민족 리뷰 관리<span style="font-size:10px;background:#1A202C;color:white;padding:1px 6px;border-radius:8px;margin-left:6px">NEW</span></span>
-          ${!_baeminEnabled ? `<span class="hub-card-sub" style="display:block">${_authRole === "admin" ? "OFF · 관리자만 진입 가능" : "준비중"}</span>` : ""}
+          <span class="hub-card-title">선출고 접수</span>
+          <span id="poBdgTop" style="display:block">${!_preorderEnabled ? `<span class="hub-card-sub" style="display:block">${_authRole === "admin" ? "OFF · 관리자만 진입 가능" : "준비중"}</span>` : ""}</span>
         </span>
       </button>
       <button class="hub-card" onclick="openMobileDash()">
@@ -2136,6 +2166,8 @@ async function hubLoadBadges() {
   });
   const top = document.getElementById("hubBdgTop");
   if (top) top.innerHTML = total > 0 ? `<span style="${style}">${label} ${total}건</span>` : "";
+  const grp = document.getElementById("hubBdgGrp");
+  if (grp) grp.innerHTML = total > 0 ? `<span style="${style}">${label} ${total}건</span>` : "";
 }
 function renderHub(root) {
   setTimeout(() => { hubLoadBadges().catch(() => {}); }, 0);
@@ -4369,6 +4401,8 @@ async function renderPhotoSetting(root) {
   _dateLimitUIValue = _dateLimitSetting;
   _baeminEnabledLoaded = false;
   await loadBaeminEnabled();
+  _preorderEnabledLoaded = false;
+  await loadPreorderEnabled();
   _npEnabledLoaded = false;
   await loadNpEnabled();
   _npPhotoRequiredLoaded = false;
@@ -4759,6 +4793,21 @@ async function renderPhotoSetting(root) {
     <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 메인 화면의 배달의민족 리뷰 관리 카드가 비활성 처리됩니다(관리자는 계속 진입 가능). 리뷰·집계·사진 데이터는 그대로 보존됩니다.</div>
   `;
 
+  const preorderCategoryHtml = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">선출고 접수 사용</span>
+      <div id="toggle_wrap_preorderEnabled"
+        onclick="togglePreorderEnabled()"
+        style="width:44px;height:24px;border-radius:12px;background:${_preorderEnabled?"#2B6CB0":"#CBD5E0"};
+               position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
+        <div id="toggle_thumb_preorderEnabled"
+          style="position:absolute;width:18px;height:18px;border-radius:50%;background:white;
+                 top:3px;left:${_preorderEnabled?"23px":"3px"};transition:left .2s"></div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#718096;margin:6px 0">OFF 시 메인 화면의 선출고 접수 카드가 비활성 처리됩니다(관리자는 계속 진입 가능). 접수 내역·품목 데이터는 그대로 보존됩니다. 저장하기를 눌러야 반영됩니다.</div>
+  `;
+
   const jjkdpCategoryHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
       <span style="font-size:14px">주술회전 DP 참여점포 조사 사용</span>
@@ -4798,9 +4847,9 @@ async function renderPhotoSetting(root) {
     <div class="card-section">
       <div style="font-size:11px;color:#A0AEC0;margin-bottom:14px">마지막 저장: ${lastSavedText}</div>
 
-      ${section("📋", "매장 데이터 관리", storeDataHtml, true)}
-      ${section("📊", "매장 컨설팅 리포트 데이터", reportDataHtml, false)}
+      ${section("🗂️", "RAW 관리", storeDataHtml + `<div style="height:12px"></div>` + reportDataHtml, false)}
       ${section("💬", "배달의민족 리뷰 관리", baeminCategoryHtml, false)}
+      ${section("📦", "선출고 접수", preorderCategoryHtml, false)}
       ${(() => {
         // 현장점검 아코디언: 활성(ON) 점검을 위로, 비활성(OFF)을 아래로 정렬. 접어도 설정 입력칸은 DOM에 그대로 남아 저장에 영향 없음.
         const pill = on => on
@@ -4987,6 +5036,7 @@ async function applyAdminSettings() {
     await setDoc(doc(db, "settings", "photoRequired"), _photoSettings);
     await setDoc(doc(db, "settings", "dateLimit"), { value: _dateLimitUIValue });
     await setDoc(doc(db, "settings", "baeminEnabled"), { value: _baeminEnabled });
+    await setDoc(doc(db, "settings", "preorderEnabled"), { value: _preorderEnabled });
     await setDoc(doc(db, "settings", "npEnabled"), { value: _npEnabled });
     await setDoc(doc(db, "settings", "npPhotoRequired"), { value: _npPhotoRequired });
     await setDoc(doc(db, "settings", "spacoolEnabled"), { value: _spacoolEnabled });
@@ -22192,6 +22242,8 @@ async function rvPaintQuery() {
       ${(tags || it.ph) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${tags}${rvPhotoChip(it.ph)}</div>` : ""}
     </button>`;
   }).join("");
+  RV.qHit = hit;
+  RV.qCond = [["기간", rvYmLabel(RV.qym)], ["검색어", toks.join(" ") || "(없음)"], ["별점", rvStarLabel(RV.qStars)], ["카테고리", rvCatLabel(RV.qCats)], ["건수", hit.length]];
   const filt = `필터: ${rvYmLabel(RV.qym)}${toks.length ? " · 검색어 '" + escapeHtml(toks.join(" ")) + "'" : ""} · 별점 ${rvStarLabel(RV.qStars)} · 카테고리 ${escapeHtml(rvCatLabel(RV.qCats))}`;
   box.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
@@ -22199,9 +22251,38 @@ async function rvPaintQuery() {
       <div class="rv-kpi"><div class="l">평균 평점</div><div class="v" style="font-size:20px">★ ${hit.length ? (sum / hit.length).toFixed(2) : "-"}</div></div>
       <div class="rv-kpi"><div class="l">해당 매장</div><div class="v" style="font-size:20px">${stores.toLocaleString()}<small> 곳</small></div></div>
     </div>
+    <button class="btn-ghost" style="margin-bottom:10px;${hit.length ? "color:#2B6CB0;border-color:#2B6CB0;font-weight:700" : "opacity:.5"}" ${hit.length ? "" : "disabled"} onclick="rvDownloadQueryXlsx()">엑셀 다운로드 (${hit.length.toLocaleString()}건)</button>
     <div class="rv-note" style="margin-bottom:8px">${filt}</div>
     ${cards || `<p class="error-text">${items.length ? "조건에 맞는 리뷰가 없습니다." : (RV.needRebuild ? "집계가 아직 준비되지 않았습니다. 관리자에게 문의해 주세요." : "해당 기간의 검색 데이터가 없습니다.")}</p>`}
     ${hit.length > RV.qShow ? `<button class="btn-ghost" onclick="rvQMore()">더 보기 (${RV.qShow} / ${hit.length.toLocaleString()})</button>` : ""}`;
+}
+async function rvDownloadQueryXlsx() {
+  try {
+    const hit = RV.qHit || [];
+    if (!hit.length) { alert("다운로드할 리뷰가 없습니다."); return; }
+    if (!window.XLSX) {
+      await new Promise((res, rej) => {
+        const sc = document.createElement("script");
+        sc.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+        sc.onload = res; sc.onerror = rej;
+        document.head.appendChild(sc);
+      });
+    }
+    const sm = new Map((RV.scope || []).map(s => [s.code, s])), cs = rvCatList();
+    const rows = [["작성일시", "팀", "매장코드", "매장명", "담당AC", "별점", "메뉴", "리뷰 내용(최대 300자)", "카테고리", "사진 수", "리뷰ID"]];
+    hit.forEach(it => {
+      const st = sm.get(it.code) || {};
+      const cats = it.ck === "" ? "" : it.ck.split(",").map(i => cs[Number(i)] ? cs[Number(i)].name : "").filter(n => n && n !== "내용 없음").join(", ");
+      rows.push([rvFmtDt(it.at), st.team || "", it.code || "", st.name || "", st.sv || "", Number(it.rt) || "", it.menu || "", it.text || "", cats, it.ph || 0, String(it.id)]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 22 }, { wch: 10 }, { wch: 6 }, { wch: 24 }, { wch: 60 }, { wch: 22 }, { wch: 8 }, { wch: 18 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "리뷰");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["조건", "값"]].concat(RV.qCond || [])), "조건");
+    const d = new Date(), p = n => String(n).padStart(2, "0");
+    XLSX.writeFile(wb, `배민리뷰_검색_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}.xlsx`);
+  } catch (e) { alert("엑셀 다운로드 실패: " + (e.message || e)); }
 }
 async function rvQOpen(id) {
   try {
@@ -23016,7 +23097,7 @@ async function rvUploadPhotos(files) {
           const META = { contentType: "image/jpeg", cacheControl: "public,max-age=31536000" };
           const withV = u => u + (u.includes("?") ? "&" : "?") + "v=" + ts;
           for (let i = 0; i < arr.length; i++) {
-            const blob = await rvCompressJpg(arr[i], 1280, 0.8);
+            const blob = await rvCompressJpg(arr[i], 960, 0.7);
             const sref = storageRef(storage, `review_photos/${id}/${i + 1}.jpg`);
             await uploadBytes(sref, blob, META);
             urls.push(withV(await getDownloadURL(sref)));
@@ -23047,7 +23128,885 @@ async function rvUploadPhotos(files) {
     (bad.length ? `<br><span style="color:#C53030">오류: ${bad.slice(0, 30).map(escapeHtml).join(", ")}${bad.length > 30 ? " …" : ""}</span>` : "") + refreshNote;
 }
 
+// ══════════════════════════════════════════════════════
+// 선출고 접수 (본 발주 이후 추가 주문 수합)
+//  settings/preorderRound  : {id,status,reqDate,startedAt,closedAt,closedBy}
+//  settings/preorderItems  : {items:[{code,name,unit,cat,note,blocked}],updatedAt}
+//  preorders/{roundId}__{storeCode} : {roundId,storeCode,storeName,team,sv,lines:{code:{code,name,unit,qty,t}},...}
+// ══════════════════════════════════════════════════════
+const PO = { mineTab: "all", mineTeam: "", mineKw: "", editCode: "", memo: "", sug: [], tab: "input", round: null, items: null, docs: [], stores: [], loaded: false,
+  store: "", kw: "", pick: null, qty: 1, cand: [], up: null, ifilter: "all", ikw: "", cssOn: false };
+// ── 접수 대상 팀 (round.teams: 배열이면 해당 팀만, 없으면 전체) ──
+function poAdminOnly(r) { r = r || PO.round; return !!(r && r.adminOnly); }
+function poTeamsOn(r) { r = r || PO.round; return !!(r && Array.isArray(r.teams) && r.teams.length); }
+function poAllTeams() { return Array.from(new Set((PO.stores || []).map(s => String(s.team || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ko", { numeric: true })); }
+function poTeamBlocked(r) {
+  r = r || PO.round;
+  if (!r || r.status !== "open") return false;
+  if (poAdminOnly(r)) return _authRole !== "admin";
+  if (!poTeamsOn(r)) return false;
+  if (_authRole !== "sv" && _authRole !== "tl") return false;
+  const sc = rvScopeStores(PO.stores || []);
+  if (!sc.length) return false;
+  return !sc.some(s => r.teams.includes(String(s.team || "").trim()));
+}
+function poTeamNote() {
+  if (!poOpen() || !poIsAdmin() && _authRole !== "gl") return "";
+  if (poAdminOnly()) return `<div style="background:#FFFAF0;border:1.5px solid #F6AD55;border-radius:12px;padding:8px 12px;font-size:12px;color:#7B341E;line-height:1.5;margin-bottom:12px"><b>관리자만 접수</b> · 이번 회차는 관리자만 입력할 수 있습니다.</div>`;
+  if (!poTeamsOn()) return "";
+  return `<div style="background:#FFFAF0;border:1.5px solid #F6AD55;border-radius:12px;padding:8px 12px;font-size:12px;color:#7B341E;line-height:1.5;margin-bottom:12px"><b>접수 대상 팀</b> · ${PO.round.teams.map(escapeHtml).join(" · ")}<br>그 외 팀의 AC·팀장은 입력할 수 없습니다. (GL·ADMIN은 전체 입력 가능)</div>`;
+}
+function poCkfOn() { return !!(PO.round && PO.round.ckfClosedAt); }
+function poCkfCodes() { return new Set((PO.items || []).filter(i => i.ckf).map(i => String(i.code))); }
+let _preorderEnabled = false;   // 문서가 없으면 OFF (신규 기능: 관리자가 ON 해야 일반 사용자에게 열림)
+let _preorderEnabledLoaded = false;
+async function loadPreorderEnabled() {
+  if (_preorderEnabledLoaded) return;
+  try { const snap = await getDoc(doc(db, "settings", "preorderEnabled")); _preorderEnabled = snap.exists() ? snap.data().value === true : false; }
+  catch (e) { _preorderEnabled = false; }
+  _preorderEnabledLoaded = true;
+}
+function poAllowed() { return _preorderEnabled || _authRole === "admin"; }
+function togglePreorderEnabled() {
+  _preorderEnabled = !_preorderEnabled;
+  const w = document.getElementById("toggle_wrap_preorderEnabled"), t = document.getElementById("toggle_thumb_preorderEnabled");
+  if (w) w.style.background = _preorderEnabled ? "#2B6CB0" : "#CBD5E0";
+  if (t) t.style.left = _preorderEnabled ? "23px" : "3px";
+}
+function poIsAdmin() { return _authRole === "admin"; }
+function poOpen() { return !!(PO.round && PO.round.status === "open"); }
+function poToday() { const d = new Date(); return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`; }
+function poYmd() { return poToday().replace(/\./g, ""); }
+function poHmd(ms) { if (!ms) return "-"; const d = new Date(ms); return `${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")} ${poHm(ms)}`; }
+function poHm(ms) { if (!ms) return "-"; const d = new Date(ms); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
+function poStatusBadge() {
+  const r = PO.round;
+  if (!r) return { t: "접수 전", bg: "#EDF2F7", fg: "#4A5568" };
+  return r.status === "open" ? { t: "접수 중", bg: "#E6FFFA", fg: "#285E61" } : { t: "접수 마감", bg: "#EDF2F7", fg: "#4A5568" };
+}
+function poEnsureCss() {
+  rvEnsureCss();
+  if (PO.cssOn) return; PO.cssOn = true;
+  const st = document.createElement("style");
+  st.textContent = `
+.po-card{background:white;border:1.5px solid var(--border);border-radius:14px;padding:14px}
+.po-lbl{font-size:12px;font-weight:800;color:#5A6678;margin:4px 0 6px}
+.po-in{width:100%;box-sizing:border-box;height:48px;border:1.5px solid var(--border);border-radius:12px;padding:0 14px;font-size:15px;background:white;outline:none;font-family:inherit}
+.po-in:focus{border-color:#1A202C}
+.po-list{background:white;border:1.5px solid var(--border);border-radius:12px;overflow:hidden}
+.po-it{display:flex;align-items:center;width:100%;min-height:48px;padding:0 14px;border:0;border-bottom:1px solid #EDF2F7;background:white;text-align:left;font-size:14px;font-weight:700;color:#1A202C;font-family:inherit;box-sizing:border-box}
+.po-it:last-child{border-bottom:0}
+.po-it.blk{background:#F7F8FA;color:#A0AEC0;font-weight:500}
+.po-btn{height:48px;border:0;border-radius:12px;background:#1A202C;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;width:100%}
+.po-btn.o{background:white;color:#2D3748;border:1.5px solid var(--border);font-weight:700}
+.po-btn.r{background:#E53E3E}
+.po-btn.b{background:#2B6CB0}
+.po-btn:disabled{opacity:.45}
+.po-sq{width:44px;height:44px;border-radius:12px;border:1.5px solid var(--border);background:white;font-size:20px;color:#2D3748;cursor:pointer}
+.po-x{width:36px;height:36px;border-radius:50%;border:0;background:#EDF2F7;color:#4A5568;font-size:14px;cursor:pointer}
+.po-row{display:flex;align-items:center;min-height:44px;padding:0 14px;font-size:14px;border-bottom:1px solid #EDF2F7}
+.po-row:last-child{border-bottom:0}
+`;
+  document.head.appendChild(st);
+}
+function poScopeStores() {
+  return rvScopeStores(PO.stores).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+}
+async function poLoad() {
+  const [rs, is, all] = await Promise.all([
+    getDoc(doc(db, "settings", "preorderRound")),
+    getDoc(doc(db, "settings", "preorderItems")),
+    getActiveStoreData()
+  ]);
+  PO.round = rs.exists() ? rs.data() : null;
+  PO.items = is.exists() ? (is.data().items || []) : [];
+  PO.itemsMeta = is.exists() ? is.data() : null;
+  PO.stores = all || [];
+  PO.docs = [];
+  if (PO.round && PO.round.id) {
+    const qs = await getDocs(query(collection(db, "preorders"), where("roundId", "==", PO.round.id)));
+    qs.forEach(d => PO.docs.push(d.data()));
+  }
+  PO.loaded = true;
+}
+function poSubLines(d) { return d && d.sub ? Object.values(d.sub).sort((a, b) => (a.t || 0) - (b.t || 0)) : []; }
+// draft: 접수 전 / done: 접수 = 입력 / changed: 접수 후 변경됨
+function poState(d) {
+  if (!d) return "none";
+  const a = d.lines || {}, b = d.sub || null, ka = Object.keys(a);
+  if (!b) return ka.length ? "draft" : "none";
+  const kb = Object.keys(b);
+  return ka.length === kb.length && ka.every(k => b[k] && b[k].qty === a[k].qty) ? "done" : "changed";
+}
+function poDocOf(code) { return PO.docs.find(d => d.storeCode === code); }
+function poLines(d) { return d && d.lines ? Object.values(d.lines).sort((a, b) => (a.t || 0) - (b.t || 0)) : []; }
+
+// 허브 카드 배지
+async function poLoadBadge() {
+  try {
+    if (!_preorderEnabled) return;
+    const rs = await getDoc(doc(db, "settings", "preorderRound"));
+    const el = document.getElementById("poBdgTop");
+    if (!el) return;
+    const r = rs.exists() ? rs.data() : null;
+    PO.round = r;
+    const b = !r ? { t: "접수 전", bg: "#EDF2F7", fg: "#4A5568" } : r.status === "open" ? { t: "접수 중", bg: "#E6FFFA", fg: "#285E61" } : { t: "접수 마감", bg: "#EDF2F7", fg: "#4A5568" };
+    el.innerHTML = `<span style="font-size:11px;font-weight:700;background:${b.bg};color:${b.fg};border-radius:999px;padding:2px 9px;display:inline-block;margin-top:2px">${b.t}</span>`;
+    const card = document.getElementById("poCardTop");
+    if (card) card.classList.remove("disabled");
+    // 접수 대상이 '전체'가 아니면(관리자만·특정 팀) 허브에 테스트 중 문구를 기본 노출
+    const testTxt = `<span class="hub-card-sub" style="display:block;margin-top:2px">테스트 중입니다.</span>`;
+    if (r && r.status === "open" && (poAdminOnly(r) || poTeamsOn(r))) el.innerHTML += testTxt;
+    if (r && r.status === "open" && _authRole !== "admin" && (poAdminOnly(r) || (poTeamsOn(r) && (_authRole === "sv" || _authRole === "tl")))) {
+      if (!poAdminOnly(r)) { const all = await getActiveStoreData(); PO.stores = all || PO.stores; }
+      if (poTeamBlocked(r) && card) {
+        card.classList.add("disabled");
+        el.innerHTML = testTxt;
+      }
+    }
+  } catch (e) {}
+}
+function openPreorder() { if (!poAllowed() || poTeamBlocked()) return; PO.tab = "input"; PO.pick = null; PO.kw = ""; go("preorder"); }
+
+function renderPreorder(root) {
+  if (!["sv", "tl", "gl", "admin"].includes(_authRole) || !poAllowed()) { go("topHub"); return; }
+  poEnsureCss();
+  if (!poIsAdmin() && PO.tab === "admin") PO.tab = "input";
+  const tabs = [["input", "입력"], ["mine", "접수 내역"]].concat(poIsAdmin() ? [["admin", "접수 관리"], ["hist", "접수 이력(누적)"]] : []);
+  root.innerHTML = rvHeader("선출고 접수", "go('topHub')", poIsAdmin() ? `<span class="rv-chip blk">ADMIN</span>` : "") +
+    `<div class="rv-tabs">${tabs.map(t => `<button class="rv-tab ${PO.tab === t[0] ? "on" : ""}" ${tabs.length > 3 ? `style="font-size:13px;white-space:nowrap;padding-left:2px;padding-right:2px${t[0] === "hist" ? ";flex:1.5" : ""}"` : ""} onclick="poSetTab('${t[0]}')">${t[1]}</button>`).join("")}</div>
+    <div class="card-section" id="poBody"><p class="loading-text">불러오는 중...</p></div>`;
+  poLoad().then(() => { if (S.screen !== "preorder") return; if (poTeamBlocked()) { alert(poAdminOnly() ? "이번 회차는 관리자만 접수합니다." : "이번 회차는 " + PO.round.teams.join("·") + "만 접수합니다."); go("topHub"); return; } poPaint(); })
+    .catch(e => { const b = document.getElementById("poBody"); if (b) b.innerHTML = `<p class="error-text">불러오기 실패: ${escapeHtml(e.message || e)}</p>`; });
+}
+function poSetTab(t) { PO.tab = t; render(); }
+function poBanner() { return poBanner0() + poTeamNote(); }
+function poBanner0() {
+  const r = PO.round, b = poStatusBadge();
+  if (!r) return `<div style="background:#EDF2F7;border-radius:12px;padding:10px 14px;font-size:12px;color:#4A5568;line-height:1.5;margin-bottom:12px"><b>접수 전</b> · 아직 열린 선출고 접수가 없습니다.</div>`;
+  return r.status === "open"
+    ? `<div style="background:#E6FFFA;border-radius:12px;padding:10px 14px;font-size:12px;color:#285E61;line-height:1.5;margin-bottom:12px"><b>접수 중</b> · 요청일자 ${escapeHtml(r.reqDate || "")}<br>본사 담당자가 마감하면 입력·수정이 잠깁니다.</div>${poCkfOn() ? `<div style="background:#FFFAF0;border:1.5px solid #F6AD55;border-radius:12px;padding:8px 14px;font-size:12px;color:#7B341E;margin:-4px 0 12px"><b>계육 마감</b> (${poHm(r.ckfClosedAt)}) — 계육(CKF) 품목은 추가·삭제할 수 없습니다.</div>` : ""}`
+    : `<div style="background:#EDF2F7;border-radius:12px;padding:10px 14px;font-size:12px;color:#4A5568;line-height:1.5;margin-bottom:12px"><b>접수 마감</b> · ${escapeHtml(r.reqDate || "")} (${poHm(r.closedAt)} 마감) — 입력·수정이 잠겨 있습니다.</div>`;
+}
+function poPaint() {
+  const b = document.getElementById("poBody"); if (!b) return;
+  if (PO.tab === "input") poPaintInput(b);
+  else if (PO.tab === "mine") poPaintMine(b);
+  else if (PO.tab === "hist") poPaintHist(b);
+  else poPaintAdmin(b);
+}
+
+// ── 입력 탭 ──
+function poPaintInput(b) {
+  const scope = poScopeStores();
+  if (PO.store && !scope.some(s => s.code === PO.store)) PO.store = "";
+  if (!PO.items || !PO.items.length) {
+    b.innerHTML = poBanner() + `<div class="po-card" style="font-size:13px;color:#5A6678">등록된 품목이 없습니다.${poIsAdmin() ? " '접수 관리' 탭에서 품목 엑셀을 업로드하세요." : " 본사 담당자에게 문의하세요."}</div>`;
+    return;
+  }
+  const scopeTxt = _authRole === "sv" ? `AC ${escapeHtml(_authName)} · 담당 매장 ${scope.length}개` : _authRole === "tl" ? `팀장 ${escapeHtml(_authName)} · 팀 매장 ${scope.length}개` : `전체 매장 ${scope.length}개`;
+  const locked = !poOpen();
+  b.innerHTML = poBanner() + `
+    <div class="po-lbl">매장 검색</div>
+    <div id="poStoreBox"></div>
+    <div style="position:relative"><div id="poSug" style="display:none;position:absolute;left:0;right:0;top:4px;z-index:20;background:white;border:1.5px solid #1A202C;border-radius:12px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.12);max-height:288px;overflow-y:auto"></div></div>
+    <div class="rv-note" style="margin:6px 0 10px">${scopeTxt}</div>
+    <div id="poSubmit"></div>
+    <div id="poWork">${locked ? "" : `
+    <div class="po-lbl">메모로 한번에 입력</div>
+    <textarea id="poMemo" class="po-in" rows="5" placeholder="맘스순살강정 2&#10;싸이패티 10&#10;(한 줄에 품목명과 수량)" style="height:auto;padding:12px 14px;line-height:1.5;resize:vertical"></textarea>
+    <button class="po-btn" style="margin-top:8px" onclick="poMemoSave()">메모 저장</button>
+    <div id="poMemoRes" style="margin-top:8px"></div>
+    <div class="po-lbl" style="margin-top:16px">품목 검색으로 입력</div>
+    <div style="position:relative"><input type="text" id="poKw" class="po-in" placeholder="품목명 또는 품목코드 검색" value="${escapeHtml(PO.kw)}" oninput="poKwInput(this.value)" autocomplete="off" style="padding-right:48px" />
+      <button id="poKwX" class="po-x" aria-label="검색 닫기" onclick="poKwClear()" style="display:none;position:absolute;right:6px;top:6px">✕</button></div>
+    <div id="poCand" style="margin-top:8px"></div>
+    <div id="poPick" style="margin-top:12px"></div>`}</div>
+    <div id="poCur" style="margin-top:14px"></div>`;
+  poPaintStoreBox();
+  const memo = document.getElementById("poMemo"); if (memo) memo.value = PO.memo || "";
+  poPaintWork();
+}
+function poPaintStoreBox() {
+  const el = document.getElementById("poStoreBox"); if (!el) return;
+  const st = PO.stores.find(s => s.code === PO.store);
+  el.innerHTML = st
+    ? `<div style="display:flex;align-items:center;gap:8px;height:48px;border:1.5px solid #1A202C;border-radius:12px;padding:0 8px 0 14px;background:white"><span style="flex:1;font-size:15px;font-weight:800">${escapeHtml(st.name)}</span><span style="font-size:11px;color:#5A6678">${escapeHtml(st.team || "")}</span><button class="po-x" aria-label="매장 변경" onclick="poStoreClear()">✕</button></div>`
+    : `<input type="text" id="poSKw" class="po-in" placeholder="매장명 검색 (예: 목동, 강남)" oninput="poStoreSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false" />`;
+}
+function poPaintWork() {
+  const has = !!PO.store;
+  const w = document.getElementById("poWork"); if (w) w.style.display = has ? "" : "none";
+  if (poOpen()) { poPaintCand(); poPaintPick(); }
+  poPaintCur();
+  const c = document.getElementById("poCur"); if (c) c.style.display = has ? "" : "none";
+}
+function poStoreSearch(v) {
+  const el = document.getElementById("poSug"); if (!el) return;
+  const q = String(v).trim().toLowerCase().replace(/\s+/g, "");
+  if (!q) { el.style.display = "none"; return; }
+  const r = poScopeStores().filter(s => String(s.name || "").toLowerCase().replace(/\s+/g, "").includes(q) || String(s.code || "").toLowerCase().includes(q)).slice(0, 8);
+  PO.sug = r;
+  el.innerHTML = r.length ? r.map((s, i) => `<button class="po-it" onclick="poStoreChange(${i})"><span style="flex:1">${escapeHtml(s.name)}</span><span style="font-size:11px;color:#5A6678;font-weight:500">${escapeHtml(s.team || "")}</span></button>`).join("")
+    : `<div class="po-it blk" style="min-height:44px">검색 결과가 없습니다</div>`;
+  el.style.display = "block";
+}
+function poStoreChange(i) {
+  const s = (PO.sug || [])[i]; if (!s) return;
+  PO.store = s.code; PO.pick = null; PO.kw = ""; PO.memo = ""; PO.editCode = "";
+  const el = document.getElementById("poSug"); if (el) el.style.display = "none";
+  poPaintStoreBox(); poPaintInput(document.getElementById("poBody"));
+}
+function poStoreClear() {
+  PO.store = ""; PO.pick = null; PO.memo = "";
+  poPaintInput(document.getElementById("poBody"));
+  const k = document.getElementById("poSKw"); if (k) k.focus();
+}
+function poNorm(x) { return String(x || "").toLowerCase().replace(/\s+/g, ""); }
+function poParseMemo(text) {
+  const ok = new Map(), bad = [];
+  String(text || "").split(/\r?\n/).forEach(raw => {
+    const line = raw.trim(); if (!line) return;
+    const m = line.match(/^(.+?)\s*[:=x×*]?\s*(\d{1,4})\s*(?:개|박스|봉|box|bag|ea)?$/i);
+    if (!m) { bad.push([raw, "수량을 찾을 수 없음"]); return; }
+    const key = poNorm(m[1]), qty = parseInt(m[2], 10);
+    if (!(qty >= 1)) { bad.push([raw, "수량이 1 이상이어야 함"]); return; }
+    let hit = PO.items.filter(i => poNorm(i.name) === key);
+    if (!hit.length) hit = PO.items.filter(i => poNorm(i.name).includes(key));
+    if (!hit.length) { bad.push([raw, "품목을 찾을 수 없음"]); return; }
+    if (hit.length > 1) { bad.push([raw, "품목이 여러 개: " + hit.slice(0, 3).map(i => i.name).join(", ") + (hit.length > 3 ? " …" : "")]); return; }
+    const it = hit[0];
+    if (it.blocked) { bad.push([raw, "선출고 불가 품목"]); return; }
+    if (it.ckf && poCkfOn()) { bad.push([raw, "계육 마감됨"]); return; }
+    const k = String(it.code), o = ok.get(k) || { it, qty: 0, raws: [] };
+    o.qty += qty; o.raws.push(raw); ok.set(k, o);
+  });
+  return { ok: Array.from(ok.values()), bad };
+}
+async function poMemoSave() {
+  if (!PO.store) { alert("매장을 먼저 선택하세요."); return; }
+  const st = PO.stores.find(s => s.code === PO.store); if (!st) return;
+  const ta = document.getElementById("poMemo"), res = document.getElementById("poMemoRes");
+  PO.memo = ta ? ta.value : "";
+  try { if (!(await poFreshRound())) { alert("접수가 마감되었습니다."); render(); return; } } catch (e) { alert("확인 실패: " + (e.message || e)); return; }
+  const r = poParseMemo(PO.memo);
+  if (!r.ok.length) { if (res) res.innerHTML = r.bad.length ? poMemoBad(r.bad, 0) : `<div class="rv-note">입력된 내용이 없습니다.</div>`; return; }
+  try {
+    if (!(await poFreshRound())) { alert("접수가 마감되었습니다."); render(); return; }
+    const id = `${PO.round.id}__${st.code}`;
+    const snap = await getDoc(doc(db, "preorders", id));
+    const cur = snap.exists() ? snap.data() : null;
+    const lines = Object.assign({}, cur ? cur.lines : {});
+    const now = Date.now();
+    r.ok.forEach((o, n) => {
+      const k = String(o.it.code), prev = lines[k];
+      lines[k] = { code: k, name: o.it.name, unit: o.it.unit || "", qty: Math.min(9999, (prev ? prev.qty : 0) + o.qty), t: prev ? prev.t : now + n };
+    });
+    const data = Object.assign({}, cur || {}, { roundId: PO.round.id, storeCode: st.code, storeName: st.name, team: st.team || "", sv: st.sv || "", lines,
+      updatedBy: _currentUser.uid, updatedByName: _authName, updatedAt: now });
+    await setDoc(doc(db, "preorders", id), data);
+    const i = PO.docs.findIndex(d => d.storeCode === st.code);
+    if (i >= 0) PO.docs[i] = data; else PO.docs.push(data);
+    PO.memo = r.bad.map(b => b[0]).join("\n");
+    if (ta) ta.value = PO.memo;
+    if (res) res.innerHTML = `<div style="background:#E6FFFA;border-radius:12px;padding:10px 14px;font-size:12px;color:#285E61;line-height:1.5">✓ ${r.ok.length}개 품목 저장됨${r.ok.map(o => `<br>· ${escapeHtml(o.it.name)} ${o.qty}`).join("")}</div>` + (r.bad.length ? poMemoBad(r.bad, 8) : "");
+    poPaintCur();
+  } catch (e) { alert("저장 실패: " + (e.message || e)); }
+}
+function poMemoBad(bad, mt) {
+  return `<div style="margin-top:${mt}px;background:#FFF5F5;border-radius:12px;padding:10px 14px;font-size:12px;color:#C53030;line-height:1.6"><b>저장되지 않은 줄 ${bad.length}개</b> (메모 칸에 남겨둠)${bad.map(b => `<br>· ${escapeHtml(b[0].trim())} — ${escapeHtml(b[1])}`).join("")}</div>`;
+}
+function poKwInput(v) { PO.kw = v; poPaintCand(); }
+function poKwXSync() { const x = document.getElementById("poKwX"); if (x) x.style.display = (PO.kw.trim() || PO.pick) ? "block" : "none"; }
+function poKwClear() {
+  PO.kw = ""; PO.pick = null;
+  const k = document.getElementById("poKw"); if (k) k.value = "";
+  poPaintCand(); poPaintPick();
+}
+function poPaintCand() {
+  const el = document.getElementById("poCand"); if (!el) return;
+  const kw = PO.kw.trim().toLowerCase();
+  poKwXSync();
+  if (!kw) { el.innerHTML = `<div class="rv-note">품목명 또는 품목코드를 입력하면 목록이 나타납니다.</div>`; PO.cand = []; return; }
+  PO.cand = PO.items.filter(i => String(i.name).toLowerCase().includes(kw) || String(i.code).toLowerCase().includes(kw)).slice(0, 30);
+  if (!PO.cand.length) { el.innerHTML = `<div class="rv-note">검색 결과가 없습니다.</div>`; return; }
+  el.innerHTML = `<div class="po-list">${PO.cand.map((i, n) => (i.blocked || (i.ckf && poCkfOn()))
+    ? `<div class="po-it blk"><span style="flex:1;text-decoration:line-through">${escapeHtml(i.name)}</span><span style="font-size:10px;color:#A0AEC0;margin-right:8px">${escapeHtml(String(i.code))}</span><span style="font-size:11px;font-weight:700;color:#C53030;background:#FFF5F5;border-radius:8px;padding:2px 8px">${i.blocked ? "선출고 불가" : "계육 마감"}</span></div>`
+    : `<button class="po-it" onclick="poPickItem(${n})"><span style="flex:1">${escapeHtml(i.name)}${i.note ? ` <span style="font-size:10px;color:#B7791F;font-weight:700">${escapeHtml(i.note)}</span>` : ""}</span><span style="font-size:10px;color:#718096;margin-right:8px">${escapeHtml(String(i.code))}</span><span style="font-size:11px;color:#5A6678">${escapeHtml(i.unit || "")}</span></button>`).join("")}</div>`;
+}
+function poPickItem(n) {
+  const it = PO.cand[n]; if (!it || it.blocked || (it.ckf && poCkfOn())) return;
+  PO.pick = it; PO.qty = 1; poPaintPick();
+  setTimeout(() => { const q = document.getElementById("poQty"); if (q) { q.focus(); q.select(); } }, 0);
+}
+function poPaintPick() {
+  poKwXSync();
+  const el = document.getElementById("poPick"); if (!el) return;
+  const it = PO.pick;
+  if (!it) { el.innerHTML = ""; return; }
+  const st = PO.stores.find(s => s.code === PO.store);
+  el.innerHTML = `<div class="po-card" style="border-color:#1A202C;display:flex;flex-direction:column;gap:10px">
+    <div style="font-size:15px;font-weight:800;display:flex;align-items:baseline;gap:6px"><span style="flex:1">${escapeHtml(it.name)} <span style="font-size:11px;font-weight:600;color:#5A6678">${escapeHtml(it.unit || "")}</span></span><span style="font-size:11px;font-weight:600;color:#718096">${escapeHtml(String(it.code))}</span></div>
+    <div style="display:flex;align-items:center;gap:10px"><span style="font-size:13px;color:#5A6678;flex:1">수량</span>
+      <button class="po-sq" aria-label="감소" onclick="poQtyStep(-1)">−</button>
+      <input id="poQty" type="number" inputmode="numeric" min="1" value="${PO.qty}" aria-label="수량" oninput="poQtyInput(this.value)" style="width:64px;height:44px;box-sizing:border-box;text-align:center;border:1.5px solid var(--border);border-radius:12px;font-size:16px;font-weight:800;font-family:inherit" />
+      <button class="po-sq" aria-label="증가" onclick="poQtyStep(1)">+</button></div>
+    <button class="po-btn" onclick="poAdd()">${escapeHtml(st ? st.name : "")}에 추가</button></div>`;
+}
+function poQtyStep(d) { PO.qty = Math.max(1, (parseInt(PO.qty, 10) || 0) + d); const q = document.getElementById("poQty"); if (q) q.value = PO.qty; }
+function poQtyInput(v) { PO.qty = parseInt(v, 10) || 0; }
+async function poFreshRound() {
+  const rs = await getDoc(doc(db, "settings", "preorderRound"));
+  PO.round = rs.exists() ? rs.data() : null;
+  return poOpen();
+}
+async function poAdd() {
+  const it = PO.pick, qty = parseInt(PO.qty, 10);
+  if (!it || it.blocked) return;
+  if (!(qty >= 1) || qty > 9999) { alert("수량은 1~9999 사이로 입력하세요."); return; }
+  const st = PO.stores.find(s => s.code === PO.store); if (!st) return;
+  try {
+    if (!(await poFreshRound())) { alert("접수가 마감되었습니다."); render(); return; }
+    if (it.ckf && poCkfOn()) { alert("계육 접수가 마감되었습니다."); PO.pick = null; poPaintCand(); poPaintPick(); return; }
+    const id = `${PO.round.id}__${st.code}`;
+    const snap = await getDoc(doc(db, "preorders", id));
+    const cur = snap.exists() ? snap.data() : null;
+    const lines = Object.assign({}, cur ? cur.lines : {});
+    const key = String(it.code);
+    const prev = lines[key] ? lines[key].qty : 0;
+    lines[key] = { code: key, name: it.name, unit: it.unit || "", qty: Math.min(9999, prev + qty), t: lines[key] ? lines[key].t : Date.now() };
+    const data = Object.assign({}, cur || {}, { roundId: PO.round.id, storeCode: st.code, storeName: st.name, team: st.team || "", sv: st.sv || "", lines,
+      updatedBy: _currentUser.uid, updatedByName: _authName, updatedAt: Date.now() });
+    await setDoc(doc(db, "preorders", id), data);
+    const i = PO.docs.findIndex(d => d.storeCode === st.code);
+    if (i >= 0) PO.docs[i] = data; else PO.docs.push(data);
+    PO.pick = null; PO.kw = "";
+    const kw = document.getElementById("poKw"); if (kw) kw.value = "";
+    poPaintCand(); poPaintPick(); poPaintCur();
+  } catch (e) { alert("저장 실패: " + (e.message || e)); }
+}
+function poPaintCur() {
+  poPaintSubmit();
+  const el = document.getElementById("poCur"); if (!el) return;
+  const d = poDocOf(PO.store), ls = poLines(d), locked = !poOpen(), ck = poCkfOn() ? poCkfCodes() : new Set();
+  const u = l => escapeHtml(l.unit || "");
+  const row = l => {
+    const c = escapeHtml(String(l.code)), lock = ck.has(String(l.code));
+    if (!locked && PO.editCode === String(l.code)) {
+      return `<div class="po-row" style="min-height:56px;gap:6px"><span style="flex:1;font-weight:700;min-width:0">${escapeHtml(l.name)}<br><span style="font-size:10px;color:#718096;font-weight:500">${escapeHtml(String(l.code))}</span></span>
+        <input id="poEditQty" type="number" inputmode="numeric" min="1" value="${l.qty}" aria-label="수량" onkeydown="if(event.key==='Enter')poEditSave('${c}')" style="width:64px;height:40px;box-sizing:border-box;text-align:center;border:1.5px solid #1A202C;border-radius:10px;font-size:15px;font-weight:800;font-family:inherit" />
+        <button class="po-x" style="width:auto;border-radius:10px;padding:0 12px;height:40px;background:#1A202C;color:#fff;font-weight:700" onclick="poEditSave('${c}')">저장</button>
+        <button class="po-x" style="width:auto;border-radius:10px;padding:0 10px;height:40px" onclick="poEditCancel()">취소</button></div>`;
+    }
+    const act = locked ? "" : lock ? `<span style="width:36px;text-align:center;font-size:10px;color:#B7791F;font-weight:700">계육<br>마감</span>`
+      : `<button class="po-x" aria-label="수량 수정" style="margin-right:6px" onclick="poEditLine('${c}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button><button class="po-x" aria-label="삭제" onclick="poDelLine('${escapeHtml(PO.store)}','${c}')">✕</button>`;
+    return `<div class="po-row" style="min-height:48px"><span style="flex:1;font-weight:700;min-width:0">${escapeHtml(l.name)}</span><span style="font-size:10px;color:#718096;margin-right:8px">${escapeHtml(String(l.code))}</span><span style="font-weight:800;margin-right:${act ? 10 : 0}px">${l.qty} <span style="font-size:11px;color:#5A6678;font-weight:500">${u(l)}</span></span>${act}</div>`;
+  };
+  el.innerHTML = `<div class="po-lbl">이 매장 입력 목록 (${ls.length})</div>` + (ls.length
+    ? `<div class="po-list">${ls.map(row).join("")}</div><div class="rv-note" style="margin-top:6px">같은 매장에 같은 품목을 다시 추가하면 수량이 합쳐집니다. ✎로 수량을 직접 고칠 수 있습니다.</div>`
+    : `<div class="rv-note">아직 입력한 품목이 없습니다.</div>`);
+  if (PO.editCode) { const q = document.getElementById("poEditQty"); if (q && !q._f) { q._f = 1; q.focus(); q.select(); } }
+}
+function poPaintSubmit() {
+  const el = document.getElementById("poSubmit"); if (!el) return;
+  if (!PO.store || !poOpen()) { el.innerHTML = ""; return; }
+  const d = poDocOf(PO.store), stt = poState(d), n = d ? Object.keys(d.lines || {}).length : 0;
+  const info = { none: ["입력한 품목이 없습니다", "#718096", "#EDF2F7"], draft: [`임시저장 ${n}건 — 아직 발주에 반영되지 않았습니다`, "#7B341E", "#FFFAF0"],
+    changed: ["접수 후 변경됨 — 다시 누르기 전까지 이전 접수 내용이 반영됩니다", "#7B341E", "#FFFAF0"], done: [`발주접수 완료 · ${d && d.subBy ? escapeHtml(d.subBy) + " " : ""}${poHmd(d && d.subAt)} · ${n}건`, "#285E61", "#E6FFFA"] }[stt];
+  const canBtn = stt === "draft" || stt === "changed" || (stt === "none" && d && d.sub);
+  el.innerHTML = `<div style="background:${info[2]};border-radius:12px;padding:10px 14px;font-size:12px;color:${info[1]};font-weight:700;margin-bottom:8px">${info[0]}</div>` +
+    (stt === "done" ? "" : `<button class="po-btn" style="height:52px;background:#E53E3E;margin-bottom:6px" ${canBtn ? "" : "disabled"} onclick="poSubmit()">${stt === "changed" ? "변경 내용 발주접수" : "발주접수"}</button>`) + `<div style="height:8px"></div>`;
+}
+async function poSubmit() {
+  if (!PO.store) return;
+  const st = PO.stores.find(x => x.code === PO.store); if (!st) return;
+  try {
+    if (!(await poFreshRound())) { alert("접수가 마감되었습니다."); render(); return; }
+    const id = `${PO.round.id}__${st.code}`, snap = await getDoc(doc(db, "preorders", id));
+    if (!snap.exists()) { alert("입력한 품목이 없습니다."); return; }
+    const cur = snap.data(), lines = cur.lines || {}, old = cur.sub || {};
+    const ck = poCkfOn() ? poCkfCodes() : new Set();
+    const sub = {};
+    Object.keys(lines).forEach(k => { if (!ck.has(String(k))) sub[k] = lines[k]; });
+    Object.keys(old).forEach(k => { if (ck.has(String(k))) sub[k] = old[k]; }); // 계육 마감 후에는 기존 접수분만 유지
+    const dropped = Object.keys(lines).filter(k => ck.has(String(k)) && !old[k]).length;
+    if (!Object.keys(sub).length) {
+      if (!confirm("접수할 품목이 없습니다. 이 매장의 접수를 취소(입력 내용 삭제)할까요?")) return;
+      if (Object.keys(lines).some(k => ck.has(String(k)))) { alert("계육 마감된 품목이 있어 취소할 수 없습니다."); return; }
+      await deleteDoc(doc(db, "preorders", id)); PO.docs = PO.docs.filter(x => x.storeCode !== st.code); poPaintCur(); return;
+    }
+    if (dropped && !confirm(`계육 마감 이후이므로 아직 접수되지 않은 계육 ${dropped}건은 발주에 반영되지 않습니다. 계속할까요?`)) return;
+    const upd = { sub, subAt: Date.now(), subBy: _authName };
+    await updateDoc(doc(db, "preorders", id), upd);
+    const nd = Object.assign({}, cur, upd), i = PO.docs.findIndex(x => x.storeCode === st.code);
+    if (i >= 0) PO.docs[i] = nd; else PO.docs.push(nd);
+    poPaintCur(); alert("발주접수 되었습니다.");
+  } catch (e) { alert("발주접수 실패: " + (e.message || e)); }
+}
+function poEditLine(code) { PO.editCode = String(code); poPaintCur(); }
+function poEditCancel() { PO.editCode = ""; poPaintCur(); }
+async function poEditSave(code) {
+  const q = document.getElementById("poEditQty"), qty = parseInt(q && q.value, 10);
+  if (!(qty >= 1) || qty > 9999) { alert("수량은 1~9999 사이로 입력하세요."); return; }
+  try {
+    if (!(await poFreshRound())) { alert("접수가 마감되었습니다."); render(); return; }
+    if (poCkfOn() && poCkfCodes().has(String(code))) { alert("계육 접수가 마감되어 수정할 수 없습니다."); PO.editCode = ""; poPaintCur(); return; }
+    const id = `${PO.round.id}__${PO.store}`;
+    const snap = await getDoc(doc(db, "preorders", id));
+    if (!snap.exists() || !(snap.data().lines || {})[code]) { alert("해당 품목이 이미 삭제되었습니다."); PO.editCode = ""; await poLoad(); poPaintCur(); return; }
+    const cur = snap.data(), lines = Object.assign({}, cur.lines);
+    lines[code] = Object.assign({}, lines[code], { qty });
+    const nd = Object.assign({}, cur, { lines, updatedBy: _currentUser.uid, updatedByName: _authName, updatedAt: Date.now() });
+    await setDoc(doc(db, "preorders", id), nd);
+    const i = PO.docs.findIndex(x => x.storeCode === PO.store);
+    if (i >= 0) PO.docs[i] = nd; else PO.docs.push(nd);
+    PO.editCode = ""; poPaintCur();
+  } catch (e) { alert("저장 실패: " + (e.message || e)); }
+}
+async function poDelLine(storeCode, code) {
+  try {
+    if (!(await poFreshRound())) { alert("접수가 마감되었습니다."); render(); return; }
+    if (poCkfOn() && poCkfCodes().has(String(code))) { alert("계육 접수가 마감되어 삭제할 수 없습니다."); return; }
+    const d = poDocOf(storeCode); if (!d) return;
+    const lines = Object.assign({}, d.lines); delete lines[code];
+    const id = `${d.roundId}__${storeCode}`;
+    if (!Object.keys(lines).length && !(d.sub && Object.keys(d.sub).length)) { await deleteDoc(doc(db, "preorders", id)); PO.docs = PO.docs.filter(x => x.storeCode !== storeCode); }
+    else { const nd = Object.assign({}, d, { lines, updatedBy: _currentUser.uid, updatedByName: _authName, updatedAt: Date.now() }); await setDoc(doc(db, "preorders", id), nd); PO.docs[PO.docs.indexOf(d)] = nd; }
+    poPaintCur(); if (PO.tab === "mine") poPaint();
+  } catch (e) { alert("삭제 실패: " + (e.message || e)); }
+}
+async function poDelStore(storeCode) {
+  if (!confirm("이 매장의 선출고 입력을 모두 삭제할까요?")) return;
+  try {
+    if (!(await poFreshRound())) { alert("접수가 마감되었습니다."); render(); return; }
+    const d0 = poDocOf(storeCode), id = `${PO.round.id}__${storeCode}`;
+    const ck = poCkfOn() ? poCkfCodes() : new Set();
+    const keep = {}; if (d0) Object.keys(d0.lines || {}).forEach(k => { if (ck.has(String(k))) keep[k] = d0.lines[k]; });
+    if (Object.keys(keep).length) {
+      const nd = Object.assign({}, d0, { lines: keep, updatedBy: _currentUser.uid, updatedByName: _authName, updatedAt: Date.now() });
+      await setDoc(doc(db, "preorders", id), nd); PO.docs[PO.docs.indexOf(d0)] = nd;
+      alert("계육 품목은 계육 마감으로 삭제되지 않고 남았습니다.");
+    } else { await deleteDoc(doc(db, "preorders", id)); PO.docs = PO.docs.filter(x => x.storeCode !== storeCode); }
+    poPaint();
+  } catch (e) { alert("삭제 실패: " + (e.message || e)); }
+}
+function poEditStore(storeCode) { PO.store = storeCode; PO.pick = null; PO.kw = ""; PO.tab = "input"; render(); }
+
+// ── 접수 내역 탭 (전체 / 접수 완료 / 임시저장) ──
+// 접수 완료 = 발주접수를 한 번이라도 누른 매장(이후 수정해도 유지) · 임시저장 = 한 번도 접수하지 않은 매장
+function poMineDocs() {
+  const codes = new Set(poScopeStores().map(s => s.code));
+  return PO.docs.filter(d => codes.has(d.storeCode) && poState(d) !== "none")
+    .sort((a, c) => String(a.storeName).localeCompare(String(c.storeName), "ko"));
+}
+function poIsDone(d) { return !!(d.sub && Object.keys(d.sub).length) || poState(d) === "changed"; }
+function poPaintMine(b) {
+  const all = poMineDocs();
+  const teams = Array.from(new Set(all.map(d => d.team || "(팀 없음)"))).sort((a, c) => a.localeCompare(c, "ko", { numeric: true }));
+  if (PO.mineTeam && !teams.includes(PO.mineTeam)) PO.mineTeam = "";
+  const showTeam = (_authRole === "gl" || _authRole === "admin") && teams.length > 1;
+  b.innerHTML = poBanner() + `<div id="poMineTabs"></div><div id="poMineKpi" style="margin-top:12px"></div>
+    ${showTeam ? `<select class="rv-sel" aria-label="보기 범위" style="width:100%;height:44px;margin-top:12px" onchange="poMineTeam(this.value)"><option value="">${_authRole === "admin" ? "관리자" : "그룹장"} 보기: 전체 팀</option>${teams.map(t => `<option value="${escapeHtml(t)}" ${t === PO.mineTeam ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}</select>` : ""}
+    <input type="text" class="po-in" id="poMineKw" placeholder="매장명 검색" value="${escapeHtml(PO.mineKw || "")}" oninput="poMineKwInput(this.value)" autocomplete="off" style="height:44px;margin-top:12px;font-size:14px" />
+    <div id="poMineList" style="margin-top:12px"></div>`;
+  poPaintMineParts();
+}
+function poMineTeam(v) { PO.mineTeam = v; poPaintMineParts(); }
+function poMineKwInput(v) { PO.mineKw = v; poPaintMineParts(); }
+function poMineSet(t) { PO.mineTab = t; poPaintMineParts(); }
+function poPaintMineParts() {
+  const tabsEl = document.getElementById("poMineTabs"); if (!tabsEl) return;
+  const tm = PO.mineTeam || "";
+  const base = poMineDocs().filter(d => !tm || (d.team || "(팀 없음)") === tm);
+  const done = base.filter(poIsDone), draft = base.filter(d => !poIsDone(d));
+  const tab = PO.mineTab || "all";
+  const btn = (k, label, n, hl) => `<button onclick="poMineSet('${k}')" style="flex:1;height:44px;border:0;border-radius:9px;cursor:pointer;font-family:inherit;font-size:14px;${tab === k ? "background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:800;color:#1A202C" : "background:none;font-weight:600;color:#5A6678"}">${label} <span style="display:inline-block;min-width:24px;font-size:12px;border-radius:999px;padding:1px 7px;margin-left:2px;${hl ? "background:#FFFAF0;color:#7B341E;border:1px solid #F6AD55;padding:0 7px" : tab === k ? "background:#1A202C;color:#fff" : "background:#E2E8F0;color:#2D3748"}">${n}</span></button>`;
+  tabsEl.innerHTML = `<div style="display:flex;background:#EDF2F7;border-radius:12px;padding:4px;gap:4px">${btn("all", "전체", base.length)}${btn("done", "접수 완료", done.length)}${btn("draft", "임시저장", draft.length, true)}</div>`;
+  const sum = ds => ds.reduce((n, d) => n + poSubLines(d).length, 0), sumDraft = ds => ds.reduce((n, d) => n + poLines(d).length, 0);
+  const kp = (l, v, u) => `<div class="rv-kpi" style="flex:1"><div class="l">${l}</div><div class="v">${v}<small> ${u}</small></div></div>`;
+  const kpiEl = document.getElementById("poMineKpi");
+  if (kpiEl) kpiEl.innerHTML = tab === "all"
+    ? `<div class="po-card" style="padding:10px 14px;display:flex;align-items:center;gap:6px;font-size:13px;flex-wrap:wrap"><b>입력 매장 ${base.length}</b><span style="color:#718096">=</span><span style="color:#285E61;font-weight:700">접수 ${done.length}</span><span style="color:#718096">+</span><span style="color:#7B341E;font-weight:700">임시저장 ${draft.length}</span></div>`
+    : tab === "done" ? `<div style="display:flex;gap:8px">${kp("접수 매장", done.length, "개")}${kp("접수 품목 건수", sum(done), "건")}</div>`
+    : `<div class="ban-o" style="background:#FFFAF0;border:1.5px solid #F6AD55;border-radius:12px;padding:10px 14px;font-size:12px;color:#7B341E;line-height:1.5;margin-bottom:8px"><b>아직 발주에 반영되지 않았습니다.</b><br>매장별로 [발주접수]를 눌러야 RAW에 포함됩니다.</div><div style="display:flex;gap:8px">${kp("미접수 매장", draft.length, "개")}${kp("미접수 품목 건수", sumDraft(draft), "건")}</div>`;
+  const kw = poNorm(PO.mineKw || "");
+  let list = tab === "done" ? done : tab === "draft" ? draft : base;
+  if (kw) list = list.filter(d => poNorm(d.storeName).includes(kw));
+  const el = document.getElementById("poMineList"); if (!el) return;
+  const locked = !poOpen();
+  const rowH = (l) => `<div class="po-row"><span style="flex:1">${escapeHtml(l.name)}</span><span style="font-size:10px;color:#718096;margin-right:8px">${escapeHtml(String(l.code))}</span><b>${l.qty}</b><span style="font-size:11px;color:#5A6678;margin-left:4px;min-width:28px">${escapeHtml(l.unit || "")}</span></div>`;
+  el.innerHTML = list.length ? list.map(d => {
+    const isDone = poIsDone(d), stt = poState(d), chg = stt === "changed";
+    const c = escapeHtml(d.storeCode);
+    const badge = !isDone ? `<span class="rv-chip" style="background:#FFFAF0;color:#7B341E;border:1px solid #F6AD55">${locked ? "임시저장 · 미반영" : "임시저장"}</span>`
+      : chg ? `<span class="rv-chip" style="background:#FFFAF0;color:#7B341E;border:1px solid #F6AD55">변경됨 · 재접수 필요</span>`
+      : `<span class="rv-chip" style="background:#E6FFFA;color:#285E61">접수 완료</span>`;
+    const lines = isDone ? poSubLines(d) : poLines(d);
+    const meta = t => `<div style="padding:6px 14px 0;font-size:11px;color:#5A6678">${t}</div>`;
+    const who = d.subBy ? ` ${escapeHtml(d.subBy)}` : "";
+    const sub = !isDone ? meta(`${escapeHtml(d.team || "")} · 입력 ${escapeHtml(d.updatedByName || "")} · ${poHmd(d.updatedAt)}`)
+      : meta(`${escapeHtml(d.team || "")} · 접수${who} · ${poHmd(d.subAt)}`) + (chg ? meta(`마지막 수정 ${escapeHtml(d.updatedByName || "")} · ${poHmd(d.updatedAt)}`) + (!locked ? `<div style="padding:6px 14px 0;font-size:11px;color:#7B341E;line-height:1.5">발주에는 아래 <b>접수된 내용</b>이 반영됩니다. 이후 입력이 수정되어 재접수가 필요합니다.</div>` : "") : "");
+    const btns = locked ? "" : `<div style="display:flex;gap:8px;padding:8px 14px 12px"><button class="po-btn o" style="height:44px;font-size:13px" onclick="poEditStore('${c}')">${isDone ? "수정" : "수정 · 발주접수하러 가기"}</button><button class="po-btn o" style="height:44px;font-size:13px;color:#C53030;border-color:#FEB2B2;${isDone ? "" : "flex:0 0 112px;width:auto"}" onclick="poDelStore('${c}')">${isDone ? "매장 입력 삭제" : "입력 삭제"}</button></div>`;
+    return `<div class="po-card" style="padding:0;overflow:hidden;margin-bottom:12px;${chg ? "border-color:#F6AD55" : ""}"><div style="display:flex;align-items:center;gap:6px;padding:12px 14px;background:${chg ? "#FFFAF0" : "#F7FAFC"};border-bottom:1px solid #EDF2F7"><span style="flex:1;font-size:14px;font-weight:800">${escapeHtml(d.storeName)}</span>${badge}</div>${sub}${lines.map(rowH).join("")}${btns}</div>`;
+  }).join("") : `<div class="rv-note">${kw ? "검색 결과가 없습니다." : tab === "draft" ? "임시저장 중인 매장이 없습니다." : "내역이 없습니다."}</div>`;
+  if (list.length && locked) el.innerHTML += `<div style="background:#EDF2F7;border-radius:12px;padding:12px 14px;font-size:12px;color:#4A5568">접수 마감 — 잠김</div>`;
+}
+
+// ── 접수 이력(누적) 탭 (ADMIN) — 월 달력 + 회차 카드 + 엑셀 다운로드(접수 완료분만) ──
+function poHistInit() { if (!PO.h) { const d = new Date(); PO.h = { ym: `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`, rounds: [], sel: "", err: "" }; } }
+function poPaintHist(b) {
+  poHistInit();
+  b.innerHTML = `<div id="poHistBox"><p class="loading-text">불러오는 중...</p></div>`;
+  poHistLoad();
+}
+async function poHistLoad() {
+  const ym = PO.h.ym;
+  try {
+    const qs = await getDocs(query(collection(db, "preorderRounds"), where("dateKey", ">=", ym + "01"), where("dateKey", "<=", ym + "31")));
+    const arr = []; qs.forEach(d => arr.push(d.data()));
+    arr.sort((a, c) => (a.startedAt || 0) - (c.startedAt || 0));
+    if (ym !== PO.h.ym) return;
+    PO.h.rounds = arr; PO.h.err = "";
+  } catch (e) { if (ym !== PO.h.ym) return; PO.h.rounds = []; PO.h.err = e.message || String(e); }
+  if (PO.tab === "hist") poHistPaint();
+}
+function poHistMonth(d) {
+  poHistInit();
+  let y = parseInt(PO.h.ym.slice(0, 4), 10), m = parseInt(PO.h.ym.slice(4), 10) + d;
+  if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
+  PO.h.ym = `${y}${String(m).padStart(2, "0")}`; PO.h.sel = "";
+  const bx = document.getElementById("poHistBox"); if (bx) bx.innerHTML = `<p class="loading-text">불러오는 중...</p>`;
+  poHistLoad();
+}
+function poHistPick(k) { PO.h.sel = k; poHistPaint(); }
+function poHistPaint() {
+  const bx = document.getElementById("poHistBox"); if (!bx) return;
+  const h = PO.h, y = parseInt(h.ym.slice(0, 4), 10), m = parseInt(h.ym.slice(4), 10);
+  const by = {}; h.rounds.forEach(r => { (by[r.dateKey] = by[r.dateKey] || []).push(r); });
+  if (!h.sel || h.sel.slice(0, 6) !== h.ym) { const ks = Object.keys(by).sort(); h.sel = ks.length ? ks[ks.length - 1] : ""; }
+  const t = new Date(), todayKey = `${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, "0")}${String(t.getDate()).padStart(2, "0")}`;
+  const first = new Date(y, m - 1, 1).getDay(), days = new Date(y, m, 0).getDate();
+  let cells = "";
+  for (let i = 0; i < first; i++) cells += `<span></span>`;
+  for (let d = 1; d <= days; d++) {
+    const k = `${h.ym}${String(d).padStart(2, "0")}`, rs = by[k] || [], isSel = k === h.sel, isToday = k === todayKey;
+    const stores = rs.reduce((n, r) => n + ((r.stats && r.stats.stores) || 0), 0), openR = rs.some(r => r.status === "open");
+    const sub = rs.length ? (openR ? "진행 중" : String(stores)) : isToday ? "·" : "";
+    const subColor = openR ? "#D69E0E" : rs.length ? "#1A202C" : "#CBD5E0";
+    cells += `<button onclick="poHistPick('${k}')" style="display:flex;flex-direction:column;align-items:center;height:54px;border:0;background:none;padding:2px 0;cursor:pointer;font-family:inherit"><span style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;font-size:14px;box-sizing:border-box;${isSel ? "background:#1A202C;color:#fff;font-weight:800" : isToday ? "border:1.5px solid #1A202C;font-weight:800;color:#1A202C" : rs.length ? "font-weight:700;color:#1A202C" : "color:#A0AEC0"}">${d}</span><span style="font-size:10px;margin-top:1px;font-weight:${rs.length ? 700 : 400};color:${subColor}">${sub}</span></button>`;
+  }
+  const arrow = (d, path) => `<button aria-label="${d < 0 ? "이전 달" : "다음 달"}" onclick="poHistMonth(${d})" style="width:44px;height:44px;border-radius:50%;border:0;background:#EDF2F7;cursor:pointer;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2D3748" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}"/></svg></button>`;
+  const selR = h.sel ? (by[h.sel] || []) : [];
+  const wd = h.sel ? "일월화수목금토"[new Date(parseInt(h.sel.slice(0, 4), 10), parseInt(h.sel.slice(4, 6), 10) - 1, parseInt(h.sel.slice(6), 10)).getDay()] : "";
+  const hm = v => v ? poHm(v) : "없음";
+  const kp = (l, v) => `<div style="flex:1;border:1.5px solid #E2E8F0;border-radius:12px;padding:8px 10px"><div style="font-size:11px;color:#5A6678">${l}</div><div style="font-size:18px;font-weight:800">${v}</div></div>`;
+  const card = (r, i) => {
+    const multi = selR.length > 1, st = r.stats, closed = r.status === "closed";
+    const suffix = multi ? "_" + (i + 1) : "";
+    return `<div class="po-card" style="border:2px solid #1A202C;display:flex;flex-direction:column;gap:10px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px;font-weight:800">${multi ? (i + 1) + "회차" : escapeHtml(r.reqDate || "") + " 선출고"}</span><span style="font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;${closed ? "background:#EDF2F7;color:#4A5568" : "background:#E6FFFA;color:#285E61"}">${closed ? "접수 마감" : "접수 중"}</span></div>
+      <div style="font-size:12px;color:#5A6678;line-height:1.7">시작 ${hm(r.startedAt)} · 계육 마감 ${hm(r.ckfClosedAt)} · 전체 마감 ${hm(r.closedAt)}</div>
+      <div style="display:flex;gap:8px">${kp("접수 매장", st ? st.stores : "-")}${kp("품목 건수", st ? st.lines : "-")}${kp("품목 종류", st ? st.kinds : "-")}</div>
+      ${closed && st ? `<button class="po-btn b" style="height:52px" onclick="poHistDownload('${escapeHtml(r.id)}','all','${suffix}')">선출고_${escapeHtml(r.dateKey)}${suffix}.xlsx 다운로드</button>
+        ${st.ckfLines ? `<button class="po-btn o" style="height:44px;font-size:13px" onclick="poHistDownload('${escapeHtml(r.id)}','ckf','${suffix}')">계육만 받기 (${st.ckfLines}행)</button>` : ""}`
+        : `<div class="rv-note">${closed ? "요약이 없는 이전 기록입니다. (다운로드 불가)" : "접수 중인 회차입니다. 마감 후 다운로드할 수 있습니다."}</div>`}
+    </div>`;
+  };
+  bx.innerHTML = (h.err ? `<div style="background:#FFF5F5;border-radius:12px;padding:10px 14px;font-size:12px;color:#C53030;margin-bottom:12px">이력을 불러오지 못했습니다: ${escapeHtml(h.err)}<br>firestore.rules가 게시되었는지 확인하세요.</div>` : "") + `
+    <div class="po-card" style="padding:12px 10px 8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px 8px">${arrow(-1, "M15 18l-6-6 6-6")}<span style="font-size:16px;font-weight:800">${y}년 ${m}월</span>${arrow(1, "M9 18l6-6-6-6")}</div>
+      <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));text-align:center;font-size:11px;font-weight:700;color:#5A6678;padding-bottom:4px"><span style="color:#C53030">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span style="color:#2B6CB0">토</span></div>
+      <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));row-gap:2px">${cells}</div>
+      <div style="display:flex;gap:14px;justify-content:center;font-size:11px;color:#5A6678;padding:8px 0 4px"><span><b style="color:#1A202C">숫자</b> 접수 매장 수</span><span><b style="color:#D69E0E">진행 중</b> 접수 중인 회차</span></div>
+    </div>
+    ${h.sel ? `<div style="display:flex;align-items:center;gap:8px;margin:16px 0 10px"><span style="font-size:15px;font-weight:800">${h.sel.slice(0, 4)}.${h.sel.slice(4, 6)}.${h.sel.slice(6)} (${wd})</span><span style="font-size:12px;color:#5A6678">${selR.length}개 회차</span></div>` : ""}
+    ${selR.length ? selR.map(card).join("") : `<div class="rv-note" style="margin-top:12px">${h.sel ? "이 날짜의 접수 기록이 없습니다." : "이 달의 접수 기록이 없습니다."}</div>`}
+    <div class="rv-note" style="margin-top:6px;line-height:1.5">접수 완료분(발주접수를 누른 내용)만 포함됩니다. A 매장명 · B 품목 · C 수량<br>이력은 이 기능 적용 이후 시작한 회차부터 기록됩니다.</div>`;
+}
+async function poHistDownload(id, mode, suffix) {
+  const r = (PO.h.rounds || []).find(x => x.id === id); if (!r) return;
+  try {
+    await loadXLSX();
+    const qs = await getDocs(query(collection(db, "preorders"), where("roundId", "==", id)));
+    const docs = []; qs.forEach(d => docs.push(d.data()));
+    const order = new Map(PO.stores.map((s, i) => [s.code, i]));
+    docs.sort((a, c) => (order.get(a.storeCode) ?? 1e9) - (order.get(c.storeCode) ?? 1e9));
+    const ck = mode === "ckf" ? new Set((r.ckfCodes || []).map(String)) : null;
+    const rows = [];
+    docs.forEach(d => poSubLines(d).forEach(l => { if (!ck || ck.has(String(l.code))) rows.push([d.storeName, l.name, l.qty]); }));
+    if (!rows.length) { alert("다운로드할 접수 내역이 없습니다."); return; }
+    const ws = XLSX.utils.aoa_to_sheet([["매장명", "품목", "수량"]].concat(rows));
+    ws["!cols"] = [{ wch: 18 }, { wch: 22 }, { wch: 8 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "선출고");
+    XLSX.writeFile(wb, `${mode === "ckf" ? "계육" : ""}선출고_${r.dateKey}${suffix || ""}.xlsx`);
+  } catch (e) { alert("다운로드 실패: " + (e.message || e)); }
+}
+
+// ── 접수 관리 탭 (ADMIN) ──
+function poStats() {
+  const stores = PO.docs.filter(d => d.sub && Object.keys(d.sub).length).length, lines = PO.docs.reduce((n, d) => n + poSubLines(d).length, 0);
+  const kinds = new Set(); const byTeam = {}; const byItem = {};
+  PO.docs.filter(d => d.sub && Object.keys(d.sub).length).forEach(d => {
+    const t = d.team || "(팀 없음)"; byTeam[t] = byTeam[t] || { s: 0, n: 0 }; byTeam[t].s++;
+    poSubLines(d).forEach(l => { kinds.add(l.code); byTeam[t].n++; const o = byItem[l.code] = byItem[l.code] || { name: l.name, unit: l.unit, q: 0 }; o.q += l.qty; });
+  });
+  return { stores, lines, kinds: kinds.size, byTeam, byItem };
+}
+function poTeamSel() { return PO.teamDirty ? PO.teamSel : (poTeamsOn() ? PO.round.teams.slice() : null); }
+function poAdminSel() { return PO.teamDirty ? !!PO.adminOnlySel : poAdminOnly(); }
+function poTeamCard() {
+  const all = poAllTeams(), sel = poTeamSel(), adm = poAdminSel(), on = new Set(sel || all), isAll = !adm && !sel;
+  const chip = (t, act, label) => `<button onclick="${act}" aria-pressed="${t}" style="min-height:44px;border-radius:999px;padding:0 16px;font-size:14px;cursor:pointer;font-family:inherit;border:1.5px solid ${t ? "#1A202C" : "#CBD5E0"};background:${t ? "#1A202C" : "#fff"};color:${t ? "#fff" : "#2D3748"};font-weight:${t ? 800 : 600}">${escapeHtml(label)}</button>`;
+  const sum = adm ? "관리자만 접수" : isAll ? "전체 팀 접수" : Array.from(on).join(" · ") + " 접수";
+  return `<div class="po-card" style="margin-top:16px"><div style="display:flex;align-items:center;gap:8px"><span style="flex:1;font-size:15px;font-weight:800">접수 대상 팀</span><span style="font-size:12px;font-weight:700;color:#5A6678">${escapeHtml(sum)}</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">${chip(isAll, "poTeamAll()", "전체")}${chip(adm, "poTeamAdminOnly()", "관리자만")}${all.map((t, i) => chip(!adm && !isAll && on.has(t), "poTeamPick(" + i + ")", t)).join("")}</div>
+    <div class="rv-note" style="margin:10px 0 0;line-height:1.6">${adm ? "관리자만 입력할 수 있고, AC·팀장·그룹장은 선출고 접수에 들어올 수 없습니다." : "선택한 팀의 AC·팀장만 입력할 수 있습니다. GL·ADMIN은 모든 팀을 입력할 수 있어요."} 접수 중에도 바꿀 수 있고, 이미 접수된 내용은 그대로 유지됩니다.</div>
+    ${PO.round ? `<button class="po-btn" style="margin-top:12px;height:48px" onclick="poTeamSave()">대상 팀 저장</button>` : `<div class="rv-note" style="margin-top:8px">선택한 대상으로 새 접수가 시작됩니다.</div>`}</div>`;
+}
+function poTeamAll() { PO.teamDirty = true; PO.teamSel = null; PO.adminOnlySel = false; poPaint(); }
+function poTeamAdminOnly() { PO.teamDirty = true; PO.teamSel = null; PO.adminOnlySel = true; poPaint(); }
+function poTeamPick(i) {
+  const all = poAllTeams(), t = all[i]; if (!t) return;
+  const cur = new Set(poAdminSel() ? [] : (poTeamSel() || all));
+  if (cur.has(t)) cur.delete(t); else cur.add(t);
+  if (!cur.size) return;
+  PO.teamDirty = true; PO.adminOnlySel = false; PO.teamSel = cur.size === all.length ? null : all.filter(x => cur.has(x));
+  poPaint();
+}
+async function poTeamSave() {
+  if (!PO.round) return;
+  const adm = poAdminSel(), sel = poTeamSel(), teams = !adm && sel && sel.length ? sel : null;
+  try {
+    await updateDoc(doc(db, "settings", "preorderRound"), { teams, adminOnly: adm });
+    PO.round.teams = teams; PO.round.adminOnly = adm; PO.teamDirty = false; PO.teamSel = null; PO.adminOnlySel = false;
+    await poRoundSync({ teams, adminOnly: adm });
+    poPaint(); alert(adm ? "관리자만 접수하도록 저장했습니다." : teams ? "대상 팀을 저장했습니다: " + teams.join(" · ") : "전체 팀 접수로 저장했습니다.");
+  } catch (e) { alert("저장 실패: " + (e.message || e)); }
+}
+function poPaintAdmin(b) {
+  const r = PO.round, st = poStats(), open = poOpen(), ckfOn = poCkfOn();
+  const ckSet = poCkfCodes(); let ckfRows = 0; PO.docs.forEach(d => poSubLines(d).forEach(l => { if (ckSet.has(String(l.code))) ckfRows++; }));
+  const bd = poStatusBadge();
+  let head = "";
+  if (!r) head = `<div class="po-card"><div style="font-size:14px;font-weight:800">진행 중인 접수가 없습니다</div><button class="po-btn" style="margin-top:12px" onclick="poStart()">새 접수 시작</button></div>`;
+  else head = `<div class="po-card" style="border:2px solid #1A202C"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px;font-weight:800">${escapeHtml(r.reqDate || "")} 선출고</span><span style="font-size:11px;font-weight:700;background:${bd.bg};color:${bd.fg};border-radius:999px;padding:2px 9px">${bd.t}</span></div>
+    <div style="font-size:12px;color:#5A6678;margin-top:4px">시작 ${poHm(r.startedAt)}${open ? "" : ` · 마감 ${poHm(r.closedAt)}`}</div>
+    ${open ? (ckfOn
+      ? `<div style="margin-top:10px;background:#FFFAF0;border:1.5px solid #F6AD55;border-radius:12px;padding:10px 12px;font-size:12px;color:#7B341E"><b>계육 마감 ${poHm(r.ckfClosedAt)}</b> — 계육 품목 추가·삭제 불가<button class="po-btn b" style="margin-top:8px;height:44px;font-size:14px" onclick="poDownload('ckf')">계육 RAW 다운로드 (${ckfRows}행)</button><button class="po-btn o" style="margin-top:6px;height:40px;font-size:12px;color:#C53030" onclick="poCkfReopen()">계육 마감 취소</button></div>`
+      : `<button class="po-btn" style="margin-top:12px;height:48px;background:#B7791F" onclick="poCkfClose()">계육 마감하기 (계육 품목만 잠금)</button>`) + `<button class="po-btn r" style="margin-top:8px;height:52px" onclick="poClose()">전체 마감하기</button><div class="rv-note" style="text-align:center;margin-top:8px">전체 마감하면 모든 입력·수정이 잠기고, 전체(계육 포함) 엑셀 다운로드가 열립니다</div>`
+      : `<button class="po-btn" style="margin-top:12px;height:44px;font-size:13px" onclick="poStart()">새 접수 시작 (이전 회차는 기록으로 남음)</button>`}</div>`;
+  const dl = (r && !open) ? `<div class="po-card" style="border:2px solid #1A202C;margin-top:12px"><div style="font-size:14px;font-weight:800">엑셀 RAW 다운로드</div>
+    <div class="rv-note" style="margin:4px 0 10px;line-height:1.5">A열 매장명 · B열 품목 · C열 수량. 기존 시트에는 필요한 열을 복사해 붙여넣으세요. (매장명은 모든 행에 들어갑니다)</div>
+    <button class="po-btn b" style="height:52px" onclick="poDownload()">전체 선출고_${poYmd()}.xlsx 다운로드 (계육 포함 ${st.lines}행)</button>
+    <button class="po-btn o" style="height:44px;font-size:13px;margin-top:8px;color:#C53030" onclick="poReopen()">마감 취소 (재접수 열기)</button></div>` : "";
+  const teams = Object.keys(st.byTeam).sort((a, c) => a.localeCompare(c, "ko", { numeric: true }));
+  const top = Object.values(st.byItem).sort((a, c) => c.q - a.q).slice(0, 10);
+  b.innerHTML = head + dl + `
+    <div style="display:flex;gap:8px;margin:12px 0">
+      <div class="rv-kpi" style="flex:1"><div class="l">접수 매장</div><div class="v">${st.stores}</div></div>
+      <div class="rv-kpi" style="flex:1"><div class="l">품목 건수</div><div class="v">${st.lines}</div></div>
+      <div class="rv-kpi" style="flex:1"><div class="l">품목 종류</div><div class="v">${st.kinds}</div></div></div>
+    ${PO.docs.filter(d => poState(d) === "draft" || poState(d) === "changed").length ? `<div style="background:#FFFAF0;border-radius:10px;padding:8px 12px;font-size:12px;color:#7B341E;margin-bottom:10px">발주접수를 누르지 않은 매장 ${PO.docs.filter(d => poState(d) === "draft" || poState(d) === "changed").length}개 (임시저장·변경분은 RAW에 포함되지 않음)</div>` : ""}
+    <div class="po-lbl">팀별 접수 현황</div>
+    <div class="po-list">${teams.length ? teams.map(t => `<div class="po-row"><span style="flex:1;font-weight:700">${escapeHtml(t)}</span><span style="color:#4A5568">매장 ${st.byTeam[t].s}</span><span style="min-width:70px;text-align:right;font-weight:800">품목 ${st.byTeam[t].n}</span></div>`).join("") : `<div class="po-row" style="color:#A0AEC0">접수 내역 없음</div>`}</div>
+    <div class="po-lbl" style="margin-top:12px">품목별 합계 (상위 10)</div>
+    <div class="po-list">${top.length ? top.map(o => `<div class="po-row"><span style="flex:1;font-weight:700">${escapeHtml(o.name)}</span><b>${o.q.toLocaleString()}</b><span style="font-size:11px;color:#5A6678;margin-left:4px;min-width:28px">${escapeHtml(o.unit || "")}</span></div>`).join("") : `<div class="po-row" style="color:#A0AEC0">접수 내역 없음</div>`}</div>
+    <div class="po-lbl" style="margin-top:16px">품목 관리</div>
+    <button class="po-btn o" onclick="go('preorderItems')">선출고 품목 관리 · ${PO.items ? PO.items.length : 0}개 (불가 ${PO.items ? PO.items.filter(i => i.blocked).length : 0})</button>` + poTeamCard();
+}
+// ── 회차 기록 (preorderRounds/{roundId}) — 접수 이력(누적)·통계용. 실패해도 접수 업무는 계속 진행.
+function poDateKey(d) { return String(d || "").replace(/\./g, ""); }
+async function poRoundSync(extra) {
+  const r = PO.round; if (!r || !r.id) return;
+  try {
+    const o = Object.assign({ id: r.id, reqDate: r.reqDate || "", dateKey: poDateKey(r.reqDate), startedAt: r.startedAt || 0, status: r.status || "open",
+      ckfClosedAt: r.ckfClosedAt || null, closedAt: r.closedAt || null, closedBy: r.closedBy || "" }, extra || {});
+    await setDoc(doc(db, "preorderRounds", r.id), o, { merge: true });
+  } catch (e) { console.warn("회차 기록 저장 실패 (firestore.rules 게시 확인)", e); }
+}
+function poBuildStats() {
+  const ck = poCkfCodes(), byTeam = {}, byStore = {}, byItem = {}, kinds = new Set();
+  let stores = 0, lines = 0, qty = 0, ckfLines = 0;
+  PO.docs.forEach(d => {
+    const ls = poSubLines(d); if (!ls.length) return;
+    stores++;
+    const t = d.team || "(팀 없음)", bt = byTeam[t] = byTeam[t] || { s: 0, n: 0, q: 0 }; bt.s++;
+    const bs = byStore[d.storeCode] = { name: d.storeName || "", team: t, n: 0, q: 0 };
+    ls.forEach(l => {
+      lines++; qty += l.qty; kinds.add(String(l.code)); bt.n++; bt.q += l.qty; bs.n++; bs.q += l.qty;
+      if (ck.has(String(l.code))) ckfLines++;
+      const bi = byItem[l.code] = byItem[l.code] || { name: l.name, unit: l.unit || "", n: 0, q: 0 }; bi.n++; bi.q += l.qty;
+    });
+  });
+  return { stores, lines, qty, kinds: kinds.size, ckfLines, byTeam, byStore, byItem };
+}
+async function poStart() {
+  if (poOpen()) return;
+  if (!PO.items || !PO.items.length) { alert("먼저 품목 엑셀을 업로드하세요. (선출고 품목 관리)"); return; }
+  if (!confirm("새 접수를 시작할까요? 모든 AC·팀장이 입력할 수 있게 됩니다.")) return;
+  try {
+    const r = { id: "r" + Date.now(), status: "open", reqDate: poToday(), startedAt: Date.now(), closedAt: null, closedBy: "", teams: (PO.teamDirty && !PO.adminOnlySel && PO.teamSel && PO.teamSel.length) ? PO.teamSel.slice() : null, adminOnly: !!(PO.teamDirty && PO.adminOnlySel) };
+    await setDoc(doc(db, "settings", "preorderRound"), r);
+    PO.round = r; PO.docs = [];
+    let seq = 1;
+    try { const qs = await getDocs(query(collection(db, "preorderRounds"), where("dateKey", "==", poDateKey(r.reqDate)))); seq = qs.size + 1; } catch (e) {}
+    PO.teamDirty = false; PO.teamSel = null; PO.adminOnlySel = false;
+    await poRoundSync({ seq, teams: r.teams, adminOnly: r.adminOnly });
+    poPaint();
+  } catch (e) { alert("시작 실패: " + (e.message || e)); }
+}
+async function poCkfClose() {
+  if (!PO.items.some(i => i.ckf)) { alert("계육(CKF) 품목이 없습니다. 품목 엑셀을 다시 업로드해 주세요. (구분1 열의 CKF 표시 사용)"); return; }
+  if (!confirm("계육을 마감할까요? 이후 계육(CKF) 품목은 추가·삭제할 수 없고, 다른 품목은 계속 입력할 수 있습니다.")) return;
+  try { await updateDoc(doc(db, "settings", "preorderRound"), { ckfClosedAt: Date.now(), ckfClosedBy: _authName }); await poLoad(); await poRoundSync(); poPaint(); }
+  catch (e) { alert("계육 마감 실패: " + (e.message || e)); }
+}
+async function poCkfReopen() {
+  if (!confirm("계육 마감을 취소하고 계육 입력을 다시 열까요?")) return;
+  try { await updateDoc(doc(db, "settings", "preorderRound"), { ckfClosedAt: null, ckfClosedBy: "" }); await poLoad(); await poRoundSync(); poPaint(); }
+  catch (e) { alert("처리 실패: " + (e.message || e)); }
+}
+async function poClose() {
+  const pend = PO.docs.filter(d => poState(d) === "draft" || poState(d) === "changed").length;
+  if (!confirm((pend ? `발주접수를 누르지 않은 매장이 ${pend}개 있습니다(RAW에 포함되지 않음).\n` : "") + "접수를 마감할까요? 마감하면 AC·팀장의 입력·수정이 잠깁니다.")) return;
+  try {
+    await updateDoc(doc(db, "settings", "preorderRound"), { status: "closed", closedAt: Date.now(), closedBy: _authName });
+    await poLoad();
+    await poRoundSync({ stats: poBuildStats(), ckfCodes: Array.from(poCkfCodes()) });
+    poPaint();
+  } catch (e) { alert("마감 실패: " + (e.message || e)); }
+}
+async function poReopen() {
+  if (!confirm("마감을 취소하고 다시 접수를 열까요?")) return;
+  try {
+    await updateDoc(doc(db, "settings", "preorderRound"), { status: "open", closedAt: null, closedBy: "" });
+    await poLoad(); await poRoundSync(); poPaint();
+  } catch (e) { alert("처리 실패: " + (e.message || e)); }
+}
+async function poDownload(mode) {
+  try { await loadXLSX(); } catch (e) { alert("엑셀 라이브러리 로드 실패: " + e.message); return; }
+  const order = new Map(PO.stores.map((s, i) => [s.code, i]));
+  const docs = PO.docs.slice().sort((a, c) => (order.get(a.storeCode) ?? 1e9) - (order.get(c.storeCode) ?? 1e9));
+  const rows = [];
+  const ckSet = mode === "ckf" ? poCkfCodes() : null;
+  docs.forEach(d => poSubLines(d).forEach(l => { if (!ckSet || ckSet.has(String(l.code))) rows.push([d.storeName, l.name, l.qty]); }));
+  if (!rows.length) { alert("다운로드할 접수 내역이 없습니다."); return; }
+  const ws = XLSX.utils.aoa_to_sheet([["매장명", "품목", "수량"]].concat(rows));
+  ws["!cols"] = [{ wch: 18 }, { wch: 22 }, { wch: 8 }];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "선출고");
+  XLSX.writeFile(wb, mode === "ckf" ? `계육선출고_${poYmd()}.xlsx` : `선출고_${poYmd()}.xlsx`);
+}
+
+// ── 품목 관리 화면 (ADMIN) ──
+function renderPreorderItems(root) {
+  if (!poIsAdmin()) { go("topHub"); return; }
+  poEnsureCss();
+  root.innerHTML = rvHeader("선출고 품목 관리", "go('preorder')", `<span class="rv-chip blk">ADMIN</span>`) +
+    `<div class="card-section" id="poiBody"><p class="loading-text">불러오는 중...</p></div>`;
+  getDoc(doc(db, "settings", "preorderItems")).then(s => {
+    PO.items = s.exists() ? (s.data().items || []) : []; PO.itemsMeta = s.exists() ? s.data() : null;
+    if (S.screen === "preorderItems") poiPaint();
+  }).catch(e => { const b = document.getElementById("poiBody"); if (b) b.innerHTML = `<p class="error-text">불러오기 실패: ${escapeHtml(e.message || e)}</p>`; });
+}
+function poiPaint() {
+  const b = document.getElementById("poiBody"); if (!b) return;
+  const its = PO.items || [], blk = its.filter(i => i.blocked).length;
+  const m = PO.itemsMeta;
+  let prev = "";
+  if (PO.up) {
+    const u = PO.up;
+    prev = `<div style="background:#FFFAF0;border:1.5px solid #F6AD55;border-radius:12px;padding:10px 14px;font-size:12px;color:#7B341E;line-height:1.5;margin-bottom:8px"><b>업로드 미리보기</b> · 신규 ${u.add.length}개 · 변경 ${u.chg.length}개 · 삭제 ${u.del.length}개<br>선출고 불가 → 가능 ${u.toOk.length}개 · 가능 → 불가 ${u.toBlk.length}개
+      ${u.toOk.length || u.toBlk.length ? `<br><span style="font-size:11px">${escapeHtml(u.toOk.concat(u.toBlk).slice(0, 8).map(i => i.name).join(", "))}${u.toOk.length + u.toBlk.length > 8 ? " …" : ""}</span>` : ""}</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px"><button class="po-btn" onclick="poiApply()">적용하기</button><button class="po-btn o" style="flex:0 0 96px" onclick="poiCancel()">취소</button></div>`;
+  }
+  b.innerHTML = `<div class="po-card" style="margin-bottom:12px"><div style="font-size:14px;font-weight:800">품목 엑셀 업로드</div>
+    <div class="rv-note" style="margin:4px 0 10px;line-height:1.5">기존 파일의 <b>품목코드</b> 시트 형식 그대로 올립니다 (품명 · 구매단위 · 구분 · 선출고 불가 표시).</div>
+    <input type="file" id="poiFile" accept=".xlsx,.xls" style="display:none" onchange="poiFile(this)" />
+    <button class="po-btn" style="background:#EBF8FF;color:#2B6CB0;border:1.5px solid #2B6CB0" onclick="document.getElementById('poiFile').click()">Excel 업로드</button>
+    <div class="rv-note" style="margin-top:8px">${m && m.updatedAt ? `마지막 업로드: ${new Date(m.updatedAt).toLocaleString("ko-KR")} · ` : ""}품목 ${its.length}개 (선출고 가능 ${its.length - blk} / 불가 ${blk})</div></div>` + prev +
+    `<input type="text" class="po-in" placeholder="품목명 검색" value="${escapeHtml(PO.ikw)}" oninput="poiKw(this.value)" style="margin-bottom:8px" />
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${[["all", "전체", its.length], ["ok", "선출고 가능", its.length - blk], ["blk", "선출고 불가", blk]].map(f => `<button class="rv-pill ${PO.ifilter === f[0] ? "on" : ""}" onclick="poiFilter('${f[0]}')">${f[1]} ${f[2]}</button>`).join("")}</div>
+    <div id="poiList"></div>
+    <div class="rv-note" style="margin-top:10px;line-height:1.5">토글을 켜면 AC가 입력할 수 있고, 끄면 "선출고 불가"로 표시되어 선택되지 않습니다.<br>토글은 즉시 반영되며, 다음 엑셀 업로드 때는 엑셀의 표시가 우선합니다.</div>`;
+  poiPaintList();
+}
+function poiKw(v) { PO.ikw = v; poiPaintList(); }
+function poiFilter(f) { PO.ifilter = f; poiPaint(); }
+function poiVisible() {
+  const kw = PO.ikw.trim().toLowerCase();
+  return (PO.items || []).map((it, idx) => ({ it, idx })).filter(o => (PO.ifilter === "all" || (PO.ifilter === "blk") === !!o.it.blocked) && (!kw || String(o.it.name).toLowerCase().includes(kw)));
+}
+function poiPaintList() {
+  const el = document.getElementById("poiList"); if (!el) return;
+  const v = poiVisible(), more = v.length > 100;
+  el.innerHTML = `<div class="po-list">${v.slice(0, 100).map(({ it, idx }) => `<div style="display:flex;align-items:center;min-height:56px;padding:0 14px;border-bottom:1px solid #EDF2F7;${it.blocked ? "background:#FFF5F5" : ""}">
+    <span style="flex:1;display:flex;flex-direction:column;min-width:0"><span style="font-size:14px;font-weight:700">${escapeHtml(it.name)}</span><span style="font-size:11px;color:#5A6678">${escapeHtml(String(it.code))} · ${escapeHtml(it.unit || "")} · ${escapeHtml(it.cat || "")}${it.note ? " · " + escapeHtml(it.note) : ""}</span></span>
+    <span style="font-size:12px;font-weight:700;margin-right:10px;color:${it.blocked ? "#C53030" : "#285E61"}">${it.blocked ? "불가" : "가능"}</span>
+    <button aria-label="선출고 가능 전환" onclick="poiToggle(${idx})" style="width:46px;height:26px;border-radius:13px;border:0;padding:0;background:${it.blocked ? "#CBD5E0" : "#D69E0E"};position:relative;cursor:pointer;flex:none"><span style="position:absolute;top:3px;left:${it.blocked ? 3 : 23}px;width:20px;height:20px;border-radius:50%;background:#fff"></span></button></div>`).join("") || `<div class="po-row" style="color:#A0AEC0">해당 품목이 없습니다</div>`}</div>${more ? `<div class="rv-note" style="margin-top:6px">상위 100개만 표시됩니다. 검색으로 좁혀 주세요.</div>` : ""}`;
+}
+async function poiToggle(idx) {
+  const it = PO.items[idx]; if (!it) return;
+  const prev = !!it.blocked; it.blocked = !prev;
+  try {
+    await setDoc(doc(db, "settings", "preorderItems"), { items: PO.items, updatedAt: (PO.itemsMeta && PO.itemsMeta.updatedAt) || Date.now(), toggledAt: Date.now() }, { merge: true });
+    poiPaint();
+  } catch (e) { it.blocked = prev; alert("저장 실패: " + (e.message || e)); poiPaint(); }
+}
+function poParseItems(wb) {
+  const ws = wb.Sheets["품목코드"] || wb.Sheets[wb.SheetNames.find(n => n.includes("품목코드"))];
+  if (!ws) throw new Error("'품목코드' 시트를 찾을 수 없습니다.");
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+  const h = (rows[0] || []).map(x => String(x).trim());
+  const iName = h.indexOf("품명"), iCode = h.indexOf("품목코드"), iUnit = h.indexOf("구매단위");
+  const i2 = h.indexOf("구분2"), i3 = h.indexOf("구분3"), i1 = h.indexOf("구분1");
+  if (iName < 0 || iCode < 0) throw new Error("헤더에서 '품목코드', '품명' 열을 찾을 수 없습니다.");
+  const out = [], seen = new Set();
+  rows.slice(1).forEach(r => {
+    const name = String(r[iName] || "").trim(), code = String(r[iCode] || "").trim();
+    if (!name || !code || seen.has(code)) return;
+    seen.add(code);
+    const g3 = String(i3 >= 0 ? r[i3] : "").trim(), g1 = String(i1 >= 0 ? r[i1] : "").trim();
+    const marks = [g1, g3].filter(Boolean).join(" ");
+    out.push({ code, name, unit: String(iUnit >= 0 ? r[iUnit] : "").trim(), cat: String(i2 >= 0 ? r[i2] : "").trim(),
+      blocked: marks.includes("선출고 불가") || marks.includes("선출고불가"), note: g3.includes("선출고") ? "" : g3, ckf: g1.toUpperCase() === "CKF" });
+  });
+  if (!out.length) throw new Error("읽을 수 있는 품목이 없습니다.");
+  return out;
+}
+async function poiFile(inp) {
+  const f = inp.files && inp.files[0]; inp.value = ""; if (!f) return;
+  try {
+    await loadXLSX();
+    const wb = XLSX.read(await f.arrayBuffer(), { type: "array" });
+    const next = poParseItems(wb), old = new Map((PO.items || []).map(i => [String(i.code), i]));
+    const add = [], chg = [], toOk = [], toBlk = [];
+    next.forEach(n => {
+      const o = old.get(n.code);
+      if (!o) { add.push(n); return; }
+      if (o.name !== n.name || o.unit !== n.unit || (o.cat || "") !== n.cat || !!o.ckf !== !!n.ckf || !!o.blocked !== n.blocked || (o.note || "") !== n.note) chg.push(n);
+      if (o.blocked && !n.blocked) toOk.push(n);
+      if (!o.blocked && n.blocked) toBlk.push(n);
+      old.delete(n.code);
+    });
+    PO.up = { items: next, add, chg, del: Array.from(old.values()), toOk, toBlk };
+    poiPaint();
+  } catch (e) { alert("엑셀 읽기 실패: " + (e.message || e)); }
+}
+function poiCancel() { PO.up = null; poiPaint(); }
+async function poiApply() {
+  if (!PO.up) return;
+  try {
+    const meta = { items: PO.up.items, updatedAt: Date.now(), updatedBy: _authName };
+    await setDoc(doc(db, "settings", "preorderItems"), meta);
+    PO.items = meta.items; PO.itemsMeta = meta; PO.up = null; poiPaint();
+  } catch (e) { alert("저장 실패: " + (e.message || e)); }
+}
+
 Object.assign(window, {
+  rvDownloadQueryXlsx,
+  poTeamAll, poTeamPick, poTeamSave, poTeamAdminOnly,
+  hubToggleGrp,
+  openPreorder, poHistMonth, poHistPick, poHistDownload, poMineTeam, poMineKwInput, poMineSet, togglePreorderEnabled, poSubmit, poEditLine, poEditCancel, poEditSave, poCkfClose, poCkfReopen, poSetTab, poStoreChange, poStoreSearch, poStoreClear, poMemoSave, poKwInput, poPickItem, poQtyStep, poQtyInput, poAdd, poDelLine, poDelStore, poEditStore, poStart, poClose, poReopen, poDownload, poiKw, poiFilter, poiToggle, poiFile, poiCancel, poiApply,
   openReview, rvAccToggle, rvToggleCat, rvCatClear, rvQInput, rvQMore, rvQOpen, rvDictDownload, rvDictUpload, rvDictApply, rvDictCancel, rvDictRestore, rvDownloadStoresXlsx,  rvToggleStar, rvStarPreset, toggleBaeminEnabled, rvWipeAll, rvRebuildStats, rvPickType, rvPickVal, rvSetTab, rvKwInput, rvSetYm, rvSetSort, rvOpenStore, rvSetTeam, rvSetTYm, rvSetTSort, rvSetView, rvSetYmStore, rvSetFStatus, rvSetFYm, rvSetFSort, rvOpenDetail, rvUploadRaw, rvUploadPhotos,
   go, goBack, goCategoryHome, enterCategory, goAdmin, authLogout, doLogin, doChangePw, togglePhoto, applyPhotoSettings, startGLFollowup, startSvFollowupFromRecord, loadGLCompareAndShow, setDashDateFilter, applyDateRange, showMore, selectInspType, selectRole, searchStores, downloadPDF, handleStoreUpload, handleReportDataUpload, setDashFilter, clearDashFilter, setDashTab, setTLFilter, confirmTL, rejectTL, confirmGL, rejectGL, filterStoreListFixed,
   filterStoreList, selectStore, startForm, setAnswer, handleImage,
@@ -23155,6 +24114,10 @@ body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;b
 .btn-admin-np{color:var(--mono-sub);border-color:var(--border)}
 .hub-card{width:100%;background:white;border:1.5px solid var(--border);border-radius:var(--radius);padding:18px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left}
 .hub-card:active{border-color:var(--red)}
+.hub-grp{width:100%;background:white;border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.hub-grp-head{width:100%;background:white;border:0;padding:18px;display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left;font-family:inherit}
+.hub-grp-body{flex-direction:column;gap:8px;padding:8px 10px 10px;border-top:1px solid var(--border);background:#FAFBFC}
+.hub-sub{padding:10px 12px;border-radius:12px;border-width:1px}
 .hub-card.np:active{border-color:var(--amber)}
 .hub-card.spacool:active{border-color:#3B6D11}
 .hub-card.disabled{opacity:.5;cursor:not-allowed}
