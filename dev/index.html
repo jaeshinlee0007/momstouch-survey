@@ -22242,6 +22242,8 @@ async function rvPaintQuery() {
       ${(tags || it.ph) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${tags}${rvPhotoChip(it.ph)}</div>` : ""}
     </button>`;
   }).join("");
+  RV.qHit = hit;
+  RV.qCond = [["기간", rvYmLabel(RV.qym)], ["검색어", toks.join(" ") || "(없음)"], ["별점", rvStarLabel(RV.qStars)], ["카테고리", rvCatLabel(RV.qCats)], ["건수", hit.length]];
   const filt = `필터: ${rvYmLabel(RV.qym)}${toks.length ? " · 검색어 '" + escapeHtml(toks.join(" ")) + "'" : ""} · 별점 ${rvStarLabel(RV.qStars)} · 카테고리 ${escapeHtml(rvCatLabel(RV.qCats))}`;
   box.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
@@ -22249,9 +22251,38 @@ async function rvPaintQuery() {
       <div class="rv-kpi"><div class="l">평균 평점</div><div class="v" style="font-size:20px">★ ${hit.length ? (sum / hit.length).toFixed(2) : "-"}</div></div>
       <div class="rv-kpi"><div class="l">해당 매장</div><div class="v" style="font-size:20px">${stores.toLocaleString()}<small> 곳</small></div></div>
     </div>
+    <button class="btn-ghost" style="margin-bottom:10px;${hit.length ? "color:#2B6CB0;border-color:#2B6CB0;font-weight:700" : "opacity:.5"}" ${hit.length ? "" : "disabled"} onclick="rvDownloadQueryXlsx()">엑셀 다운로드 (${hit.length.toLocaleString()}건)</button>
     <div class="rv-note" style="margin-bottom:8px">${filt}</div>
     ${cards || `<p class="error-text">${items.length ? "조건에 맞는 리뷰가 없습니다." : (RV.needRebuild ? "집계가 아직 준비되지 않았습니다. 관리자에게 문의해 주세요." : "해당 기간의 검색 데이터가 없습니다.")}</p>`}
     ${hit.length > RV.qShow ? `<button class="btn-ghost" onclick="rvQMore()">더 보기 (${RV.qShow} / ${hit.length.toLocaleString()})</button>` : ""}`;
+}
+async function rvDownloadQueryXlsx() {
+  try {
+    const hit = RV.qHit || [];
+    if (!hit.length) { alert("다운로드할 리뷰가 없습니다."); return; }
+    if (!window.XLSX) {
+      await new Promise((res, rej) => {
+        const sc = document.createElement("script");
+        sc.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+        sc.onload = res; sc.onerror = rej;
+        document.head.appendChild(sc);
+      });
+    }
+    const sm = new Map((RV.scope || []).map(s => [s.code, s])), cs = rvCatList();
+    const rows = [["작성일시", "팀", "매장코드", "매장명", "담당AC", "별점", "메뉴", "리뷰 내용(최대 300자)", "카테고리", "사진 수", "리뷰ID"]];
+    hit.forEach(it => {
+      const st = sm.get(it.code) || {};
+      const cats = it.ck === "" ? "" : it.ck.split(",").map(i => cs[Number(i)] ? cs[Number(i)].name : "").filter(n => n && n !== "내용 없음").join(", ");
+      rows.push([rvFmtDt(it.at), st.team || "", it.code || "", st.name || "", st.sv || "", Number(it.rt) || "", it.menu || "", it.text || "", cats, it.ph || 0, String(it.id)]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 22 }, { wch: 10 }, { wch: 6 }, { wch: 24 }, { wch: 60 }, { wch: 22 }, { wch: 8 }, { wch: 18 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "리뷰");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["조건", "값"]].concat(RV.qCond || [])), "조건");
+    const d = new Date(), p = n => String(n).padStart(2, "0");
+    XLSX.writeFile(wb, `배민리뷰_검색_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}.xlsx`);
+  } catch (e) { alert("엑셀 다운로드 실패: " + (e.message || e)); }
 }
 async function rvQOpen(id) {
   try {
@@ -23969,6 +24000,7 @@ async function poiApply() {
 }
 
 Object.assign(window, {
+  rvDownloadQueryXlsx,
   poTeamAll, poTeamPick, poTeamSave, poTeamAdminOnly,
   hubToggleGrp,
   openPreorder, poHistMonth, poHistPick, poHistDownload, poMineTeam, poMineKwInput, poMineSet, togglePreorderEnabled, poSubmit, poEditLine, poEditCancel, poEditSave, poCkfClose, poCkfReopen, poSetTab, poStoreChange, poStoreSearch, poStoreClear, poMemoSave, poKwInput, poPickItem, poQtyStep, poQtyInput, poAdd, poDelLine, poDelStore, poEditStore, poStart, poClose, poReopen, poDownload, poiKw, poiFilter, poiToggle, poiFile, poiCancel, poiApply,
