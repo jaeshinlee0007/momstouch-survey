@@ -23142,7 +23142,7 @@ function poTeamsOn(r) { r = r || PO.round; return !!(r && Array.isArray(r.teams)
 function poAllTeams() { return Array.from(new Set((PO.stores || []).map(s => String(s.team || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ko", { numeric: true })); }
 function poTeamBlocked(r) {
   r = r || PO.round;
-  if (!r || r.status !== "open") return false;
+  if (!r) return false;
   if (poAdminOnly(r)) return _authRole !== "admin";
   if (!poTeamsOn(r)) return false;
   if (_authRole !== "sv" && _authRole !== "tl") return false;
@@ -23256,8 +23256,8 @@ async function poLoadBadge() {
     if (card) card.classList.remove("disabled");
     // 접수 대상이 '전체'가 아니면(관리자만·특정 팀) 허브에 테스트 중 문구를 기본 노출
     const testTxt = `<span class="hub-card-sub" style="display:block;margin-top:2px">테스트 중입니다.</span>`;
-    if (r && r.status === "open" && (poAdminOnly(r) || poTeamsOn(r))) el.innerHTML += testTxt;
-    if (r && r.status === "open" && _authRole !== "admin" && (poAdminOnly(r) || (poTeamsOn(r) && (_authRole === "sv" || _authRole === "tl")))) {
+    if (r && (poAdminOnly(r) || poTeamsOn(r))) el.innerHTML += testTxt;
+    if (r && _authRole !== "admin" && (poAdminOnly(r) || (poTeamsOn(r) && (_authRole === "sv" || _authRole === "tl")))) {
       if (!poAdminOnly(r)) { const all = await getActiveStoreData(); PO.stores = all || PO.stores; }
       if (poTeamBlocked(r) && card) {
         card.classList.add("disabled");
