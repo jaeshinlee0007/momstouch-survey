@@ -1875,6 +1875,122 @@ function _reportInfoRow(label, val) {
 //   · 기준월 = 영업일/영업시간 데이터의 최신월(ops_asof), 판매량·영업시간은 최근 3개월 일평균
 //   · 오일사입·내용증명은 store_dash/{코드} 1건만 추가로 읽음(실패해도 나머지 지표는 정상 표시)
 // ════════════════════════════════════════════════════════════
+
+// 팀별·전사 평균(최근 3개월 일평균) 계산 — 업로드 집계와 '재집계' 버튼이 같은 함수를 사용
+// 기준월 = 영업일 데이터 최신월(ops_asof). 신규점(해당월 오픈)은 평균에서 제외.
+function _consultBuildOpsStats(entries, masterByCode) {
+  const baseYm = entries.reduce((a, [, r]) => (r.ops_asof && r.ops_asof > a ? r.ops_asof : a), "");
+  if (!baseYm) return null;
+  const yms3 = [baseYm, _ymAdd(baseYm, -1), _ymAdd(baseYm, -2)];
+  const cTeams = {}, cAll = {};
+  const addTo = (o, k, v) => { const c = o[k] || (o[k] = { s: 0, n: 0 }); c.s += v; c.n++; };
+  entries.forEach(([code, rep]) => {
+    const m = masterByCode.get(code);
+    if (!m || !m.team || !rep.ops) return;
+    if (String(rep.first_open_date || "").slice(0, 7) === baseYm) return;
+    const v = _consultStoreVals(rep, yms3);
+    const t = cTeams[m.team] || (cTeams[m.team] = {});
+    Object.keys(v).forEach(k => { if (v[k] != null) { addTo(t, k, v[k]); addTo(cAll, k, v[k]); } });
+  });
+  const rd = o => { Object.keys(o).forEach(k => { o[k].s = Math.round(o[k].s * 100) / 100; }); };
+  Object.keys(cTeams).forEach(t => rd(cTeams[t])); rd(cAll);
+  return { baseYm, yms3, dataJson: JSON.stringify({ teams: cTeams, all: cAll }), updatedAt: new Date() };
+}
+
+// 배민 리뷰 — 컨설팅 요약용 기준(조정 시 이 상수만 변경)
+const _CONSULT_RV_MIN_N = 10;      // 최근 3개월 리뷰 N건 미만 → 판정 보류
+const _CONSULT_RV_AVG_BAD = -0.3;  // 평균별점: 팀 평균 대비 -0.3점 이하 → 개선 필요
+const _CONSULT_RV_AVG_GOOD = 0.2;  // 평균별점: 팀 평균 대비 +0.2점 이상 → 우수
+const _CONSULT_RV_LOW_BAD = 3.0;   // 저별점(1~2점) 비율: 팀 평균 대비 +3.0%p 이상 → 개선 필요 (임시 기준 — 실데이터 확인 후 조정)
+const _CONSULT_RV_LOW_GOOD = -3.0; // 저별점 비율: 팀 평균 대비 -3.0%p 이하 → 우수 (임시 기준)
+
+let _consultRvCache = null;
+async function _loadConsultRv() {
+  if (_consultRvCache && Date.now() - _consultRvCache.ts < _STATS_TTL) return _consultRvCache.data;
+  let data = null;
+  try {
+    const snap = await getDoc(doc(db, "area_stats", "_CONSULT_RV"));
+    if (snap.exists()) {
+      data = snap.data();
+      try { const j = JSON.parse(data.dataJson || "{}"); data.stores = j.stores || {}; data.teams = j.teams || {}; data.all = j.all || {}; } catch (e) { data.stores = {}; data.teams = {}; data.all = {}; }
+    }
+  } catch (e) { data = null; }
+  _consultRvCache = { ts: Date.now(), data };
+  return data;
+}
+
+// [관리자] 컨설팅 요약 재집계 — 리포트·리뷰 RAW 재업로드 없이 저장된 데이터로 집계 문서를 다시 만듦
+//   ① store_reports → 팀·전사 평균(area_stats/_CONSULT)  ② store_dash → 오일·내용증명 요약을 store_reports에 복사
+//   ③ baemin_stats(최근 3개월) → 매장별 건수·별점·저별점 및 팀·전사 평균(area_stats/_CONSULT_RV)
+async function rebuildConsultStats() {
+  if (_authRole !== "admin") { alert("관리자만 실행할 수 있습니다."); return; }
+  if (!confirm("컨설팅 요약 집계를 다시 만듭니다. (리포트·리뷰 RAW 재업로드 불필요)\n\n저장된 매장 리포트·가맹점 대시보드 데이터 각 약 1,500건을 읽고, 오일사입·내용증명 요약을 매장 리포트에 복사합니다.\n계속하시겠습니까?")) return;
+  const st = document.getElementById("consultRebuildStatus");
+  const say = m => { if (st) st.textContent = m; };
+  try {
+    say("매장 정보 조회 중...");
+    const masterStores = await getActiveStoreData();
+    const masterByCode = new Map(masterStores.map(m => [m.code, m]));
+    say("매장 리포트 조회 중...");
+    const repSnap = await getDocs(collection(db, "store_reports"));
+    const entries = repSnap.docs.filter(d => masterByCode.has(d.id)).map(d => [d.id, d.data()]);
+    const ops = _consultBuildOpsStats(entries, masterByCode);
+    if (!ops) throw new Error("영업일 데이터(ops_asof)가 없습니다. 컨설팅 리포트 엑셀 업로드 이력이 필요합니다.");
+    await setDoc(doc(db, "area_stats", "_CONSULT"), ops);
+
+    say("오일사입·내용증명 요약 복사 중...");
+    const repIds = new Set(entries.map(e => e[0]));
+    const dashSnap = await getDocs(collection(db, "store_dash"));
+    const jobs = [];
+    dashSnap.docs.forEach(d => {
+      if (!repIds.has(d.id)) return;
+      const p = d.data(), cp = {};
+      if ("oil" in p) cp.consult_oil = p.oil ? { grade: String(p.oil.grade || ""), status: String(p.oil.status || "") } : null;
+      if (Array.isArray(p.certs)) cp.consult_cert = p.certs.map(c => ({ cdate: c.cdate || "", ctitle: String(c.ctitle || "").slice(0, 60) }));
+      if (Object.keys(cp).length) jobs.push([d.id, cp]);
+    });
+    for (let i = 0; i < jobs.length; i += 200) {
+      const b = writeBatch(db);
+      jobs.slice(i, i + 200).forEach(([id, cp]) => b.set(doc(db, "store_reports", id), cp, { merge: true }));
+      await b.commit();
+    }
+
+    say("배민 리뷰 집계 중...");
+    const teams = [...new Set(masterStores.map(m => m.team).filter(Boolean))];
+    const acc = {}; // code -> [건수, 별점합, 저별점(1~2점) 건수]
+    let shardCnt = 0;
+    for (const t of teams) {
+      const sns = await Promise.all(ops.yms3.map(ym => getDoc(doc(db, "baemin_stats", `${_statsDocId(t)}__${ym}`)).catch(() => null)));
+      sns.forEach(sn => {
+        if (!sn || !sn.exists()) return;
+        shardCnt++;
+        let stores = {};
+        try { stores = JSON.parse(sn.data().storesJson || "{}"); } catch (e) {}
+        Object.entries(stores).forEach(([code, e]) => {
+          if (!e.m || !masterByCode.has(code)) return;
+          const a = acc[code] || (acc[code] = [0, 0, 0]);
+          a[0] += e.m[0] || 0; a[1] += e.m[1] || 0; a[2] += (e.m[2] || 0) + (e.m[3] || 0);
+        });
+      });
+    }
+    const rTeams = {}, rAll = {};
+    const addTo = (o, k, v) => { const c = o[k] || (o[k] = { s: 0, n: 0 }); c.s += v; c.n++; };
+    Object.entries(acc).forEach(([code, a]) => {
+      const team = masterByCode.get(code)?.team;
+      if (!team || a[0] < _CONSULT_RV_MIN_N) return;
+      const avg = a[1] / a[0], low = a[2] / a[0] * 100;
+      const t = rTeams[team] || (rTeams[team] = {});
+      addTo(t, "avg", avg); addTo(t, "low", low); addTo(rAll, "avg", avg); addTo(rAll, "low", low);
+    });
+    const rd = o => { Object.keys(o).forEach(k => { o[k].s = Math.round(o[k].s * 1000) / 1000; }); };
+    Object.keys(rTeams).forEach(t => rd(rTeams[t])); rd(rAll);
+    await setDoc(doc(db, "area_stats", "_CONSULT_RV"), { baseYm: ops.baseYm, yms3: ops.yms3, minN: _CONSULT_RV_MIN_N, dataJson: JSON.stringify({ stores: acc, teams: rTeams, all: rAll }), updatedAt: new Date() });
+    _consultStatsCache = null; _consultRvCache = null;
+    say(`✅ 재집계 완료 (기준월 ${ops.baseYm}) — 영업 집계 ${entries.length}개 매장, 오일·내용증명 ${jobs.length}개 매장 복사, 리뷰 집계 ${Object.keys(acc).length}개 매장(샤드 ${shardCnt}개)`);
+  } catch (e) {
+    say("재집계 실패: " + (e.message || e));
+  }
+}
 // 매장 1곳의 최근 3개월 일평균 — 업로드 집계와 화면 판정이 동일 함수를 써서 값이 어긋나지 않게 함
 function _consultStoreVals(rep, yms3) {
   let hSum = 0, hDays = 0;
@@ -1914,7 +2030,7 @@ async function _loadConsultStats() {
   return data;
 }
 
-function _consultEval(rep, dash, dashOk, stats, team) {
+function _consultEval(rep, dash, dashOk, stats, team, rv, code) {
   const baseYm = stats?.baseYm || rep?.ops_asof || "";
   const out = { baseYm, items: [], excluded: "" };
   if (!baseYm) { out.excluded = "영업 데이터가 아직 반영되지 않아 컨설팅 요약을 표시할 수 없습니다."; return out; }
@@ -2009,6 +2125,35 @@ function _consultEval(rep, dash, dashOk, stats, team) {
     else if (rest === 0) push(8, "days", "영업일수", "good", "휴무 없음", `해당 월 휴무 없이 전일(${cal}일) 영업하였습니다.`, rows, note);
     else push(8, "days", "영업일수", "ok", "", `해당 월 휴무는 ${rest}일입니다.`, rows, note);
   }
+  // 9~10. 배민 리뷰(최근 3개월): 평균별점·저별점(1~2점) 비율 — 동일 팀 평균 비교, 전사 평균 참고
+  const sg2 = n => { const r = Math.round(n * 100) / 100 || 0; return (r > 0 ? "+" : "") + r.toFixed(2); };
+  const rvHold = why => { push(9, "rvavg", "배민 평균별점", "hold", "", `배민 평균별점은 ${why}`); push(10, "rvlow", "배민 저별점 비율", "hold", "", `배민 저별점 비율은 ${why}`); };
+  const ro = rv?.stores?.[code];
+  if (!rv) rvHold("배민 리뷰 집계가 아직 생성되지 않아 판정을 보류하였습니다.");
+  else if (!ro || ro[0] < _CONSULT_RV_MIN_N) rvHold(`최근 3개월 리뷰가 ${ro ? ro[0] : 0}건으로 ${_CONSULT_RV_MIN_N}건 미만이어서 판정을 보류하였습니다.`);
+  else {
+    const rt = rv.teams?.[team], ta = rt?.avg, tl = rt?.low, aa = rv.all?.avg, al = rv.all?.low;
+    if (!ta || ta.n < 5) rvHold(`팀 내 비교 매장이 ${ta ? ta.n : 0}곳으로 5곳 미만이어서 판정을 보류하였습니다.`);
+    else {
+      const n = ro[0], vAvg = ro[1] / n, vLow = ro[2] / n * 100;
+      const tAvg = ta.s / ta.n, tLow = tl.s / tl.n;
+      const aAvg = aa && aa.n > 0 ? aa.s / aa.n : null, aLow = al && al.n > 0 ? al.s / al.n : null;
+      const dT = Math.round((vAvg - tAvg) * 100) / 100, dA = aAvg != null ? vAvg - aAvg : null;
+      const st1 = dT <= _CONSULT_RV_AVG_BAD ? "bad" : dT >= _CONSULT_RV_AVG_GOOD ? "good" : "ok";
+      push(9, "rvavg", "배민 평균별점", st1, `팀 ${sg2(dT)}점`,
+        `최근 3개월 평균 별점은 ${vAvg.toFixed(2)}점(리뷰 ${n}건)으로 팀 평균(${tAvg.toFixed(2)}점) 대비 ${sg2(dT)}점` + (dA != null ? `, 전사 평균(${aAvg.toFixed(2)}점) 대비 ${sg2(dA)}점` : "") + "입니다."
+        + (st1 === "bad" ? " 리뷰 내용을 확인하여 서비스 및 품질 개선이 필요합니다." : st1 === "good" ? " 고객 만족도가 높은 편입니다." : " 팀 평균 수준입니다."),
+        [["본 매장", `${vAvg.toFixed(2)}점 (리뷰 ${n}건)`], [`팀 평균 (${ta.n}개 매장)`, `${tAvg.toFixed(2)}점 (${sg2(dT)}점)`]].concat(dA != null ? [["전사 평균 (참고)", `${aAvg.toFixed(2)}점 (${sg2(dA)}점)`]] : []),
+        `판정 기준: 팀 평균 대비 ${_CONSULT_RV_AVG_BAD.toFixed(1)}점 이하 개선 필요, +${_CONSULT_RV_AVG_GOOD.toFixed(1)}점 이상 우수 (최근 3개월, 리뷰 ${_CONSULT_RV_MIN_N}건 미만 보류)`);
+      const dL = Math.round((vLow - tLow) * 10) / 10, dLA = aLow != null ? vLow - aLow : null;
+      const st2 = dL >= _CONSULT_RV_LOW_BAD ? "bad" : dL <= _CONSULT_RV_LOW_GOOD ? "good" : "ok";
+      push(10, "rvlow", "배민 저별점 비율", st2, `팀 ${sg1(dL)}%p`,
+        `최근 3개월 저별점(1~2점) 비율은 ${vLow.toFixed(1)}%(${ro[2]}건/${n}건)로 팀 평균(${tLow.toFixed(1)}%) 대비 ${sg1(dL)}%p` + (dLA != null ? `, 전사 평균(${aLow.toFixed(1)}%) 대비 ${sg1(dLA)}%p` : "") + "입니다."
+        + (st2 === "bad" ? " 저별점 리뷰 사유 확인 및 개선이 필요합니다." : st2 === "good" ? " 저별점 비율이 낮은 편입니다." : " 팀 평균 수준입니다."),
+        [["본 매장", `${vLow.toFixed(1)}% (${ro[2]}건/${n}건)`], [`팀 평균 (${tl.n}개 매장)`, `${tLow.toFixed(1)}% (${sg1(dL)}%p)`]].concat(dLA != null ? [["전사 평균 (참고)", `${aLow.toFixed(1)}% (${sg1(dLA)}%p)`]] : []),
+        `판정 기준: 팀 평균 대비 +${_CONSULT_RV_LOW_BAD.toFixed(1)}%p 이상 개선 필요, ${_CONSULT_RV_LOW_GOOD.toFixed(1)}%p 이하 우수 (최근 3개월, 리뷰 ${_CONSULT_RV_MIN_N}건 미만 보류)`);
+    }
+  }
   items.sort((a, b) => a.order - b.order);
   return out;
 }
@@ -2032,8 +2177,8 @@ async function renderConsultSection(rep, target) {
     // 오일·내용증명: 업로드 때 store_reports에 복사해 둔 요약(consult_oil/consult_cert)을 우선 사용(AC·팀장도 조회 가능).
     // 아직 복사본이 없으면(재업로드 전) store_dash를 시도 — GL·ADMIN만 읽을 수 있고, 실패해도 해당 2개 지표만 보류.
     const hasOil = rep && rep.consult_oil !== undefined, hasCert = rep && Array.isArray(rep.consult_cert);
-    const [stats, dashRes] = await Promise.all([
-      _loadConsultStats(),
+    const [stats, rv, dashRes] = await Promise.all([
+      _loadConsultStats(), _loadConsultRv(),
       (hasOil && hasCert) ? Promise.resolve({ ok: true, data: null })
         : getDoc(doc(db, "store_dash", target.code)).then(s => ({ ok: true, data: s.exists() ? s.data() : null })).catch(() => ({ ok: false, data: null })),
     ]);
@@ -2043,7 +2188,7 @@ async function renderConsultSection(rep, target) {
     } : { oil: hasOil ? rep.consult_oil : null, certs: hasCert ? rep.consult_cert : undefined };
     const dashOk = hasOil || hasCert || (dashRes.ok && !!dashRes.data);
     const team = target.team || rep?.team || "";
-    const ev = _consultEval(rep, dashData, dashOk, stats, team);
+    const ev = _consultEval(rep, dashData, dashOk, stats, team, rv, target.code);
     const chev = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2D3748" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;transition:transform .2s"><path d="M6 9l6 6 6-6"/></svg>';
     const head = `<div style="display:flex;flex-direction:column;gap:2px"><span class="q-title" style="white-space:nowrap">컨설팅 요약</span><span style="font-size:11px;color:#718096;line-height:1.5">${ev.baseYm ? escapeHtml(_ymKo(ev.baseYm)) + " 기준 · 최근 3개월 일평균 · 동일 팀 평균 비교(전사 평균 참고)" : ""}</span></div>`;
     if (ev.excluded) {
@@ -4757,6 +4902,8 @@ async function renderPhotoSetting(root) {
       </div>
       <button class="btn-ghost" onclick="purgeReportLegacyFields()" style="margin-top:10px;font-size:12px;color:#C53030;border-color:#FEB2B2">🧹 삭제 항목 일괄 정리 (점주 생년·이메일·설비 등)</button>
       <div id="reportPurgeStatus" style="font-size:12px;color:#718096;margin-top:6px"></div>
+      <button class="btn-ghost" onclick="rebuildConsultStats()" style="margin-top:10px;font-size:12px">📊 컨설팅 요약 재집계 (RAW 재업로드 불필요)</button>
+      <div id="consultRebuildStatus" style="font-size:12px;color:#718096;margin-top:6px"></div>
       <div style="font-size:12px;color:#718096;margin-top:8px">E코드로 시작하는 매장만 반영되며(다른 브랜드·테스트 계정 자동 제외), 양도양수된 매장은 구코드 이력도 현재코드에 자동 합산됩니다.</div>
     </div>`;
 
@@ -7315,27 +7462,8 @@ async function uploadReportData(file, onProgress) {
         });
       });
     });
-    // ── 컨설팅 요약용: 팀별·전사 평균(최근 3개월 일평균) → area_stats/_CONSULT 문서 1개 ──
-    // 기준월 = 영업일 데이터 최신월(ops_asof). 신규점(해당월 오픈)은 평균에서 제외.
-    {
-      const baseYm = ((entries.find(([, r]) => r.ops_asof) || [])[1] || {}).ops_asof || "";
-      if (baseYm) {
-        const yms3 = [baseYm, _ymAdd(baseYm, -1), _ymAdd(baseYm, -2)];
-        const cTeams = {}, cAll = {};
-        const addTo = (o, k, v) => { const c = o[k] || (o[k] = { s: 0, n: 0 }); c.s += v; c.n++; };
-        entries.forEach(([code, rep]) => {
-          const m = masterByCode.get(code);
-          if (!m || !m.team || !rep.ops) return;
-          if (String(rep.first_open_date || "").slice(0, 7) === baseYm) return;
-          const v = _consultStoreVals(rep, yms3);
-          const t = cTeams[m.team] || (cTeams[m.team] = {});
-          Object.keys(v).forEach(k => { if (v[k] != null) { addTo(t, k, v[k]); addTo(cAll, k, v[k]); } });
-        });
-        const rd = o => { Object.keys(o).forEach(k => { o[k].s = Math.round(o[k].s * 100) / 100; }); };
-        Object.keys(cTeams).forEach(t => rd(cTeams[t])); rd(cAll);
-        aggWrites.push({ col: "area_stats", id: "_CONSULT", payload: { baseYm, yms3, dataJson: JSON.stringify({ teams: cTeams, all: cAll }), updatedAt: new Date() }, merge: false });
-      }
-    }
+    // ── 컨설팅 요약용: 팀별·전사 평균(최근 3개월 일평균) → area_stats/_CONSULT 문서 1개 (재집계 버튼과 동일 함수) ──
+    { const cp = _consultBuildOpsStats(entries, masterByCode); if (cp) aggWrites.push({ col: "area_stats", id: "_CONSULT", payload: cp, merge: false }); }
     // 주의: 매장×월 단위의 큰 중첩맵/배열을 Firestore 필드로 그대로 저장하면 문서당 인덱스 항목 한도(약 4만 개)를
     // 넘어 규모가 큰 팀 문서 저장이 실패함 → 큰 구조는 JSON 문자열 1개 필드로 저장(인덱스 항목 1개, 용량도 감소).
     areaMap.forEach((months, area) => aggWrites.push({ col: "area_stats", id: docId(area), payload: { area, monthsJson: JSON.stringify(months), updatedAt: new Date() }, merge: false }));
@@ -24281,7 +24409,7 @@ Object.assign(window, {
   startGkpreInspection, goAdminGkpre, toggleGkpreEnabled,
   setGkpreAnswer, toggleGkpreMultiAnswer, handleGkpreImage, removeGkpreImage, updateGkpreQMemo, updateGkpreMemo, submitFormGkpre, downloadExcelGkpre,
   fetchRecordsGkpre, setRecGkpreFilter, viewRecordGkpre, setDashGkpreFilter, viewStoreHistoryGkpre, approveGkpreRecord, rejectGkpreRecord, searchDashGkpre, startInspectionForStoreGkpre,
-  searchReportStores, viewReportDetail, downloadExcelReportDetail, purgeReportLegacyFields, consultToggle,
+  searchReportStores, viewReportDetail, downloadExcelReportDetail, purgeReportLegacyFields, consultToggle, rebuildConsultStats,
   startBeefRenewalInspection, goAdminBeefRenewal, toggleBeefRenewalEnabled,
   setBeefRenewalAnswer, handleBeefRenewalImage, removeBeefRenewalImage, updateBeefRenewalQMemo, updateBeefRenewalMemo, submitFormBeefRenewal, downloadExcelBeefRenewal,
   fetchRecordsBeefRenewal, setRecBeefRenewalFilter, viewRecordBeefRenewal, setDashBeefRenewalFilter, viewStoreHistoryBeefRenewal, approveBeefRenewalRecord, rejectBeefRenewalRecord, searchDashBeefRenewal, startInspectionForStoreBeefRenewal,
