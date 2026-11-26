@@ -1956,11 +1956,15 @@ async function rebuildConsultStats() {
     }
 
     say("배민 리뷰 집계 중...");
+    // 리뷰 기간은 영업 기준월이 아니라 '리뷰 데이터의 최신월'(settings/baeminMeta.maxDate) 기준 최근 3개월 — 리뷰가 영업 기준월 이후부터 쌓인 경우에도 집계되도록
+    const metaSn = await getDoc(doc(db, "settings", "baeminMeta")).catch(() => null);
+    const maxM = metaSn && metaSn.exists() && metaSn.data().maxDate ? String(metaSn.data().maxDate).slice(0, 7) : "";
+    const rvYms = maxM ? [maxM, _ymAdd(maxM, -1), _ymAdd(maxM, -2)] : ops.yms3;
     const teams = [...new Set(masterStores.map(m => m.team).filter(Boolean))];
     const acc = {}; // code -> [건수, 별점합, 저별점(1~2점) 건수]
     let shardCnt = 0;
     for (const t of teams) {
-      const sns = await Promise.all(ops.yms3.map(ym => getDoc(doc(db, "baemin_stats", `${_statsDocId(t)}__${ym}`)).catch(() => null)));
+      const sns = await Promise.all(rvYms.map(ym => getDoc(doc(db, "baemin_stats", `${_statsDocId(t)}__${ym}`)).catch(() => null)));
       sns.forEach(sn => {
         if (!sn || !sn.exists()) return;
         shardCnt++;
@@ -1984,9 +1988,9 @@ async function rebuildConsultStats() {
     });
     const rd = o => { Object.keys(o).forEach(k => { o[k].s = Math.round(o[k].s * 1000) / 1000; }); };
     Object.keys(rTeams).forEach(t => rd(rTeams[t])); rd(rAll);
-    await setDoc(doc(db, "area_stats", "_CONSULT_RV"), { baseYm: ops.baseYm, yms3: ops.yms3, minN: _CONSULT_RV_MIN_N, dataJson: JSON.stringify({ stores: acc, teams: rTeams, all: rAll }), updatedAt: new Date() });
+    await setDoc(doc(db, "area_stats", "_CONSULT_RV"), { baseYm: rvYms[0], yms3: rvYms, minN: _CONSULT_RV_MIN_N, dataJson: JSON.stringify({ stores: acc, teams: rTeams, all: rAll }), updatedAt: new Date() });
     _consultStatsCache = null; _consultRvCache = null;
-    say(`✅ 재집계 완료 (기준월 ${ops.baseYm}) — 영업 집계 ${entries.length}개 매장, 오일·내용증명 ${jobs.length}개 매장 복사, 리뷰 집계 ${Object.keys(acc).length}개 매장(샤드 ${shardCnt}개)`);
+    say(`✅ 재집계 완료 (영업 기준월 ${ops.baseYm}, 리뷰 기간 ${rvYms[2]}~${rvYms[0]}) — 영업 집계 ${entries.length}개 매장, 오일·내용증명 ${jobs.length}개 매장 복사, 리뷰 집계 ${Object.keys(acc).length}개 매장(샤드 ${shardCnt}개)` + (shardCnt === 0 ? "\n⚠️ 해당 기간의 리뷰 집계 문서(baemin_stats)가 없습니다. 리뷰 RAW 반영 여부를 확인해주세요." : ""));
   } catch (e) {
     say("재집계 실패: " + (e.message || e));
   }
@@ -2129,6 +2133,7 @@ function _consultEval(rep, dash, dashOk, stats, team, rv, code) {
   const sg2 = n => { const r = Math.round(n * 100) / 100 || 0; return (r > 0 ? "+" : "") + r.toFixed(2); };
   const rvHold = why => { push(9, "rvavg", "배민 평균별점", "hold", "", `배민 평균별점은 ${why}`); push(10, "rvlow", "배민 저별점 비율", "hold", "", `배민 저별점 비율은 ${why}`); };
   const ro = rv?.stores?.[code];
+  const rvPeriod = rv?.yms3 ? `${rv.yms3[rv.yms3.length - 1]}~${rv.yms3[0]}` : "최근 3개월";
   if (!rv) rvHold("배민 리뷰 집계가 아직 생성되지 않아 판정을 보류하였습니다.");
   else if (!ro || ro[0] < _CONSULT_RV_MIN_N) rvHold(`최근 3개월 리뷰가 ${ro ? ro[0] : 0}건으로 ${_CONSULT_RV_MIN_N}건 미만이어서 판정을 보류하였습니다.`);
   else {
@@ -2144,14 +2149,14 @@ function _consultEval(rep, dash, dashOk, stats, team, rv, code) {
         `최근 3개월 평균 별점은 ${vAvg.toFixed(2)}점(리뷰 ${n}건)으로 팀 평균(${tAvg.toFixed(2)}점) 대비 ${sg2(dT)}점` + (dA != null ? `, 전사 평균(${aAvg.toFixed(2)}점) 대비 ${sg2(dA)}점` : "") + "입니다."
         + (st1 === "bad" ? " 리뷰 내용을 확인하여 서비스 및 품질 개선이 필요합니다." : st1 === "good" ? " 고객 만족도가 높은 편입니다." : " 팀 평균 수준입니다."),
         [["본 매장", `${vAvg.toFixed(2)}점 (리뷰 ${n}건)`], [`팀 평균 (${ta.n}개 매장)`, `${tAvg.toFixed(2)}점 (${sg2(dT)}점)`]].concat(dA != null ? [["전사 평균 (참고)", `${aAvg.toFixed(2)}점 (${sg2(dA)}점)`]] : []),
-        `판정 기준: 팀 평균 대비 ${_CONSULT_RV_AVG_BAD.toFixed(1)}점 이하 개선 필요, +${_CONSULT_RV_AVG_GOOD.toFixed(1)}점 이상 우수 (최근 3개월, 리뷰 ${_CONSULT_RV_MIN_N}건 미만 보류)`);
+        `판정 기준: 팀 평균 대비 ${_CONSULT_RV_AVG_BAD.toFixed(1)}점 이하 개선 필요, +${_CONSULT_RV_AVG_GOOD.toFixed(1)}점 이상 우수 (집계 기간 ${rvPeriod}, 리뷰 ${_CONSULT_RV_MIN_N}건 미만 보류)`);
       const dL = Math.round((vLow - tLow) * 10) / 10, dLA = aLow != null ? vLow - aLow : null;
       const st2 = dL >= _CONSULT_RV_LOW_BAD ? "bad" : dL <= _CONSULT_RV_LOW_GOOD ? "good" : "ok";
       push(10, "rvlow", "배민 저별점 비율", st2, `팀 ${sg1(dL)}%p`,
         `최근 3개월 저별점(1~2점) 비율은 ${vLow.toFixed(1)}%(${ro[2]}건/${n}건)로 팀 평균(${tLow.toFixed(1)}%) 대비 ${sg1(dL)}%p` + (dLA != null ? `, 전사 평균(${aLow.toFixed(1)}%) 대비 ${sg1(dLA)}%p` : "") + "입니다."
         + (st2 === "bad" ? " 저별점 리뷰 사유 확인 및 개선이 필요합니다." : st2 === "good" ? " 저별점 비율이 낮은 편입니다." : " 팀 평균 수준입니다."),
         [["본 매장", `${vLow.toFixed(1)}% (${ro[2]}건/${n}건)`], [`팀 평균 (${tl.n}개 매장)`, `${tLow.toFixed(1)}% (${sg1(dL)}%p)`]].concat(dLA != null ? [["전사 평균 (참고)", `${aLow.toFixed(1)}% (${sg1(dLA)}%p)`]] : []),
-        `판정 기준: 팀 평균 대비 +${_CONSULT_RV_LOW_BAD.toFixed(1)}%p 이상 개선 필요, ${_CONSULT_RV_LOW_GOOD.toFixed(1)}%p 이하 우수 (최근 3개월, 리뷰 ${_CONSULT_RV_MIN_N}건 미만 보류)`);
+        `판정 기준: 팀 평균 대비 +${_CONSULT_RV_LOW_BAD.toFixed(1)}%p 이상 개선 필요, ${_CONSULT_RV_LOW_GOOD.toFixed(1)}%p 이하 우수 (집계 기간 ${rvPeriod}, 리뷰 ${_CONSULT_RV_MIN_N}건 미만 보류)`);
     }
   }
   items.sort((a, b) => a.order - b.order);
