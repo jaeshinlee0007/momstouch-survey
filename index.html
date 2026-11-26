@@ -1869,6 +1869,219 @@ function _reportInfoRow(label, val) {
   return `<tr><td style="color:#718096;font-size:13px;padding:4px 0;width:42%">${label}</td><td style="text-align:right;padding:4px 0;font-size:13px">${val ?? "-"}</td></tr>`;
 }
 
+// ════════════════════════════════════════════════════════════
+// 매장 컨설팅 요약 — 8개 지표 판정(동일 팀 평균 비교, 전사 평균 참고 병기)
+//   · 팀/전사 평균은 업로드 시 area_stats/_CONSULT 문서 1개로 미리 계산 (매장별 대량 조회 없음)
+//   · 기준월 = 영업일/영업시간 데이터의 최신월(ops_asof), 판매량·영업시간은 최근 3개월 일평균
+//   · 오일사입·내용증명은 store_dash/{코드} 1건만 추가로 읽음(실패해도 나머지 지표는 정상 표시)
+// ════════════════════════════════════════════════════════════
+// 매장 1곳의 최근 3개월 일평균 — 업로드 집계와 화면 판정이 동일 함수를 써서 값이 어긋나지 않게 함
+function _consultStoreVals(rep, yms3) {
+  let hSum = 0, hDays = 0;
+  const q = { chicken: 0, beef: 0, pizza: 0 }, qd = { chicken: 0, beef: 0, pizza: 0 };
+  (yms3 || []).forEach(ym => {
+    const o = rep?.ops?.[ym];
+    const d = Number(o?.d) || 0;
+    if (d <= 0) return;
+    const h = Number(o.h) || 0;
+    if (h > 0) { hSum += h; hDays += d; }
+    ["chicken", "beef", "pizza"].forEach(k => {
+      const v = Number(rep?.menu_qty?.[ym]?.[k]);
+      if (v > 0) { q[k] += v; qd[k] += d; }
+    });
+  });
+  const r2 = x => Math.round(x * 100) / 100;
+  return {
+    dh: hDays > 0 ? r2(hSum / hDays) : null,
+    chk: qd.chicken > 0 ? r2(q.chicken / qd.chicken) : null,
+    bef: (rep?.beef_intro_date && qd.beef > 0) ? r2(q.beef / qd.beef) : null,
+    piz: (rep?.pizza_intro_date && qd.pizza > 0) ? r2(q.pizza / qd.pizza) : null,
+  };
+}
+
+let _consultStatsCache = null; // { ts, data }
+async function _loadConsultStats() {
+  if (_consultStatsCache && Date.now() - _consultStatsCache.ts < _STATS_TTL) return _consultStatsCache.data;
+  let data = null;
+  try {
+    const snap = await getDoc(doc(db, "area_stats", "_CONSULT"));
+    if (snap.exists()) {
+      data = snap.data();
+      try { const j = JSON.parse(data.dataJson || "{}"); data.teams = j.teams || {}; data.all = j.all || {}; } catch (e) { data.teams = {}; data.all = {}; }
+    }
+  } catch (e) { data = null; }
+  _consultStatsCache = { ts: Date.now(), data };
+  return data;
+}
+
+function _consultEval(rep, dash, dashOk, stats, team) {
+  const baseYm = stats?.baseYm || rep?.ops_asof || "";
+  const out = { baseYm, items: [], excluded: "" };
+  if (!baseYm) { out.excluded = "영업 데이터가 아직 반영되지 않아 컨설팅 요약을 표시할 수 없습니다."; return out; }
+  if (String(rep?.first_open_date || "").slice(0, 7) === baseYm) {
+    out.excluded = "해당 월 오픈한 신규점은 영업일수가 충분하지 않아 이번 달 판정에서 제외하였습니다.";
+    return out;
+  }
+  const yms3 = stats?.yms3 || [baseYm, _ymAdd(baseYm, -1), _ymAdd(baseYm, -2)];
+  const own = _consultStoreVals(rep, yms3);
+  const T = (stats?.teams || {})[team] || null;
+  const ALL = stats?.all || null;
+  const sg = n => { const r = Math.round(n) || 0; return (r > 0 ? "+" : "") + r; };
+  const sg1 = n => { const r = Math.round(n * 10) / 10 || 0; return (r > 0 ? "+" : "") + r.toFixed(1); };
+  const items = out.items;
+  const push = (order, key, name, st, head, text, rows, note) => items.push({ order, key, name, st, head: head || "", text, rows: rows || [], note: note || "" });
+
+  // 1~4. 판매량·영업시간: 동일 팀 평균과 비교(−15%/+15%, 영업시간 ±1시간), 전사 평균은 참고
+  const cmp = (order, key, name, label, unit, isHours) => {
+    const v = own[key];
+    if (key === "bef" && !rep?.beef_intro_date) return push(order, key, name, "na", "", "비프 미도입 매장은 평가 대상에서 제외합니다.");
+    if (key === "piz" && !rep?.pizza_intro_date) return push(order, key, name, "na", "", "피자 미도입 매장은 평가 대상에서 제외합니다.");
+    if (v == null) return push(order, key, name, "hold", "", `${name}은(는) 최근 3개월 데이터가 없어 판정을 보류하였습니다.`);
+    if (!stats) return push(order, key, name, "hold", "", `${name}은(는) 팀·전사 집계가 아직 생성되지 않아 판정을 보류하였습니다.`);
+    const tm = T?.[key];
+    if (!tm || tm.n < 5) return push(order, key, name, "hold", "", `${name}은(는) 팀 내 비교 매장이 ${tm ? tm.n : 0}곳으로 5곳 미만이어서 판정을 보류하였습니다.`);
+    const tAvg = tm.s / tm.n;
+    const am = ALL?.[key];
+    const aAvg = am && am.n > 0 ? am.s / am.n : null;
+    const f = x => x.toFixed(1);
+    let st, head, text;
+    if (isHours) {
+      const dT = v - tAvg, dA = aAvg != null ? v - aAvg : null;
+      st = dT <= -1 ? "bad" : dT >= 1 ? "good" : "ok";
+      head = `팀 ${sg1(dT)}시간`;
+      text = `일평균 영업시간은 ${f(v)}시간으로 팀 평균(${f(tAvg)}시간) 대비 ${sg1(dT)}시간` + (dA != null ? `, 전사 평균(${f(aAvg)}시간) 대비 ${sg1(dA)}시간` : "") + "입니다."
+        + (st === "bad" ? " 저녁 시간대 매출 기회 손실이 우려되므로 영업시간 조정 검토가 필요합니다." : st === "ok" ? " 팀 평균 수준입니다." : "");
+      const hRows = [["본 매장", `${f(v)}시간`], [`팀 평균 (${tm.n}개 매장)`, `${f(tAvg)}시간 (${sg1(dT)}시간)`]];
+      if (dA != null) hRows.push(["전사 평균 (참고)", `${f(aAvg)}시간 (${sg1(dA)}시간)`]);
+      return push(order, key, name, st, head, text, hRows, "판정 기준: 팀 평균보다 1시간 이상 짧으면 개선 필요, 1시간 이상 길면 우수");
+    }
+    const pT = (v / tAvg - 1) * 100, pA = aAvg ? (v / aAvg - 1) * 100 : null;
+    st = pT < -15 ? "bad" : pT >= 15 ? "good" : "ok";
+    head = `팀 ${sg(pT)}%` + (pA != null ? ` · 전사 ${sg(pA)}%` : "");
+    text = `${label} 일평균 판매량은 ${f(v)}${unit}로 팀 평균(${f(tAvg)}${unit}) 대비 ${sg(pT)}%` + (pA != null ? `, 전사 평균(${f(aAvg)}${unit}) 대비 ${sg(pA)}%` : "") + "입니다."
+      + (st === "bad" ? (key === "bef" ? " 비프를 도입하였으나 판매량이 팀 평균에 미치지 못합니다. 메뉴 노출 및 추천 멘트 점검이 필요합니다." : " 판매 현황 점검이 필요합니다.") : st === "ok" ? " 팀 평균 수준입니다." : "");
+    const rows = [["본 매장", `${f(v)}${unit}`], [`팀 평균 (${tm.n}개 매장)`, `${f(tAvg)}${unit} (${sg(pT)}%)`]];
+    if (pA != null) rows.push(["전사 평균 (참고)", `${f(aAvg)}${unit} (${sg(pA)}%)`]);
+    push(order, key, name, st, head, text, rows, "판정 기준: 팀 평균 대비 -15% 미만 개선 필요, +15% 이상 우수 (최근 3개월 일평균)");
+  };
+  cmp(1, "chk", "치킨 판매", "치킨", "개", false);
+  cmp(2, "bef", "비프 판매", "비프", "개", false);
+  cmp(3, "piz", "피자 판매", "피자", "개", false);
+  cmp(4, "dh", "영업시간", "", "", true);
+
+  // 5. 오일 사입: 1·2순위 = 하위권(개선 필요), 그 외 = 우수
+  const oil = dash?.oil || null;
+  if (!dashOk || !dash) push(5, "oil", "오일 사입", "hold", "", "오일 사입은 데이터를 확인할 수 없어 판정을 보류하였습니다.");
+  else if (!oil || !oil.grade) push(5, "oil", "오일 사입", "hold", "", "오일 사입 데이터가 없어 판정을 보류하였습니다.");
+  else {
+    const fc = String(oil.grade).charAt(0);
+    const rows = [["등급", String(oil.grade)], ["개선현황", String(oil.status || "-")]];
+    if (fc === "1" || fc === "2") push(5, "oil", "오일 사입", "bad", `사입 ${fc}순위 (하위권)`, `본사 오일 사입 실적이 ${fc}순위로 하위권에 해당합니다. 오일 교체 주기 및 사입 경로 확인이 필요합니다.`, rows, "판정 기준: 1·2순위는 개선 필요, 그 외는 우수");
+    else if (fc === "제") push(5, "oil", "오일 사입", "na", "", "오일 사입은 평가 제외 대상입니다.");
+    else push(5, "oil", "오일 사입", "good", "하위권 아님", "본사 오일 사입 실적이 하위권에 해당하지 않으며 정상적으로 사입하고 있습니다.", rows, "판정 기준: 1·2순위는 개선 필요, 그 외는 우수");
+  }
+
+  // 6. 배달앱 가입: 둘 다 가입 = 우수, 1곳 이상 미가입 = 개선 필요
+  const bm = rep?.baemin1 === "O", cp = rep?.coupangeats === "O";
+  const appRows = [["배민1", bm ? "가입" : "미가입"], ["쿠팡이츠", cp ? "가입" : "미가입"]];
+  if (bm && cp) push(6, "app", "배달앱 가입", "good", "모두 가입", "배민1과 쿠팡이츠에 모두 가입되어 있습니다.", appRows, "판정 기준: 둘 다 가입 시 우수, 1곳 이상 미가입 시 개선 필요");
+  else push(6, "app", "배달앱 가입", "bad", "미가입 있음", `${[!bm ? "배민1" : "", !cp ? "쿠팡이츠" : ""].filter(Boolean).join("·")}에 가입되어 있지 않습니다. 가입 안내가 필요합니다.`, appRows, "판정 기준: 둘 다 가입 시 우수, 1곳 이상 미가입 시 개선 필요");
+
+  // 7. 내용증명: 최근 12개월 1건 이상 = 개선 필요, 없으면 정상
+  if (!dashOk || !dash || !Array.isArray(dash.certs)) push(7, "cert", "내용증명", "hold", "", "내용증명은 데이터를 확인할 수 없어 판정을 보류하였습니다.");
+  else {
+    const from = _ymAdd(baseYm, -11);
+    const recent = dash.certs.filter(c => { const ym = String(c.cdate || "").slice(0, 7); return !ym || (ym >= from && ym <= baseYm); });
+    if (recent.length) push(7, "cert", "내용증명", "bad", `${recent.length}건`, `최근 12개월 내 내용증명이 ${recent.length}건 발생하였습니다. 사유 확인 및 후속 관리가 필요합니다.`,
+      recent.slice(0, 3).map(c => [c.cdate || "-", c.ctitle || "-"]), "판정 기준: 최근 12개월 1건 이상 개선 필요");
+    else push(7, "cert", "내용증명", "ok", "", "최근 12개월 내 내용증명 발생 이력이 없습니다.");
+  }
+
+  // 8. 영업일수: 휴무 3일 이상 = 개선 필요, 휴무 없음(전일 영업) = 우수, 그 사이 = 보통
+  const d = Number(rep?.ops?.[baseYm]?.d) || 0;
+  if (d <= 0) push(8, "days", "영업일수", "hold", "", "영업일수는 기준월 데이터가 없어 판정을 보류하였습니다.");
+  else {
+    const cal = new Date(Number(baseYm.slice(0, 4)), Number(baseYm.slice(5, 7)), 0).getDate();
+    const rest = Math.max(0, cal - d);
+    const rows = [["영업일수", `${d}일 / 달력 ${cal}일`], ["휴무일수", `${rest}일`]];
+    const note = "판정 기준: 휴무 3일 이상 개선 필요, 휴무 없음 우수, 1~2일 보통";
+    if (rest >= 3) push(8, "days", "영업일수", "bad", `휴무 ${rest}일`, `해당 월 휴무가 ${rest}일(영업 ${d}일/달력 ${cal}일)로 3일 이상입니다. 휴무 사유 및 운영 현황 확인이 필요합니다.`, rows, note);
+    else if (rest === 0) push(8, "days", "영업일수", "good", "휴무 없음", `해당 월 휴무 없이 전일(${cal}일) 영업하였습니다.`, rows, note);
+    else push(8, "days", "영업일수", "ok", "", `해당 월 휴무는 ${rest}일입니다.`, rows, note);
+  }
+  items.sort((a, b) => a.order - b.order);
+  return out;
+}
+
+function consultToggle(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const open = el.style.display === "none";
+  el.style.display = open ? "block" : "none";
+  if (btn) {
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    const sv = btn.querySelector("svg");
+    if (sv) sv.style.transform = open ? "rotate(180deg)" : "none";
+  }
+}
+
+async function renderConsultSection(rep, target) {
+  const box = document.getElementById("consultBox");
+  if (!box) return;
+  try {
+    // 오일·내용증명: 업로드 때 store_reports에 복사해 둔 요약(consult_oil/consult_cert)을 우선 사용(AC·팀장도 조회 가능).
+    // 아직 복사본이 없으면(재업로드 전) store_dash를 시도 — GL·ADMIN만 읽을 수 있고, 실패해도 해당 2개 지표만 보류.
+    const hasOil = rep && rep.consult_oil !== undefined, hasCert = rep && Array.isArray(rep.consult_cert);
+    const [stats, dashRes] = await Promise.all([
+      _loadConsultStats(),
+      (hasOil && hasCert) ? Promise.resolve({ ok: true, data: null })
+        : getDoc(doc(db, "store_dash", target.code)).then(s => ({ ok: true, data: s.exists() ? s.data() : null })).catch(() => ({ ok: false, data: null })),
+    ]);
+    const dashData = dashRes.ok ? {
+      oil: hasOil ? rep.consult_oil : (dashRes.data?.oil || null),
+      certs: hasCert ? rep.consult_cert : (dashRes.data?.certs),
+    } : { oil: hasOil ? rep.consult_oil : null, certs: hasCert ? rep.consult_cert : undefined };
+    const dashOk = hasOil || hasCert || (dashRes.ok && !!dashRes.data);
+    const team = target.team || rep?.team || "";
+    const ev = _consultEval(rep, dashData, dashOk, stats, team);
+    const chev = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2D3748" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;transition:transform .2s"><path d="M6 9l6 6 6-6"/></svg>';
+    const head = `<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span class="q-title">컨설팅 요약</span><span style="font-size:11px;color:#718096">${ev.baseYm ? escapeHtml(_ymKo(ev.baseYm)) + " 기준 · 최근 3개월 일평균 · 동일 팀 평균 비교(전사 평균 참고)" : ""}</span></div>`;
+    if (ev.excluded) {
+      box.innerHTML = `${head}<div style="margin-top:8px;font-size:12.5px;color:#4A5568;line-height:1.6">${escapeHtml(ev.excluded)}</div>`;
+      return;
+    }
+    let seq = 0;
+    const card = (it, color) => {
+      const id = "csd" + (seq++);
+      const rows = it.rows.map(r => `<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px"><span style="color:#4A5568">${escapeHtml(r[0])}</span><b style="text-align:right">${escapeHtml(r[1])}</b></div>`).join("");
+      return `<div style="background:#fff;border:1.5px solid #E2E8F0;border-radius:12px;overflow:hidden">
+        <button type="button" onclick="consultToggle('${id}',this)" aria-expanded="false" style="width:100%;min-height:44px;border:0;background:#fff;display:flex;align-items:center;gap:8px;padding:10px 12px;text-align:left;cursor:pointer;font-family:inherit"><span style="flex:1;font-size:14px;font-weight:800;color:#1A202C">${escapeHtml(it.name)}</span>${it.head ? `<span style="font-size:12px;font-weight:800;color:${color}">${escapeHtml(it.head)}</span>` : ""}${chev}</button>
+        <div style="padding:0 12px 10px;font-size:12px;color:#4A5568;line-height:1.6">${escapeHtml(it.text)}</div>
+        <div id="${id}" style="display:none;border-top:1px solid #EDF2F7;background:#FAFBFC;padding:10px 12px"><div style="display:flex;flex-direction:column;gap:6px">${rows}${it.note ? `<div style="font-size:11px;color:#4A5568;border-top:1px dashed #CBD5E0;padding-top:6px;margin-top:2px">${escapeHtml(it.note)}</div>` : ""}</div></div>
+      </div>`;
+    };
+    const plain = it => `<div style="background:#fff;border:1.5px solid #E2E8F0;border-radius:12px;padding:10px 12px"><div style="display:flex;gap:8px"><span style="flex:1;font-size:14px;font-weight:800">${escapeHtml(it.name)}</span><span style="font-size:12px;font-weight:800;color:#4A5568">${it.st === "na" ? "해당 없음" : "보류"}</span></div><div style="font-size:12px;color:#4A5568;margin-top:4px;line-height:1.6">${escapeHtml(it.text)}</div></div>`;
+    const by = st => ev.items.filter(i => i.st === st);
+    const chip = (t, bg) => `<span style="display:inline-block;font-size:12px;font-weight:800;background:${bg};color:#fff;border-radius:999px;padding:3px 11px">${t}</span>`;
+    const group = (list, chipHtml, fn) => list.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-top:12px"><div>${chipHtml}</div>${list.map(fn).join("")}</div>` : "";
+    const bad = by("bad"), good = by("good"), ok = by("ok"), hold = by("hold"), na = by("na");
+    let okHtml = "";
+    if (ok.length) {
+      const okId = "csd" + (seq++);
+      okHtml = `<div style="margin-top:12px"><button type="button" onclick="consultToggle('${okId}',this)" aria-expanded="false" style="width:100%;min-height:44px;background:#fff;border:1.5px solid #E2E8F0;border-radius:12px;display:flex;align-items:center;gap:8px;padding:0 12px;text-align:left;font-size:13.5px;font-weight:700;color:#1A202C;cursor:pointer;font-family:inherit"><span style="flex:1">정상 항목 ${ok.length}개 <span style="font-size:12px;font-weight:600;color:#4A5568">${escapeHtml(ok.map(i => i.name).join(" · "))}</span></span>${chev}</button><div id="${okId}" style="display:none;margin-top:8px"><div style="display:flex;flex-direction:column;gap:8px">${ok.map(i => card(i, "#4A5568")).join("")}</div></div></div>`;
+    }
+    const sub = hold.concat(na);
+    box.innerHTML = head
+      + group(bad, chip(`개선 필요 ${bad.length}`, "#C05621"), i => card(i, "#C05621"))
+      + group(good, chip(`우수 ${good.length}`, "#276749"), i => card(i, "#276749"))
+      + okHtml
+      + group(sub, chip(`판정 보류·해당 없음 ${sub.length}`, "#4A5568"), plain)
+      + (!bad.length && !good.length && !ok.length && !sub.length ? '<div style="margin-top:8px;font-size:12.5px;color:#4A5568">표시할 항목이 없습니다.</div>' : "");
+  } catch (e) {
+    box.innerHTML = `<span class="q-title">컨설팅 요약</span><div style="margin-top:8px;font-size:12.5px;color:#4A5568">컨설팅 요약을 불러오지 못했습니다. 아래 리포트 정보는 정상 표시됩니다.</div>`;
+  }
+}
+
 async function renderReportDetail(root) {
   const target = window._reportTarget;
   if (!target) { go("reportStoreSel"); return; }
@@ -1904,6 +2117,8 @@ async function renderReportDetail(root) {
         <span style="font-size:13px;color:#718096">${escapeHtml(target.code)}</span>
       </div>
       <button class="btn-ghost" onclick="downloadExcelReportDetail()" style="margin-bottom:16px">📥 Excel 다운로드</button>
+
+      <div id="consultBox" class="question-card"><p class="loading-text">컨설팅 요약 불러오는 중...</p></div>
 
       <div class="question-card">
         <span class="q-title">매장 기본정보</span>
@@ -1970,6 +2185,7 @@ async function renderReportDetail(root) {
       </div>
     `;
 
+    renderConsultSection(data, target); // 비동기(자체 오류처리)
     renderNearbyCard(target.code); // 비동기(자체 오류처리) — 리포트 본문 표시를 막지 않음
     _drawReportChart("reportPosChart", data.pos_sales || {}, v => v?.["전체"]?.실매출액 ?? 0);
     _drawReportChart("reportWaterChart", data.water_sales || {}, v => v ?? 0);
@@ -7099,6 +7315,27 @@ async function uploadReportData(file, onProgress) {
         });
       });
     });
+    // ── 컨설팅 요약용: 팀별·전사 평균(최근 3개월 일평균) → area_stats/_CONSULT 문서 1개 ──
+    // 기준월 = 영업일 데이터 최신월(ops_asof). 신규점(해당월 오픈)은 평균에서 제외.
+    {
+      const baseYm = ((entries.find(([, r]) => r.ops_asof) || [])[1] || {}).ops_asof || "";
+      if (baseYm) {
+        const yms3 = [baseYm, _ymAdd(baseYm, -1), _ymAdd(baseYm, -2)];
+        const cTeams = {}, cAll = {};
+        const addTo = (o, k, v) => { const c = o[k] || (o[k] = { s: 0, n: 0 }); c.s += v; c.n++; };
+        entries.forEach(([code, rep]) => {
+          const m = masterByCode.get(code);
+          if (!m || !m.team || !rep.ops) return;
+          if (String(rep.first_open_date || "").slice(0, 7) === baseYm) return;
+          const v = _consultStoreVals(rep, yms3);
+          const t = cTeams[m.team] || (cTeams[m.team] = {});
+          Object.keys(v).forEach(k => { if (v[k] != null) { addTo(t, k, v[k]); addTo(cAll, k, v[k]); } });
+        });
+        const rd = o => { Object.keys(o).forEach(k => { o[k].s = Math.round(o[k].s * 100) / 100; }); };
+        Object.keys(cTeams).forEach(t => rd(cTeams[t])); rd(cAll);
+        aggWrites.push({ col: "area_stats", id: "_CONSULT", payload: { baseYm, yms3, dataJson: JSON.stringify({ teams: cTeams, all: cAll }), updatedAt: new Date() }, merge: false });
+      }
+    }
     // 주의: 매장×월 단위의 큰 중첩맵/배열을 Firestore 필드로 그대로 저장하면 문서당 인덱스 항목 한도(약 4만 개)를
     // 넘어 규모가 큰 팀 문서 저장이 실패함 → 큰 구조는 JSON 문자열 1개 필드로 저장(인덱스 항목 1개, 용량도 감소).
     areaMap.forEach((months, area) => aggWrites.push({ col: "area_stats", id: docId(area), payload: { area, monthsJson: JSON.stringify(months), updatedAt: new Date() }, merge: false }));
@@ -7220,9 +7457,20 @@ async function uploadReportData(file, onProgress) {
         return p;
       });
       const dashBatches = [];
+      // 컨설팅 요약용: 오일 등급·내용증명 건 요약(세부내용·방문정보 제외)을 store_reports에도 복사 — store_dash는 GL·ADMIN만 읽을 수 있어
+      // AC·팀장 화면에서도 판정하려면 이미 조회 가능한 store_reports에 최소 정보만 두어야 함(Firestore 규칙 변경 없음)
+      const repCodes = new Set(entries.map(([c]) => c));
       for (let i = 0; i < dashDocs.length; i += 200) {
         const b = writeBatch(db);
-        dashDocs.slice(i, i + 200).forEach(p => b.set(doc(db, "store_dash", p.code), p, { merge: true }));
+        dashDocs.slice(i, i + 200).forEach(p => {
+          b.set(doc(db, "store_dash", p.code), p, { merge: true });
+          if ((wsOil || wsCert) && repCodes.has(p.code)) {
+            const cp = {};
+            if (wsOil) cp.consult_oil = p.oil ? { grade: String(p.oil.grade || ""), status: String(p.oil.status || "") } : null;
+            if (wsCert) cp.consult_cert = (p.certs || []).map(c => ({ cdate: c.cdate || "", ctitle: String(c.ctitle || "").slice(0, 60) }));
+            b.set(doc(db, "store_reports", p.code), cp, { merge: true });
+          }
+        });
         dashBatches.push(b);
       }
       let dashFail = 0;
@@ -24033,7 +24281,7 @@ Object.assign(window, {
   startGkpreInspection, goAdminGkpre, toggleGkpreEnabled,
   setGkpreAnswer, toggleGkpreMultiAnswer, handleGkpreImage, removeGkpreImage, updateGkpreQMemo, updateGkpreMemo, submitFormGkpre, downloadExcelGkpre,
   fetchRecordsGkpre, setRecGkpreFilter, viewRecordGkpre, setDashGkpreFilter, viewStoreHistoryGkpre, approveGkpreRecord, rejectGkpreRecord, searchDashGkpre, startInspectionForStoreGkpre,
-  searchReportStores, viewReportDetail, downloadExcelReportDetail, purgeReportLegacyFields,
+  searchReportStores, viewReportDetail, downloadExcelReportDetail, purgeReportLegacyFields, consultToggle,
   startBeefRenewalInspection, goAdminBeefRenewal, toggleBeefRenewalEnabled,
   setBeefRenewalAnswer, handleBeefRenewalImage, removeBeefRenewalImage, updateBeefRenewalQMemo, updateBeefRenewalMemo, submitFormBeefRenewal, downloadExcelBeefRenewal,
   fetchRecordsBeefRenewal, setRecBeefRenewalFilter, viewRecordBeefRenewal, setDashBeefRenewalFilter, viewStoreHistoryBeefRenewal, approveBeefRenewalRecord, rejectBeefRenewalRecord, searchDashBeefRenewal, startInspectionForStoreBeefRenewal,
