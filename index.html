@@ -1978,7 +1978,7 @@ function _consultEval(rep, dash, dashOk, stats, team) {
     const rows = [["등급", String(oil.grade)], ["개선현황", String(oil.status || "-")]];
     if (fc === "1" || fc === "2") push(5, "oil", "오일 사입", "bad", `사입 ${fc}순위 (하위권)`, `본사 오일 사입 실적이 ${fc}순위로 하위권에 해당합니다. 오일 교체 주기 및 사입 경로 확인이 필요합니다.`, rows, "판정 기준: 1·2순위는 개선 필요, 그 외는 우수");
     else if (fc === "제") push(5, "oil", "오일 사입", "na", "", "오일 사입은 평가 제외 대상입니다.");
-    else push(5, "oil", "오일 사입", "good", "하위권 아님", "본사 오일 사입 실적이 하위권에 해당하지 않으며 정상적으로 사입하고 있습니다.", rows, "판정 기준: 1·2순위는 개선 필요, 그 외는 우수");
+    else push(5, "oil", "오일 사입", "good", "하위권 아님", "본사 오일 사입 실적이 하위권에 해당하지 않으며 정상적으로 사용하고 있습니다.", rows, "판정 기준: 1·2순위는 개선 필요, 그 외는 우수");
   }
 
   // 6. 배달앱 가입: 둘 다 가입 = 우수, 1곳 이상 미가입 = 개선 필요
@@ -2045,7 +2045,7 @@ async function renderConsultSection(rep, target) {
     const team = target.team || rep?.team || "";
     const ev = _consultEval(rep, dashData, dashOk, stats, team);
     const chev = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2D3748" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;transition:transform .2s"><path d="M6 9l6 6 6-6"/></svg>';
-    const head = `<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span class="q-title">컨설팅 요약</span><span style="font-size:11px;color:#718096">${ev.baseYm ? escapeHtml(_ymKo(ev.baseYm)) + " 기준 · 최근 3개월 일평균 · 동일 팀 평균 비교(전사 평균 참고)" : ""}</span></div>`;
+    const head = `<div style="display:flex;flex-direction:column;gap:2px"><span class="q-title" style="white-space:nowrap">컨설팅 요약</span><span style="font-size:11px;color:#718096;line-height:1.5">${ev.baseYm ? escapeHtml(_ymKo(ev.baseYm)) + " 기준 · 최근 3개월 일평균 · 동일 팀 평균 비교(전사 평균 참고)" : ""}</span></div>`;
     if (ev.excluded) {
       box.innerHTML = `${head}<div style="margin-top:8px;font-size:12.5px;color:#4A5568;line-height:1.6">${escapeHtml(ev.excluded)}</div>`;
       return;
